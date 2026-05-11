@@ -27,6 +27,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "HeartHaven",
   description: "A cozy multiplayer virtual world for companions, gardens, rooms, love notes, and shared memories.",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    shortcut: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
