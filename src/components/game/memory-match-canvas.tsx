@@ -28,7 +28,7 @@ const pairData = [
   { id: "petal", label: "Petal", color: 0xf6cfd2 },
   { id: "lantern", label: "Lantern", color: 0xd9a53e },
   { id: "tree", label: "Tree", color: 0x6e9651 },
-  { id: "casper", label: "Casper", color: 0xfffcf3 },
+  { id: "clover", label: "Clover", color: 0xfffcf3 },
   { id: "moon", label: "Moon", color: 0xc0a8dc },
   { id: "note", label: "Note", color: 0xead9b5 },
   { id: "garden", label: "Garden", color: 0xa9c58a },
@@ -54,8 +54,8 @@ export function MemoryMatchCanvas({ mode }: MemoryMatchCanvasProps) {
         private moves = 0;
         private matches = 0;
         private players = mode === "couples"
-          ? ["Nicholas + Gianna", "Rose Couple"]
-          : ["Nicholas", "Gianna", "Alex", "Maya", "Sam", "Jules"];
+          ? ["Avery + Riley", "Rose Couple"]
+          : ["Avery", "Riley", "Alex", "Maya", "Sam", "Jules"];
         private scores = this.players.map(() => 0);
         private scoreText!: Phaser.GameObjects.Text;
         private turnText!: Phaser.GameObjects.Text;
@@ -158,7 +158,7 @@ export function MemoryMatchCanvas({ mode }: MemoryMatchCanvasProps) {
           const frontGlow = this.add.rectangle(0, 0, 92, 52, 0xffffff, 0.22);
           const text = this.add.text(0, 0, label, {
             align: "center",
-            color: pair === "casper" ? "#3A2A2A" : "#FFFDF6",
+            color: pair === "clover" ? "#3A2A2A" : "#FFFDF6",
             fontFamily: "Nunito, sans-serif",
             fontSize: "13px",
             fontStyle: "900",

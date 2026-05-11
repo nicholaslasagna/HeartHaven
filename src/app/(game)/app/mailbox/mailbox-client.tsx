@@ -26,8 +26,8 @@ export function MailboxClient({ notes }: MailboxClientProps) {
     setDrafts((value) => [
       {
         id: `draft-${Date.now()}`,
-        from: "Nicholas",
-        to: "Gianna",
+        from: "Avery",
+        to: "Riley",
         subject,
         body,
         scheduledFor: "Draft saved just now",

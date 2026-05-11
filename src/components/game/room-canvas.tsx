@@ -413,7 +413,7 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
           if (this.petMoodTimer > 6200 && this.petMood !== "follow") {
             this.petMoodTimer = 0;
             this.petMood = this.petMood === "idle" ? "sit" : "idle";
-            setStatus(this.petMood === "sit" ? "Casper sits beside the room glow." : "Casper is keeping watch.");
+            setStatus(this.petMood === "sit" ? "Clover sits beside the room glow." : "Clover is keeping watch.");
           }
 
           const desiredOffset = this.petMood === "sleep" ? { x: 180, y: -152 } : { x: 62, y: 24 };
@@ -447,10 +447,10 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
 
           if (furniture.placement.kind === "bed") {
             this.petMood = "sleep";
-            setStatus("Casper curls up near the canopy bed.");
+            setStatus("Clover curls up near the canopy bed.");
           } else if (furniture.placement.kind === "chair") {
             this.petMood = "sit";
-            setStatus("Casper sits beside the lavender chair.");
+            setStatus("Clover sits beside the lavender chair.");
           } else if (["lantern", "table", "plant"].includes(furniture.placement.kind)) {
             this.petMood = "react";
             this.playInteractionSparkles(furniture.container.x, furniture.container.y);
@@ -599,7 +599,7 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
       </div>
       <div
         ref={mountRef}
-        aria-label="Interactive 2.5D room canvas with player movement, Casper, and draggable furniture"
+        aria-label="Interactive 2.5D room canvas with player movement, a companion, and draggable furniture"
         className="min-h-[360px] w-full bg-cream-100 [&_canvas]:!h-auto [&_canvas]:!w-full"
         role="application"
         tabIndex={0}

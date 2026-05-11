@@ -4,7 +4,7 @@
 -- 2. persistent profiles, pets, worlds, rooms, gardens, inventory, wallets, placed items
 -- 5. friend codes, partner linking, love notes, memory book
 -- 6. room sessions for Realtime presence
--- 7. private Nicholas + Gianna gift content
+-- 7. account-scoped private gift content
 
 create extension if not exists pgcrypto;
 
@@ -419,8 +419,8 @@ values
   ('chair-lavender-cushion', 'furniture', 'Lavender Reading Chair', 'A small chair for your companion to nap beside.', 210, 0, 'common', 'chair-lavender', 'floor', array['room', 'seat']),
   ('planter-moonberry', 'garden', 'Moonberry Planter', 'A starter planter that grows moonberries over time.', 150, 1, 'starter', 'planter-moonberry', 'garden_plot', array['garden', 'crop']),
   ('note-paper-cream', 'keepsake', 'Cream Letter Set', 'Stationery for private notes and memory book pages.', 60, 0, 'starter', 'letter-cream', 'inventory_only', array['notes', 'memory']),
-  ('ng-garden-gate', 'garden', 'Nicholas & Gianna Garden Gate', 'Private entrance to the partner gift garden.', 0, 0, 'private', 'ng-garden-gate', 'garden_plot', array['private', 'partner']),
-  ('casper-guardian-statue', 'decor', 'Casper Guardian Statue', 'A private keepsake for the Guardian of Our Garden milestone.', 0, 0, 'private', 'casper-guardian-statue', 'floor', array['private', 'casper'])
+  ('private-garden-gate', 'garden', 'Private Partner Garden Gate', 'Private entrance to an account-scoped partner gift garden.', 0, 0, 'private', 'private-garden-gate', 'garden_plot', array['private', 'partner']),
+  ('guardian-garden-statue', 'decor', 'Guardian Garden Statue', 'A private keepsake for a partner garden guardian milestone.', 0, 0, 'private', 'guardian-garden-statue', 'floor', array['private', 'guardian'])
 on conflict (id) do update set
   name = excluded.name,
   description = excluded.description,

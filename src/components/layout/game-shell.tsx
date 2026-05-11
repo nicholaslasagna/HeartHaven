@@ -30,7 +30,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
             <CurrencyPill type="coins" value={playerWallet.coins} />
             <CurrencyPill type="hearts" value={playerWallet.hearts} />
             <Button variant="warm" size="sm">
-              <UserRound /> Niko
+              <UserRound /> Keeper
             </Button>
           </div>
         </div>

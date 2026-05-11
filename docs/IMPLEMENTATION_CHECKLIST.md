@@ -66,15 +66,16 @@
 - [ ] Realtime movement interpolation.
 - [ ] Emote wheel and cooldown.
 
-## Phase 7: Private Nicholas + Gianna Gift Content
+## Phase 7: Account-Scoped Private Gift Content
 
 - [x] Private catalog and milestone names defined.
-- [ ] Nicholas & Gianna's Garden unlock flow.
-- [ ] Casper: Guardian of Our Garden scene content.
-- [ ] 365th Saved Message achievement.
-- [ ] Three Finals and a Thousand Prayers quest.
-- [ ] Virtual Date That Felt Real quest.
-- [ ] Almost Two Years quest.
+- [x] SQL entitlement table for account-specific private content.
+- [ ] Private partner garden unlock flow.
+- [ ] Guardian garden scene content.
+- [ ] Message Milestone achievement.
+- [ ] Study Week quest.
+- [ ] Shared Visit quest.
+- [ ] Milestone quest.
 - [ ] Private memory book pages.
 - [ ] Private love note access rules and UI.
 

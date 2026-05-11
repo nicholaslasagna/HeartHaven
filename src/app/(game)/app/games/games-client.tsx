@@ -15,7 +15,7 @@ const partySizes = [2, 4, 6, 8] as const;
 export function GamesClient() {
   const [partySize, setPartySize] = useState<(typeof partySizes)[number]>(4);
   const [copied, setCopied] = useState(false);
-  const inviteCode = "HH-PARTY-LOVE";
+  const inviteCode = "HH-PARTY-GLOW";
   const visibleSeats = useMemo(() => partySeats.slice(0, Math.min(partySize, partySeats.length)), [partySize]);
 
   function copyInvite() {

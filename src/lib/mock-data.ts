@@ -8,13 +8,13 @@ export const playerWallet = {
 };
 
 export const activePet = {
-  id: "pet-casper",
-  name: "Casper",
+  id: "pet-clover",
+  name: "Clover",
   species: "Cloud Fox",
   tone: "cream",
   happiness: 92,
   hunger: 28,
-  trait: "Guardian of the starter garden",
+  trait: "Gentle starter companion",
 };
 
 export const inventoryItems = starterCatalog.map((item, index) => ({
@@ -32,25 +32,25 @@ export const gardenPlots = [
 ];
 
 export const partnerGardenPlots = [
-  { id: "ng-rose", name: "Distance Rose", stage: "Blooming", progress: 88, accent: "#F4B5BE", status: "Shared" },
-  { id: "ng-prayer-lily", name: "Prayer Lily", stage: "Growing", progress: 72, accent: "#FAE3A8", status: "Shared" },
-  { id: "ng-casper-tree", name: "Casper Tree", stage: "Guardian", progress: 100, accent: "#C0A8DC", status: "Protected" },
+  { id: "shared-rose", name: "Distance Rose", stage: "Blooming", progress: 88, accent: "#F4B5BE", status: "Shared" },
+  { id: "shared-lily", name: "Promise Lily", stage: "Growing", progress: 72, accent: "#FAE3A8", status: "Shared" },
+  { id: "shared-tree", name: "Guardian Tree", stage: "Guardian", progress: 100, accent: "#C0A8DC", status: "Protected" },
 ];
 
 export const loveNotes = [
   {
     id: "note-1",
-    from: "Nicholas",
-    to: "Gianna",
-    subject: "For when finals feel heavy",
-    body: "I tucked a little reminder here: one step, one breath, one prayer at a time.",
+    from: "Avery",
+    to: "Riley",
+    subject: "For a heavy day",
+    body: "I tucked a little reminder here: one step, one breath, one kind thought at a time.",
     scheduledFor: "Tonight, 8:30 PM",
     read: false,
   },
   {
     id: "note-2",
-    from: "Gianna",
-    to: "Nicholas",
+    from: "Riley",
+    to: "Avery",
     subject: "Saved for a hard day",
     body: "You are loved in the ordinary moments too.",
     scheduledFor: "Delivered yesterday",
@@ -61,23 +61,23 @@ export const loveNotes = [
 export const memoryPages = [
   {
     id: "memory-1",
-    title: "The virtual date that felt real",
+    title: "A favorite visit",
     date: "Private page",
-    excerpt: "A page for a night that lived somewhere between a screen and a real place.",
+    excerpt: "A page for a warm shared moment that should stay private until an account unlocks it.",
     tone: "blush",
   },
   {
     id: "memory-2",
-    title: "365th saved message",
+    title: "Saved message milestone",
     date: "Achievement draft",
-    excerpt: "A keepsake page for the moment the saved messages became a little archive of us.",
+    excerpt: "A keepsake page for the moment small notes became a little shared archive.",
     tone: "lavender",
   },
   {
     id: "memory-3",
-    title: "Almost two years",
+    title: "Shared milestone",
     date: "Quest draft",
-    excerpt: "A quiet milestone page with room for photos, letters, prayers, and favorite details.",
+    excerpt: "A quiet milestone page with room for photos, letters, and favorite details.",
     tone: "garden",
   },
 ] as const;
@@ -133,8 +133,8 @@ export const partyGames = [
 ];
 
 export const partySeats = [
-  { id: "seat-nicholas", name: "Nicholas", role: "Host", ready: true, team: "Blush" },
-  { id: "seat-gianna", name: "Gianna", role: "Partner", ready: true, team: "Blush" },
+  { id: "seat-avery", name: "Avery", role: "Host", ready: true, team: "Blush" },
+  { id: "seat-riley", name: "Riley", role: "Partner", ready: true, team: "Blush" },
   { id: "seat-alex", name: "Alex", role: "Guest", ready: false, team: "Lavender" },
   { id: "seat-maya", name: "Maya", role: "Guest", ready: false, team: "Lavender" },
   { id: "seat-open-1", name: "Open seat", role: "Invite", ready: false, team: "Garden" },
@@ -142,7 +142,7 @@ export const partySeats = [
 ];
 
 export const friendInvite = {
-  code: "HH-LOVE-365",
+  code: "HH-GARDEN-247",
   title: "Invite a trusted friend",
   description: "Share a code, open a room session, and let friends visit once multiplayer presence is enabled.",
 };

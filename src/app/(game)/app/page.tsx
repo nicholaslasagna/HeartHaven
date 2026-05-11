@@ -19,9 +19,9 @@ export default function DashboardPage() {
             <Sparkles className="size-3.5" />
             Daily haven
           </Badge>
-          <h1 className="mt-4 font-display text-5xl leading-tight text-ink-900">Good evening, Niko.</h1>
+          <h1 className="mt-4 font-display text-5xl leading-tight text-ink-900">Good evening, Keeper.</h1>
           <p className="mt-3 max-w-2xl text-base font-semibold leading-7 text-ink-700">
-            Casper watered one moonberry planter while you were away. Your room, gardens, couple games, party lobby,
+            Clover watered one moonberry planter while you were away. Your room, gardens, couple games, party lobby,
             notes, and memory book are ready for tonight&apos;s MVP loop.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
@@ -75,7 +75,7 @@ export default function DashboardPage() {
             </div>
             <div className="mt-4 grid gap-2 text-sm font-bold text-ink-700 sm:grid-cols-3">
               <div className="rounded-lg bg-garden-100 p-3">Water garden</div>
-              <div className="rounded-lg bg-blush-100 p-3">Feed Casper</div>
+              <div className="rounded-lg bg-blush-100 p-3">Feed companion</div>
               <div className="rounded-lg bg-lavender-100 p-3">Write a note</div>
             </div>
           </CozyCard>

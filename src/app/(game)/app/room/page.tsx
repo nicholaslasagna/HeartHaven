@@ -11,7 +11,7 @@ export default function RoomPage() {
           <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Playable room</p>
           <h1 className="mt-1 font-display text-4xl text-ink-900">Moonlit Loft</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            A 2.5D room with click-to-move, WASD movement, Casper behaviors, draggable furniture, hover outlines,
+            A 2.5D room with click-to-move, WASD movement, companion behaviors, draggable furniture, hover outlines,
             rotation, and cozy object reactions.
           </p>
         </div>

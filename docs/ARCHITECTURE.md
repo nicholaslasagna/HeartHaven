@@ -40,7 +40,7 @@ The `src/components/ui` directory contains shadcn-style owned primitives instead
 
 Core ownership flows through `profiles.id`, which references `auth.users.id`. User-owned tables include `pets`, `worlds`, `rooms`, `gardens`, `inventory_items`, `placed_items`, `wallets`, `achievements`, and `quests`.
 
-Social and partner features are separated into `friendships`, `partner_links`, `love_notes`, and `memory_book_pages`. Private Nicholas + Gianna content should be represented as private catalog items, achievements, quests, and memory pages scoped through accepted partner links.
+Social and partner features are separated into `friendships`, `partner_links`, `love_notes`, and `memory_book_pages`. Account-specific gift content is represented as private catalog items, achievements, quests, and memory pages scoped through accepted partner links and `private_content_entitlements`.
 
 Realtime room presence uses `room_sessions` and `room_session_members` for durable session records. Supabase Realtime presence channels should carry transient movement and emote state, while the tables store session membership and recovery data.
 
@@ -48,7 +48,7 @@ Realtime room presence uses `room_sessions` and `room_session_members` for durab
 
 RLS is owner-first by default. Records are readable or writable by their owner unless a table explicitly supports relationship access. Accepted partner links unlock partner gardens, shared memory pages, and partner quests.
 
-Catalog items are readable by all authenticated players but not writable from client policies. Catalog mutation should happen through migrations, admin tooling, or service-role server jobs.
+Public catalog items are readable by authenticated players but not writable from client policies. Private catalog rows require an enabled entitlement, so couple-specific gift content can stay hidden from generic preview accounts. Catalog mutation should happen through migrations, admin tooling, or service-role server jobs.
 
 ## Game Runtime
 

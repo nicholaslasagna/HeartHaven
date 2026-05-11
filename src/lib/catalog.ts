@@ -84,7 +84,7 @@ export const starterCatalog: CatalogItem[] = [
     id: "bed-cream-canopy",
     name: "Cream Canopy Bed",
     category: "furniture",
-    description: "A soft tucked-in bed where Casper can curl up after garden watch.",
+    description: "A soft tucked-in bed where your companion can curl up after garden watch.",
     priceCoins: 320,
     priceHearts: 2,
     rarity: "common",
@@ -230,10 +230,10 @@ export const starterPlacements: RoomPlacement[] = [
 ];
 
 export const privateGiftMilestones = [
-  "Nicholas & Gianna's Garden",
-  "Casper: Guardian of Our Garden",
-  "365th Saved Message",
-  "Three Finals and a Thousand Prayers",
-  "Virtual Date That Felt Real",
-  "Almost Two Years",
+  "Private Partner Garden",
+  "Garden Guardian",
+  "Message Milestone",
+  "Study Week Quest",
+  "Shared Visit Quest",
+  "Milestone Quest",
 ];

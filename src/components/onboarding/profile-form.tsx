@@ -15,7 +15,7 @@ export function ProfileForm() {
         <form className="grid gap-4" action="/onboarding/adopt-pet">
           <label className="grid gap-2 text-sm font-extrabold text-ink-700">
             Display name
-            <Input name="displayName" placeholder="Nicholas" />
+            <Input name="displayName" placeholder="Avery" />
           </label>
           <label className="grid gap-2 text-sm font-extrabold text-ink-700">
             Haven name

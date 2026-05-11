@@ -16,7 +16,7 @@ type PartnerGardenClientProps = {
 
 export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps) {
   const [sunshine, setSunshine] = useState(3);
-  const [message, setMessage] = useState("Casper is watching the shared gate.");
+  const [message, setMessage] = useState("The garden guardian is watching the shared gate.");
 
   function sendSunshine() {
     setSunshine((value) => value + 1);
@@ -31,7 +31,7 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
           <Sparkles className="size-3.5" />
           Private garden
         </Badge>
-        <h1 className="mt-3 font-display text-4xl text-ink-900">Nicholas &amp; Gianna&apos;s Garden</h1>
+        <h1 className="mt-3 font-display text-4xl text-ink-900">Shared Heart Garden</h1>
         <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
           A partner-linked garden for shared quests, protected memories, and private gifts.
         </p>
