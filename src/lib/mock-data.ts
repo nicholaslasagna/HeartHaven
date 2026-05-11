@@ -91,11 +91,12 @@ export const miniGames = [
     status: "Phase 4",
   },
   {
-    id: "garden-catch",
-    title: "Garden Catch",
-    reward: "Seed bundle",
-    description: "Catch falling seeds, petals, and moonberries to feed your garden loop.",
-    status: "Phase 4",
+    id: "petal-catch",
+    title: "Petal Catch",
+    reward: "Coins + hearts",
+    description: "Catch falling petals and hearts, avoid thorns, and build a combo before the timer runs out.",
+    status: "Playable",
+    href: "/app/petal-catch",
   },
 ];
 

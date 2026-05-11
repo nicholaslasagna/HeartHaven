@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookHeart, HeartHandshake, Home, Inbox, Leaf, Package, ShoppingBag, UserRound } from "lucide-react";
+import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, ShoppingBag, UserRound } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { CurrencyPill } from "@/components/cozy/currency-pill";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/app/room", label: "Room", icon: Home },
   { href: "/app/garden", label: "Garden", icon: Leaf },
   { href: "/app/partner-garden", label: "Partner", icon: HeartHandshake },
+  { href: "/app/petal-catch", label: "Petal Catch", icon: Gamepad2 },
   { href: "/app/shop", label: "Shop", icon: ShoppingBag },
   { href: "/app/inventory", label: "Inventory", icon: Package },
   { href: "/app/mailbox", label: "Mailbox", icon: Inbox },

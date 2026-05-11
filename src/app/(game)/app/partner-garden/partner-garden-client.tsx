@@ -5,7 +5,7 @@ import { HeartHandshake, LockKeyhole, Sparkles, Sun } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
-import { GardenPlot } from "@/components/cozy/garden-plot";
+import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { Badge } from "@/components/ui/badge";
 import type { friendInvite, partnerGardenPlots } from "@/lib/mock-data";
 
@@ -45,11 +45,7 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
           <Sun /> Send sunshine ({sunshine})
         </CozyButton>
       </CozyCard>
-      <div className="grid gap-5 md:grid-cols-3">
-        {plots.map((plot) => (
-          <GardenPlot key={plot.id} {...plot} />
-        ))}
-      </div>
+      <GardenCanvasLoader plots={plots} variant="partner" />
       <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
         <FriendInviteCard {...invite} />
         <CozyCard className="p-5">

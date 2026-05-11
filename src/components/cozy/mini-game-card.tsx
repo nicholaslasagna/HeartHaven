@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Gamepad2, Gift } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
@@ -8,9 +9,10 @@ type MiniGameCardProps = {
   description: string;
   reward: string;
   status: string;
+  href?: string;
 };
 
-export function MiniGameCard({ title, description, reward, status }: MiniGameCardProps) {
+export function MiniGameCard({ title, description, reward, status, href }: MiniGameCardProps) {
   return (
     <CozyCard className="p-5">
       <div className="mb-4 flex items-center justify-between">
@@ -26,7 +28,13 @@ export function MiniGameCard({ title, description, reward, status }: MiniGameCar
           <Gift className="size-4" />
           {reward}
         </span>
-        <CozyButton size="sm" variant="warm">Preview</CozyButton>
+        {href ? (
+          <CozyButton asChild size="sm" variant="warm">
+            <Link href={href}>Play</Link>
+          </CozyButton>
+        ) : (
+          <CozyButton size="sm" variant="warm">Preview</CozyButton>
+        )}
       </div>
     </CozyCard>
   );
