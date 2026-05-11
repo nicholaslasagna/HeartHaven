@@ -6,9 +6,24 @@ HeartHaven is a full-stack Next.js app, so deploy it with the OpenNext Cloudflar
 
 ```bash
 npm run build
-npm run preview
+npm run build:cloudflare
+npm run preview:cloudflare
 npm run deploy
 ```
+
+## Cloudflare Git UI Settings
+
+For the Workers & Pages Git deployment form, use these values:
+
+```text
+Project name: HeartHaven
+Path: /
+Build command: npm run build:cloudflare
+Deploy command: npm run deploy:cloudflare
+Non-production branch deploy command: npm run upload:cloudflare
+```
+
+Do not use `npm run build` as the Cloudflare build command. That only creates `.next`; Cloudflare needs the `.open-next` worker output created by `npm run build:cloudflare`.
 
 ## Required Environment Variables
 
