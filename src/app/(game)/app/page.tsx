@@ -21,7 +21,8 @@ export default function DashboardPage() {
           </Badge>
           <h1 className="mt-4 font-display text-5xl leading-tight text-ink-900">Good evening, Niko.</h1>
           <p className="mt-3 max-w-2xl text-base font-semibold leading-7 text-ink-700">
-            Casper watered one moonberry planter while you were away. Your room, garden, shop, inventory, notes, and memory book are ready for the first MVP loop.
+            Casper watered one moonberry planter while you were away. Your room, gardens, couple games, party lobby,
+            notes, and memory book are ready for tonight&apos;s MVP loop.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <CozyButton asChild>
@@ -31,6 +32,9 @@ export default function DashboardPage() {
             </CozyButton>
             <CozyButton asChild variant="warm">
               <Link href="/app/partner-garden">Open partner garden</Link>
+            </CozyButton>
+            <CozyButton asChild variant="warm">
+              <Link href="/app/games">Start games</Link>
             </CozyButton>
           </div>
         </div>

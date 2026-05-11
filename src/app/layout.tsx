@@ -29,10 +29,11 @@ export const metadata: Metadata = {
   description: "A cozy multiplayer virtual world for companions, gardens, rooms, love notes, and shared memories.",
   icons: {
     icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.ico?v=2", sizes: "any" },
+      { url: "/icon.svg?v=2", type: "image/svg+xml" },
     ],
-    shortcut: "/icon.svg",
+    shortcut: "/favicon.ico?v=2",
+    apple: "/icon.svg?v=2",
   },
 };
 

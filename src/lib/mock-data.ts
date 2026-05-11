@@ -86,9 +86,10 @@ export const miniGames = [
   {
     id: "memory-match",
     title: "Memory Match",
-    reward: "80 coins",
-    description: "Flip cozy keepsake cards and find matching pairs before the lantern fades.",
-    status: "Phase 4",
+    reward: "Coins + hearts",
+    description: "Flip cozy keepsake cards in couple-vs-couple or party mode.",
+    status: "Couple + party",
+    href: "/app/memory-match",
   },
   {
     id: "petal-catch",
@@ -98,6 +99,46 @@ export const miniGames = [
     status: "Playable",
     href: "/app/petal-catch",
   },
+];
+
+export const partyGames = [
+  {
+    id: "memory-match-party",
+    title: "Memory Match",
+    mode: "2 couples or 6 guests",
+    href: "/app/memory-match",
+    description: "Pass turns around a keepsake board, score pairs, and award the winning couple or party guest.",
+  },
+  {
+    id: "petal-catch-party",
+    title: "Petal Catch Relay",
+    mode: "solo now, co-op next",
+    href: "/app/petal-catch",
+    description: "Catch petals and hearts in a timed arcade round. The next version can share a basket between players.",
+  },
+  {
+    id: "lantern-relay",
+    title: "Lantern Relay",
+    mode: "planned party game",
+    href: "/app/games",
+    description: "Teams light lanterns along the garden path while dodging sleepy fireflies and collecting honey sparks.",
+  },
+  {
+    id: "heart-hunt",
+    title: "Heart Hunt",
+    mode: "planned room party",
+    href: "/app/games",
+    description: "Guests search rooms for hidden keepsakes, emote clues, and unlock a shared memory-book reward.",
+  },
+];
+
+export const partySeats = [
+  { id: "seat-nicholas", name: "Nicholas", role: "Host", ready: true, team: "Blush" },
+  { id: "seat-gianna", name: "Gianna", role: "Partner", ready: true, team: "Blush" },
+  { id: "seat-alex", name: "Alex", role: "Guest", ready: false, team: "Lavender" },
+  { id: "seat-maya", name: "Maya", role: "Guest", ready: false, team: "Lavender" },
+  { id: "seat-open-1", name: "Open seat", role: "Invite", ready: false, team: "Garden" },
+  { id: "seat-open-2", name: "Open seat", role: "Invite", ready: false, team: "Garden" },
 ];
 
 export const friendInvite = {

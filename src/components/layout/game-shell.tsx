@@ -11,6 +11,8 @@ const navItems = [
   { href: "/app/room", label: "Room", icon: Home },
   { href: "/app/garden", label: "Garden", icon: Leaf },
   { href: "/app/partner-garden", label: "Partner", icon: HeartHandshake },
+  { href: "/app/games", label: "Games", icon: Gamepad2 },
+  { href: "/app/memory-match", label: "Memory Match", icon: Gamepad2 },
   { href: "/app/petal-catch", label: "Petal Catch", icon: Gamepad2 },
   { href: "/app/shop", label: "Shop", icon: ShoppingBag },
   { href: "/app/inventory", label: "Inventory", icon: Package },
