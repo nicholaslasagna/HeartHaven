@@ -1,14 +1,14 @@
 import Link from "next/link";
-import { ArrowRight, BookHeart, Heart, Inbox, Leaf, Sparkles } from "lucide-react";
+import { ArrowRight, BookHeart, Inbox, Leaf, Sparkles } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
-import { CurrencyPill } from "@/components/cozy/currency-pill";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
 import { PetCard } from "@/components/cozy/pet-card";
 import { RoomPreview } from "@/components/cozy/room-preview";
+import { DashboardWalletCard } from "@/components/game/dashboard-wallet-card";
 import { Badge } from "@/components/ui/badge";
-import { activePet, friendInvite, loveNotes, memoryPages, miniGames, playerWallet } from "@/lib/mock-data";
+import { activePet, friendInvite, loveNotes, memoryPages, miniGames } from "@/lib/mock-data";
 
 export default function DashboardPage() {
   return (
@@ -21,7 +21,7 @@ export default function DashboardPage() {
           </Badge>
           <h1 className="mt-4 font-display text-5xl leading-tight text-ink-900">Good evening, Keeper.</h1>
           <p className="mt-3 max-w-2xl text-base font-semibold leading-7 text-ink-700">
-            Clover watered one moonberry planter while you were away. Your room, gardens, couple games, party lobby,
+            Casper watered one moonberry planter while you were away. Your room, gardens, couple games, party lobby,
             notes, and memory book are ready for tonight&apos;s MVP loop.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
@@ -42,16 +42,7 @@ export default function DashboardPage() {
       </section>
 
       <section className="grid gap-5 md:grid-cols-3">
-        <CozyCard className="p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-display text-2xl">Wallet</h2>
-            <Heart className="size-5 fill-current text-blush-500" />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <CurrencyPill type="coins" value={playerWallet.coins} />
-            <CurrencyPill type="hearts" value={playerWallet.hearts} />
-          </div>
-        </CozyCard>
+        <DashboardWalletCard />
         <CozyCard className="p-5">
           <BookHeart className="mb-3 size-6 text-lavender-500" />
           <h2 className="font-display text-2xl">Memory pages</h2>
@@ -75,7 +66,7 @@ export default function DashboardPage() {
             </div>
             <div className="mt-4 grid gap-2 text-sm font-bold text-ink-700 sm:grid-cols-3">
               <div className="rounded-lg bg-garden-100 p-3">Water garden</div>
-              <div className="rounded-lg bg-blush-100 p-3">Feed companion</div>
+              <div className="rounded-lg bg-blush-100 p-3">Feed Casper</div>
               <div className="rounded-lg bg-lavender-100 p-3">Write a note</div>
             </div>
           </CozyCard>

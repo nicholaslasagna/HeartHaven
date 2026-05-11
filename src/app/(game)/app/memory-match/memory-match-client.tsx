@@ -4,8 +4,10 @@ import Link from "next/link";
 import { ArrowLeft, UsersRound } from "lucide-react";
 import { useState } from "react";
 import { MemoryMatchCanvasLoader } from "@/components/game/memory-match-canvas-loader";
+import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import type { MemoryMatchMode } from "@/components/game/memory-match-canvas";
 import { Button } from "@/components/ui/button";
+import { useGameWallet } from "@/lib/game/use-game-wallet";
 import { cn } from "@/lib/utils";
 
 const modeCopy: Record<MemoryMatchMode, { title: string; description: string }> = {
@@ -21,6 +23,7 @@ const modeCopy: Record<MemoryMatchMode, { title: string; description: string }> 
 
 export function MemoryMatchClient() {
   const [mode, setMode] = useState<MemoryMatchMode>("couples");
+  const { grantReward } = useGameWallet();
 
   return (
     <div className="grid gap-5">
@@ -62,10 +65,11 @@ export function MemoryMatchClient() {
         </div>
       </section>
 
-      <MemoryMatchCanvasLoader mode={mode} />
+      <RewardWalletPanel />
+      <MemoryMatchCanvasLoader mode={mode} onReward={grantReward} />
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">
-        MVP mode is pass-and-play. The scene is structured for Supabase Realtime game sessions, player seats, turn
-        events, and party room invites.
+        Pass-and-play rewards now update the wallet immediately. The scene is still structured for Supabase Realtime
+        game sessions, player seats, turn events, and party room invites.
       </div>
     </div>
   );

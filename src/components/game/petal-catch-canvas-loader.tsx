@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { GameReward } from "@/lib/game/rewards";
 
 const PetalCatchCanvas = dynamic(
   () => import("@/components/game/petal-catch-canvas").then((module) => module.PetalCatchCanvas),
@@ -14,6 +15,10 @@ const PetalCatchCanvas = dynamic(
   },
 );
 
-export function PetalCatchCanvasLoader() {
-  return <PetalCatchCanvas />;
+type PetalCatchCanvasLoaderProps = {
+  onReward?: (reward: GameReward) => void;
+};
+
+export function PetalCatchCanvasLoader({ onReward }: PetalCatchCanvasLoaderProps) {
+  return <PetalCatchCanvas onReward={onReward} />;
 }

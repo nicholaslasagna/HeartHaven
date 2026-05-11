@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { MemoryMatchMode } from "@/components/game/memory-match-canvas";
+import type { GameReward } from "@/lib/game/rewards";
 
 const MemoryMatchCanvas = dynamic(
   () => import("@/components/game/memory-match-canvas").then((module) => module.MemoryMatchCanvas),
@@ -17,8 +18,9 @@ const MemoryMatchCanvas = dynamic(
 
 type MemoryMatchCanvasLoaderProps = {
   mode: MemoryMatchMode;
+  onReward?: (reward: GameReward) => void;
 };
 
-export function MemoryMatchCanvasLoader({ mode }: MemoryMatchCanvasLoaderProps) {
-  return <MemoryMatchCanvas key={mode} mode={mode} />;
+export function MemoryMatchCanvasLoader({ mode, onReward }: MemoryMatchCanvasLoaderProps) {
+  return <MemoryMatchCanvas key={mode} mode={mode} onReward={onReward} />;
 }

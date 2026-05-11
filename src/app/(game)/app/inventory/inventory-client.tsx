@@ -7,17 +7,17 @@ import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { CurrencyPill } from "@/components/cozy/currency-pill";
 import { Badge } from "@/components/ui/badge";
+import { useGameWallet } from "@/lib/game/use-game-wallet";
 import type { inventoryItems } from "@/lib/mock-data";
 
 type InventoryClientProps = {
   items: typeof inventoryItems;
-  coins: number;
-  hearts: number;
 };
 
-export function InventoryClient({ items, coins, hearts }: InventoryClientProps) {
+export function InventoryClient({ items }: InventoryClientProps) {
   const [equippedIds, setEquippedIds] = useState(() => items.filter((entry) => entry.equipped).map((entry) => entry.id));
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const { wallet } = useGameWallet();
 
   const categories = ["all", ...Array.from(new Set(items.map((entry) => entry.item.category)))];
   const visibleItems = items.filter((entry) => selectedCategory === "all" || entry.item.category === selectedCategory);
@@ -38,8 +38,8 @@ export function InventoryClient({ items, coins, hearts }: InventoryClientProps) 
           </p>
         </div>
         <div className="flex gap-2">
-          <CurrencyPill type="coins" value={coins} />
-          <CurrencyPill type="hearts" value={hearts} />
+          <CurrencyPill type="coins" value={wallet.coins} />
+          <CurrencyPill type="hearts" value={wallet.hearts} />
         </div>
       </section>
       <CozyCard className="flex flex-wrap gap-2 p-4">

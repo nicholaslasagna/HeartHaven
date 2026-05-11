@@ -34,7 +34,7 @@ export function PetPicker() {
           </div>
           <label className="grid gap-2 text-sm font-extrabold text-ink-700">
             Companion name
-            <Input name="petName" placeholder="Clover" defaultValue="Clover" />
+            <Input name="petName" placeholder="Casper" defaultValue="Casper" />
           </label>
           <Button className="justify-self-start">
             Enter HeartHaven <ArrowRight />

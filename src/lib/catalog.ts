@@ -152,6 +152,18 @@ export const starterCatalog: CatalogItem[] = [
     placementType: "inventory_only",
     tags: ["notes", "memory"],
   },
+  {
+    id: "casper-moonberry-plush",
+    name: "Casper Moonberry Plush",
+    category: "decor",
+    description: "A tiny Casper plush holding a moonberry for cozy public rooms.",
+    priceCoins: 140,
+    priceHearts: 1,
+    rarity: "common",
+    assetKey: "casper-moonberry-plush",
+    placementType: "floor",
+    tags: ["room", "casper", "cozy"],
+  },
 ];
 
 export const starterPlacements: RoomPlacement[] = [

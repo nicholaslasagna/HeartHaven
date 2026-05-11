@@ -6,6 +6,7 @@ import type { RoomPlacement } from "@/lib/game/types";
 
 type RoomCanvasProps = {
   placements: RoomPlacement[];
+  onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
 
 type FurnitureKind = "rug" | "window" | "lantern" | "chair" | "bed" | "table" | "shelf" | "plant" | "generic";
@@ -30,7 +31,7 @@ type PetMood = "idle" | "follow" | "sit" | "sleep" | "react";
 const ROOM_WIDTH = 960;
 const ROOM_HEIGHT = 600;
 
-export function RoomCanvas({ placements }: RoomCanvasProps) {
+export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState("Lighting the Moonlit Loft");
   const [selected, setSelected] = useState("No item selected");
@@ -275,6 +276,7 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
           container.on("dragend", () => {
             if (this.dragStarted) {
               setStatus(`${placement.label} moved to x ${Math.round(container.x)}, y ${Math.round(container.y)}.`);
+              onPlacementsChange?.(this.exportPlacements());
             }
           });
 
@@ -413,7 +415,7 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
           if (this.petMoodTimer > 6200 && this.petMood !== "follow") {
             this.petMoodTimer = 0;
             this.petMood = this.petMood === "idle" ? "sit" : "idle";
-            setStatus(this.petMood === "sit" ? "Clover sits beside the room glow." : "Clover is keeping watch.");
+            setStatus(this.petMood === "sit" ? "Casper sits beside the room glow." : "Casper is keeping watch.");
           }
 
           const desiredOffset = this.petMood === "sleep" ? { x: 180, y: -152 } : { x: 62, y: 24 };
@@ -447,10 +449,10 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
 
           if (furniture.placement.kind === "bed") {
             this.petMood = "sleep";
-            setStatus("Clover curls up near the canopy bed.");
+            setStatus("Casper curls up near the canopy bed.");
           } else if (furniture.placement.kind === "chair") {
             this.petMood = "sit";
-            setStatus("Clover sits beside the lavender chair.");
+            setStatus("Casper sits beside the lavender chair.");
           } else if (["lantern", "table", "plant"].includes(furniture.placement.kind)) {
             this.petMood = "react";
             this.playInteractionSparkles(furniture.container.x, furniture.container.y);
@@ -513,6 +515,7 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
           this.selectedFurniture.container.setRotation((placement.rotation * Math.PI) / 180);
           this.playInteractionSparkles(this.selectedFurniture.container.x, this.selectedFurniture.container.y);
           setStatus(`${placement.label} rotated to ${placement.rotation} degrees.`);
+          onPlacementsChange?.(this.exportPlacements());
         }
 
         private playInteractionSparkles(x: number, y: number) {
@@ -554,6 +557,18 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
           });
           this.interactionBubble?.setDepth(6000);
         }
+
+        private exportPlacements(): RoomPlacement[] {
+          return this.furniture.map((item) => ({
+            id: item.placement.id,
+            catalogItemId: item.placement.catalogItemId,
+            x: item.placement.x,
+            y: item.placement.y,
+            rotation: item.placement.rotation,
+            scale: item.placement.scale,
+            zIndex: item.placement.zIndex,
+          }));
+        }
       }
 
       game = new PhaserModule.Game({
@@ -581,7 +596,7 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
       destroyed = true;
       game?.destroy(true);
     };
-  }, [placements]);
+  }, [onPlacementsChange, placements]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">
@@ -599,7 +614,7 @@ export function RoomCanvas({ placements }: RoomCanvasProps) {
       </div>
       <div
         ref={mountRef}
-        aria-label="Interactive 2.5D room canvas with player movement, a companion, and draggable furniture"
+        aria-label="Interactive 2.5D room canvas with player movement, Casper, and draggable furniture"
         className="min-h-[360px] w-full bg-cream-100 [&_canvas]:!h-auto [&_canvas]:!w-full"
         role="application"
         tabIndex={0}

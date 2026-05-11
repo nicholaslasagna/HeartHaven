@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, ShoppingBag, UserRound } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
-import { CurrencyPill } from "@/components/cozy/currency-pill";
+import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { playerWallet } from "@/lib/mock-data";
 
 const navItems = [
   { href: "/app", label: "Home", icon: Home },
@@ -14,6 +13,9 @@ const navItems = [
   { href: "/app/games", label: "Games", icon: Gamepad2 },
   { href: "/app/memory-match", label: "Memory Match", icon: Gamepad2 },
   { href: "/app/petal-catch", label: "Petal Catch", icon: Gamepad2 },
+  { href: "/app/bowling", label: "Bowling", icon: Gamepad2 },
+  { href: "/app/lantern-relay", label: "Lantern Relay", icon: Gamepad2 },
+  { href: "/app/heart-hunt", label: "Heart Hunt", icon: Gamepad2 },
   { href: "/app/shop", label: "Shop", icon: ShoppingBag },
   { href: "/app/inventory", label: "Inventory", icon: Package },
   { href: "/app/mailbox", label: "Mailbox", icon: Inbox },
@@ -27,8 +29,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           <Logo />
           <div className="hidden items-center gap-2 xl:flex">
-            <CurrencyPill type="coins" value={playerWallet.coins} />
-            <CurrencyPill type="hearts" value={playerWallet.hearts} />
+            <RewardWalletPanel compact />
             <Button variant="warm" size="sm">
               <UserRound /> Keeper
             </Button>

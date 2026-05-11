@@ -16,7 +16,7 @@ type PartnerGardenClientProps = {
 
 export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps) {
   const [sunshine, setSunshine] = useState(3);
-  const [message, setMessage] = useState("The garden guardian is watching the shared gate.");
+  const [message, setMessage] = useState("Casper is watching the shared gate.");
 
   function sendSunshine() {
     setSunshine((value) => value + 1);

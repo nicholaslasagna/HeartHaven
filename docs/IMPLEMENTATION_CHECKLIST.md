@@ -20,29 +20,38 @@
 - [x] Supabase schema for profiles, pets, worlds, rooms, gardens, inventory, placed items, wallets, friends, partners, notes, memory pages, quests, achievements, and room sessions.
 - [x] RLS policies for owner, partner, and session membership access.
 - [x] Starter item catalog seed.
+- [x] Game session and reward event schema.
+- [x] Private content entitlement gate.
+- [x] Private story payload table for account-only copy.
+- [x] Local wallet reward loop for playable MVP.
 - [ ] Apply migration to Supabase.
 - [ ] Add profile creation server action.
 - [ ] Add adoption server action.
 - [ ] Replace mock wallet, pet, inventory, and room data with Supabase reads.
-- [ ] Add furniture placement save mutation.
+- [x] Add local furniture placement save/load.
+- [ ] Add Supabase furniture placement save mutation.
 
 ## Phase 3: Phaser Room
 
 - [x] Browser-only Phaser 3 room renderer.
 - [x] Player avatar.
-- [x] Pet sprite placeholder.
-- [x] Clickable room item structure.
-- [x] Basic keyboard movement.
-- [ ] Drag/drop furniture placement.
+- [x] Casper companion sprite placeholder.
+- [x] Clickable room item interactions.
+- [x] Click-to-move and keyboard movement.
+- [x] Drag/drop/rotate furniture placement.
+- [x] Local save/load placed items.
 - [ ] Save/load placed items from Supabase.
-- [ ] Add room item interaction handlers.
 
 ## Phase 4: Mini-Games
 
-- [ ] Memory Match route and Phaser scene.
-- [ ] Garden Catch route and Phaser scene.
-- [ ] Rewards transaction table or RPC.
-- [ ] Coins and hearts payout rules.
+- [x] Memory Match route and Phaser scene.
+- [x] Petal Catch route and Phaser scene.
+- [x] Moonberry Bowling route and Phaser scene.
+- [x] Lantern Relay route and Phaser scene.
+- [x] Heart Hunt route and Phaser scene.
+- [x] Local reward wallet and ledger.
+- [x] Game reward event schema.
+- [x] Coins and hearts payout rules.
 - [ ] Anti-abuse score validation.
 
 ## Phase 5: Friends And Partner Features
@@ -52,13 +61,17 @@
 - [ ] Friend code search UI.
 - [ ] Friend request accept/decline.
 - [ ] Partner invite UI.
-- [ ] Shared partner garden route.
-- [ ] Love note compose, schedule, read, and archive flows.
-- [ ] Memory book page editor.
+- [x] Shared partner garden route.
+- [x] Love note compose draft flow.
+- [x] Memory book interactive page draft flow.
+- [ ] Persist love note schedule, read, and archive flows.
+- [ ] Persist memory book page editor.
 
 ## Phase 6: Multiplayer Presence
 
 - [x] Room session tables.
+- [x] Game session tables.
+- [x] Local party games and lobby seats.
 - [ ] Supabase Realtime channel per room session.
 - [ ] Presence payload for avatar position, pet position, and emote.
 - [ ] Invite friend to room flow.
@@ -70,12 +83,14 @@
 
 - [x] Private catalog and milestone names defined.
 - [x] SQL entitlement table for account-specific private content.
-- [ ] Private partner garden unlock flow.
-- [ ] Guardian garden scene content.
-- [ ] Message Milestone achievement.
-- [ ] Study Week quest.
-- [ ] Shared Visit quest.
-- [ ] Milestone quest.
+- [x] SQL payload table for private relationship-specific text.
+- [x] Casper public companion content.
+- [x] Private partner garden unlock data path.
+- [x] Guardian garden scene content shell.
+- [x] Message Milestone marker.
+- [x] Study Week quest marker.
+- [x] Shared Visit quest marker.
+- [x] Milestone quest marker.
 - [ ] Private memory book pages.
 - [ ] Private love note access rules and UI.
 

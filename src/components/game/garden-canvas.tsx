@@ -23,7 +23,7 @@ const GARDEN_HEIGHT = 620;
 export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState(
-    variant === "partner" ? "The shared garden is glowing under the guardian's watch." : "Click plots to water and inspect growth.",
+    variant === "partner" ? "The shared garden is glowing under Casper's watch." : "Click plots to water and inspect growth.",
   );
 
   useEffect(() => {
@@ -316,7 +316,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
           statue.add(this.add.circle(-32, -30, 3, 0x3a2a2a));
           const zone = this.add.zone(480, 424, 130, 106).setInteractive({ useHandCursor: true });
           zone.on("pointerdown", () => {
-            setStatus("The garden guardian is protecting the shared gate.");
+            setStatus("Casper is protecting the shared gate.");
             this.spawnHeartBurst(480, 380);
           });
         }
@@ -403,14 +403,14 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
 
         private addTitle() {
           this.add
-            .text(34, 28, variant === "partner" ? "Shared Heart Garden" : "Moonberry Meadow", {
+            .text(34, 28, variant === "partner" ? "Shared Heart Garden" : "Casper's Moonberry Beds", {
               color: "#3A2A2A",
               fontFamily: "Caprasimo, Georgia, serif",
               fontSize: "23px",
             })
             .setDepth(7000);
           this.add
-            .text(34, 58, variant === "partner" ? "Click memories, quests, flowers, and the guardian." : "Click plots to water them.", {
+            .text(34, 58, variant === "partner" ? "Click memories, quests, flowers, and Casper." : "Click plots to water them.", {
               color: "#84675F",
               fontFamily: "Nunito, sans-serif",
               fontSize: "13px",
@@ -452,7 +452,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
             {variant === "partner" ? "Shared living garden" : "Living garden"}
           </p>
           <p className="text-sm font-black text-ink-900">
-            {variant === "partner" ? "Memory tree, quests, lantern path, and guardian watch" : "Animated plots, water, butterflies, and growth"}
+            {variant === "partner" ? "Memory tree, quests, lantern path, and Casper's watch" : "Animated plots, water, butterflies, and growth"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-extrabold text-ink-700">
@@ -465,7 +465,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
         ref={mountRef}
         aria-label={
           variant === "partner"
-            ? "Interactive shared garden canvas with memory tree, quests, guardian statue, and flowers"
+            ? "Interactive shared garden canvas with memory tree, quests, Casper statue, and flowers"
             : "Interactive garden canvas with animated plots, water effects, lanterns, and butterflies"
         }
         className="min-h-[380px] w-full bg-garden-100 [&_canvas]:!h-auto [&_canvas]:!w-full"

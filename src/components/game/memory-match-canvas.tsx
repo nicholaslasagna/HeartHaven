@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import type { GameReward } from "@/lib/game/rewards";
 
 export type MemoryMatchMode = "couples" | "party";
 
 type MemoryMatchCanvasProps = {
   mode: MemoryMatchMode;
+  onReward?: (reward: GameReward) => void;
 };
 
 type MatchCard = {
@@ -28,13 +30,13 @@ const pairData = [
   { id: "petal", label: "Petal", color: 0xf6cfd2 },
   { id: "lantern", label: "Lantern", color: 0xd9a53e },
   { id: "tree", label: "Tree", color: 0x6e9651 },
-  { id: "clover", label: "Clover", color: 0xfffcf3 },
+  { id: "casper", label: "Casper", color: 0xfffcf3 },
   { id: "moon", label: "Moon", color: 0xc0a8dc },
   { id: "note", label: "Note", color: 0xead9b5 },
   { id: "garden", label: "Garden", color: 0xa9c58a },
 ];
 
-export function MemoryMatchCanvas({ mode }: MemoryMatchCanvasProps) {
+export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState(mode === "couples" ? "Couple-vs-couple match is ready." : "Party match is ready.");
 
@@ -158,7 +160,7 @@ export function MemoryMatchCanvas({ mode }: MemoryMatchCanvasProps) {
           const frontGlow = this.add.rectangle(0, 0, 92, 52, 0xffffff, 0.22);
           const text = this.add.text(0, 0, label, {
             align: "center",
-            color: pair === "clover" ? "#3A2A2A" : "#FFFDF6",
+            color: pair === "casper" ? "#3A2A2A" : "#FFFDF6",
             fontFamily: "Nunito, sans-serif",
             fontSize: "13px",
             fontStyle: "900",
@@ -295,7 +297,7 @@ export function MemoryMatchCanvas({ mode }: MemoryMatchCanvasProps) {
             }).setOrigin(0.5),
           );
           layer.add(
-            this.add.text(0, -18, `Winner: ${winners}\nMoves: ${this.moves}\nReward preview: ${coins} coins + ${hearts} hearts`, {
+            this.add.text(0, -18, `Winner: ${winners}\nMoves: ${this.moves}\nReward: ${coins} coins + ${hearts} hearts`, {
               align: "center",
               color: "#5B3F3F",
               fontFamily: "Nunito, sans-serif",
@@ -316,6 +318,13 @@ export function MemoryMatchCanvas({ mode }: MemoryMatchCanvasProps) {
           restart.on("pointerdown", () => this.scene.restart());
           layer.add(restart);
           setStatus(`Winner: ${winners}. Rewards ready to persist.`);
+          onReward?.({
+            gameId: `memory-match-${mode}`,
+            label: mode === "couples" ? "Couple Memory Match" : "Party Memory Match",
+            score: maxScore * 100 - this.moves,
+            coins,
+            hearts,
+          });
         }
       }
 
@@ -341,7 +350,7 @@ export function MemoryMatchCanvas({ mode }: MemoryMatchCanvasProps) {
       destroyed = true;
       game?.destroy(true);
     };
-  }, [mode]);
+  }, [mode, onReward]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-lavender-300/50 bg-lavender-100 shadow-[0_24px_70px_rgba(142,112,189,0.16)]">

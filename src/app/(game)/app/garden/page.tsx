@@ -8,7 +8,7 @@ export default function GardenPage() {
     <div className="grid gap-5">
       <section className="rounded-lg border border-garden-300/50 bg-garden-100/65 p-5 shadow-sm">
         <p className="text-sm font-extrabold uppercase tracking-normal text-garden-700">My garden</p>
-        <h1 className="mt-1 font-display text-4xl text-ink-900">Moonberry Meadow</h1>
+        <h1 className="mt-1 font-display text-4xl text-ink-900">Casper&apos;s Moonberry Beds</h1>
         <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-garden-700">
           A living Phaser garden with animated plants, water effects, lanterns, butterflies, and clickable plot care.
         </p>

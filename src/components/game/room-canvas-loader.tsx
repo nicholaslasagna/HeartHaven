@@ -14,8 +14,9 @@ const RoomCanvas = dynamic(() => import("@/components/game/room-canvas").then((m
 
 type RoomCanvasLoaderProps = {
   placements: RoomPlacement[];
+  onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
 
-export function RoomCanvasLoader({ placements }: RoomCanvasLoaderProps) {
-  return <RoomCanvas placements={placements} />;
+export function RoomCanvasLoader({ placements, onPlacementsChange }: RoomCanvasLoaderProps) {
+  return <RoomCanvas onPlacementsChange={onPlacementsChange} placements={placements} />;
 }

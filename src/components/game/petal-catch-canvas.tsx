@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import type { GameReward } from "@/lib/game/rewards";
 
 type FallingItem = {
   node: Phaser.GameObjects.Container;
@@ -14,7 +15,11 @@ type FallingItem = {
 const GAME_WIDTH = 900;
 const GAME_HEIGHT = 560;
 
-export function PetalCatchCanvas() {
+type PetalCatchCanvasProps = {
+  onReward?: (reward: GameReward) => void;
+};
+
+export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState("Catch petals and hearts. Avoid thorns.");
 
@@ -305,7 +310,14 @@ export function PetalCatchCanvas() {
           this.rewardLayer = layer;
 
           setStatus(`Round complete: ${coins} coins and ${hearts} hearts ready to award.`);
-          // TODO: Persist mini-game rewards to wallet_transactions and wallets through Supabase.
+          onReward?.({
+            gameId: "petal-catch",
+            label: "Petal Catch",
+            score: this.score,
+            coins,
+            hearts,
+          });
+          // TODO: Persist mini-game rewards to game_reward_events and wallets through Supabase.
         }
 
         private restartRound() {
@@ -343,7 +355,7 @@ export function PetalCatchCanvas() {
       destroyed = true;
       game?.destroy(true);
     };
-  }, []);
+  }, [onReward]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-blush-300/50 bg-cream-100 shadow-[0_24px_70px_rgba(216,126,140,0.16)]">

@@ -24,10 +24,13 @@ const phases = [
   {
     title: "Phase 2",
     icon: Database,
-    status: "schema ready",
+    status: "schema + local state ready",
     items: [
       { label: "Supabase schema", done: true },
       { label: "RLS policies", done: true },
+      { label: "Game session schema", done: true },
+      { label: "Reward event schema", done: true },
+      { label: "Local wallet rewards", done: true },
       { label: "Persistent pets", done: false },
       { label: "Inventory", done: false },
       { label: "Wallets", done: false },
@@ -44,21 +47,25 @@ const phases = [
       { label: "Companion behavior states", done: true },
       { label: "Clickable, draggable, rotatable furniture", done: true },
       { label: "Depth sorting, shadows, hover outlines", done: true },
-      { label: "Save/load placed items", done: false },
+      { label: "Local save/load placed items", done: true },
+      { label: "Supabase save/load placed items", done: false },
     ],
   },
   {
     title: "Phase 4",
     icon: Gamepad2,
-    status: "first game live",
+    status: "game arcade live",
     items: [
       { label: "Petal Catch playable mini-game", done: true },
       { label: "Score, timer, combo, difficulty curve", done: true },
-      { label: "Rewards preview screen", done: true },
+      { label: "Wallet reward payouts", done: true },
       { label: "Memory Match", done: true },
+      { label: "Moonberry Bowling", done: true },
+      { label: "Lantern Relay", done: true },
+      { label: "Heart Hunt", done: true },
       { label: "Couple-vs-couple mode", done: true },
       { label: "Party pass-and-play mode", done: true },
-      { label: "Persistent rewards system", done: false },
+      { label: "Server-validated rewards", done: false },
     ],
   },
   {
@@ -77,10 +84,12 @@ const phases = [
   {
     title: "Phase 6",
     icon: RadioTower,
-    status: "planned",
+    status: "party shell ready",
     items: [
       { label: "Local party seats", done: true },
       { label: "Host lobby shell", done: true },
+      { label: "Game session tables", done: true },
+      { label: "Party mini-game routes", done: true },
       { label: "Presence", done: false },
       { label: "Online room invites", done: false },
       { label: "Two avatars", done: false },
@@ -94,7 +103,9 @@ const phases = [
     status: "private content gated",
     items: [
       { label: "Private couple garden entitlement", done: true },
-      { label: "Guardian garden statue", done: true },
+      { label: "Private story payload table", done: true },
+      { label: "Casper public companion content", done: true },
+      { label: "Private garden guardian unlock path", done: true },
       { label: "Message Milestone marker", done: true },
       { label: "Study Week quest", done: true },
       { label: "Shared Visit quest", done: true },
@@ -121,7 +132,8 @@ export default function RoadmapPage() {
           <h1 className="mt-4 font-display text-5xl leading-tight text-ink-900">Build HeartHaven in durable phases.</h1>
           <p className="mt-4 text-base font-semibold leading-7 text-ink-700">
             The app now has a real playable layer: a 2.5D Phaser room, a living garden, a shared memory garden,
-            and Petal Catch. Persistence and multiplayer are intentionally next so the core feel can stay magical first.
+            Petal Catch, Memory Match, Moonberry Bowling, Lantern Relay, Heart Hunt, and local wallet rewards.
+            Supabase tables are ready for protected persistence and realtime sessions.
           </p>
         </section>
         <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">

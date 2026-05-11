@@ -419,6 +419,7 @@ values
   ('chair-lavender-cushion', 'furniture', 'Lavender Reading Chair', 'A small chair for your companion to nap beside.', 210, 0, 'common', 'chair-lavender', 'floor', array['room', 'seat']),
   ('planter-moonberry', 'garden', 'Moonberry Planter', 'A starter planter that grows moonberries over time.', 150, 1, 'starter', 'planter-moonberry', 'garden_plot', array['garden', 'crop']),
   ('note-paper-cream', 'keepsake', 'Cream Letter Set', 'Stationery for private notes and memory book pages.', 60, 0, 'starter', 'letter-cream', 'inventory_only', array['notes', 'memory']),
+  ('casper-moonberry-plush', 'decor', 'Casper Moonberry Plush', 'A tiny Casper plush holding a moonberry for cozy public rooms.', 140, 1, 'common', 'casper-moonberry-plush', 'floor', array['room', 'casper', 'cozy']),
   ('private-garden-gate', 'garden', 'Private Partner Garden Gate', 'Private entrance to an account-scoped partner gift garden.', 0, 0, 'private', 'private-garden-gate', 'garden_plot', array['private', 'partner']),
   ('guardian-garden-statue', 'decor', 'Guardian Garden Statue', 'A private keepsake for a partner garden guardian milestone.', 0, 0, 'private', 'guardian-garden-statue', 'floor', array['private', 'guardian'])
 on conflict (id) do update set

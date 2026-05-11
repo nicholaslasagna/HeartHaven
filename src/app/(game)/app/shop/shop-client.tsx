@@ -7,22 +7,20 @@ import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { CurrencyPill } from "@/components/cozy/currency-pill";
 import { Badge } from "@/components/ui/badge";
+import { useGameWallet } from "@/lib/game/use-game-wallet";
 import type { CatalogItem, ItemCategory } from "@/lib/game/types";
 
 const filters: Array<ItemCategory | "all"> = ["all", "furniture", "decor", "garden", "keepsake"];
 
 type ShopClientProps = {
   items: CatalogItem[];
-  startingCoins: number;
-  startingHearts: number;
 };
 
-export function ShopClient({ items, startingCoins, startingHearts }: ShopClientProps) {
+export function ShopClient({ items }: ShopClientProps) {
   const [activeFilter, setActiveFilter] = useState<ItemCategory | "all">("all");
-  const [coins, setCoins] = useState(startingCoins);
-  const [hearts, setHearts] = useState(startingHearts);
   const [owned, setOwned] = useState<string[]>([]);
   const [notice, setNotice] = useState("Tap an item to buy it for your room or garden.");
+  const { wallet, spendCurrency } = useGameWallet();
 
   const visibleItems = useMemo(
     () => items.filter((item) => activeFilter === "all" || item.category === activeFilter),
@@ -35,13 +33,16 @@ export function ShopClient({ items, startingCoins, startingHearts }: ShopClientP
       return;
     }
 
-    if (coins < item.priceCoins || hearts < item.priceHearts) {
+    if (wallet.coins < item.priceCoins || wallet.hearts < item.priceHearts) {
       setNotice(`You need more currency for ${item.name}.`);
       return;
     }
 
-    setCoins((value) => value - item.priceCoins);
-    setHearts((value) => value - item.priceHearts);
+    if (!spendCurrency(item.priceCoins, item.priceHearts)) {
+      setNotice(`You need more currency for ${item.name}.`);
+      return;
+    }
+
     setOwned((value) => [...value, item.id]);
     setNotice(`${item.name} joined your inventory.`);
     // TODO: Persist purchases to Supabase inventory_items and wallet transaction tables.
@@ -54,12 +55,12 @@ export function ShopClient({ items, startingCoins, startingHearts }: ShopClientP
           <p className="text-sm font-extrabold uppercase tracking-normal text-honey-700">Shop and inventory</p>
           <h1 className="mt-1 font-display text-4xl text-ink-900">Starter Market</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            Buy starter decor, garden pieces, and keepsakes with instant mock wallet feedback.
+            Buy starter decor, garden pieces, and keepsakes with the same wallet you earn from mini-games.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <CurrencyPill type="coins" value={coins} />
-          <CurrencyPill type="hearts" value={hearts} />
+          <CurrencyPill type="coins" value={wallet.coins} />
+          <CurrencyPill type="hearts" value={wallet.hearts} />
           <Badge variant="outline"><ShoppingBag className="size-3.5" /> {items.length} items</Badge>
         </div>
       </section>

@@ -8,13 +8,13 @@ export const playerWallet = {
 };
 
 export const activePet = {
-  id: "pet-clover",
-  name: "Clover",
+  id: "pet-casper",
+  name: "Casper",
   species: "Cloud Fox",
   tone: "cream",
   happiness: 92,
   hunger: 28,
-  trait: "Gentle starter companion",
+  trait: "Guardian of the moonberry beds",
 };
 
 export const inventoryItems = starterCatalog.map((item, index) => ({
@@ -34,7 +34,7 @@ export const gardenPlots = [
 export const partnerGardenPlots = [
   { id: "shared-rose", name: "Distance Rose", stage: "Blooming", progress: 88, accent: "#F4B5BE", status: "Shared" },
   { id: "shared-lily", name: "Promise Lily", stage: "Growing", progress: 72, accent: "#FAE3A8", status: "Shared" },
-  { id: "shared-tree", name: "Guardian Tree", stage: "Guardian", progress: 100, accent: "#C0A8DC", status: "Protected" },
+  { id: "shared-tree", name: "Casper Tree", stage: "Guardian", progress: 100, accent: "#C0A8DC", status: "Protected" },
 ];
 
 export const loveNotes = [
@@ -99,6 +99,14 @@ export const miniGames = [
     status: "Playable",
     href: "/app/petal-catch",
   },
+  {
+    id: "moonberry-bowling",
+    title: "Moonberry Bowling",
+    reward: "Coins + hearts",
+    description: "Roll a moonberry ball down Casper's cozy lane and knock heart pins for wallet rewards.",
+    status: "Playable",
+    href: "/app/bowling",
+  },
 ];
 
 export const partyGames = [
@@ -117,17 +125,24 @@ export const partyGames = [
     description: "Catch petals and hearts in a timed arcade round. The next version can share a basket between players.",
   },
   {
+    id: "moonberry-bowling-party",
+    title: "Moonberry Bowling",
+    mode: "solo now, party lane next",
+    href: "/app/bowling",
+    description: "A cozy bowling lane with frame scoring, pin collisions, and Casper cheering each round.",
+  },
+  {
     id: "lantern-relay",
     title: "Lantern Relay",
-    mode: "planned party game",
-    href: "/app/games",
+    mode: "playable party game",
+    href: "/app/lantern-relay",
     description: "Teams light lanterns along the garden path while dodging sleepy fireflies and collecting honey sparks.",
   },
   {
     id: "heart-hunt",
     title: "Heart Hunt",
-    mode: "planned room party",
-    href: "/app/games",
+    mode: "playable room party",
+    href: "/app/heart-hunt",
     description: "Guests search rooms for hidden keepsakes, emote clues, and unlock a shared memory-book reward.",
   },
 ];
