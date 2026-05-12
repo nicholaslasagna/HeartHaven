@@ -3,16 +3,27 @@
 export type CozyCue =
   | "ui"
   | "move"
+  | "avatarStep"
   | "pet"
+  | "petChirp"
+  | "petPurr"
+  | "petSleep"
   | "place"
   | "rotate"
   | "water"
   | "catch"
+  | "combo"
   | "thorn"
   | "score"
   | "reward"
   | "bowling"
+  | "roll"
+  | "pin"
+  | "strike"
+  | "spare"
+  | "gutter"
   | "match"
+  | "cardFlip"
   | "miss"
   | "lantern"
   | "heart"
@@ -113,9 +124,23 @@ export function playCozyCue(cue: CozyCue) {
       playTone(state, 392, now, 0.08, "sine", 0.11);
       playTone(state, 523.25, now + 0.06, 0.11, "triangle", 0.08);
       break;
+    case "avatarStep":
+      playTone(state, 196, now, 0.045, "triangle", 0.055);
+      playTone(state, 246.94, now + 0.035, 0.055, "sine", 0.042);
+      break;
     case "pet":
+    case "petChirp":
       playTone(state, 659.25, now, 0.1, "triangle", 0.1);
       playTone(state, 880, now + 0.08, 0.16, "sine", 0.08);
+      break;
+    case "petPurr":
+      playTone(state, 146.83, now, 0.2, "sine", 0.055);
+      playTone(state, 174.61, now + 0.08, 0.2, "triangle", 0.045);
+      playNoise(state, now, 0.18, 0.025, 180);
+      break;
+    case "petSleep":
+      playTone(state, 329.63, now, 0.14, "sine", 0.045);
+      playTone(state, 246.94, now + 0.12, 0.22, "sine", 0.035);
       break;
     case "place":
       playTone(state, 349.23, now, 0.06, "triangle", 0.08);
@@ -133,6 +158,11 @@ export function playCozyCue(cue: CozyCue) {
       playTone(state, 587.33, now, 0.08, "triangle", 0.09);
       playTone(state, 783.99, now + 0.05, 0.12, "triangle", 0.08);
       break;
+    case "combo":
+      playTone(state, 659.25, now, 0.06, "triangle", 0.08);
+      playTone(state, 880, now + 0.045, 0.07, "triangle", 0.07);
+      playTone(state, 1174.66, now + 0.09, 0.12, "sine", 0.065);
+      break;
     case "thorn":
       playTone(state, 174.61, now, 0.18, "sawtooth", 0.08);
       playNoise(state, now, 0.12, 0.06, 220);
@@ -143,13 +173,38 @@ export function playCozyCue(cue: CozyCue) {
       playTone(state, 659.25, now + 0.07, 0.08, "triangle", 0.08);
       playTone(state, 783.99, now + 0.14, 0.12, "sine", 0.08);
       break;
+    case "cardFlip":
+      playTone(state, 440, now, 0.035, "square", 0.035);
+      playTone(state, 659.25, now + 0.035, 0.065, "triangle", 0.05);
+      break;
     case "miss":
       playTone(state, 329.63, now, 0.08, "triangle", 0.07);
       playTone(state, 246.94, now + 0.06, 0.13, "sine", 0.06);
       break;
     case "bowling":
+    case "pin":
       playNoise(state, now, 0.18, 0.1, 180);
       playTone(state, 196, now, 0.12, "triangle", 0.08);
+      break;
+    case "roll":
+      playNoise(state, now, 0.28, 0.055, 120);
+      playTone(state, 98, now, 0.18, "sine", 0.045);
+      break;
+    case "strike":
+      playNoise(state, now, 0.24, 0.13, 260);
+      playTone(state, 261.63, now, 0.09, "triangle", 0.08);
+      playTone(state, 392, now + 0.08, 0.1, "triangle", 0.08);
+      playTone(state, 523.25, now + 0.16, 0.14, "sine", 0.075);
+      break;
+    case "spare":
+      playTone(state, 329.63, now, 0.08, "triangle", 0.08);
+      playTone(state, 493.88, now + 0.08, 0.1, "triangle", 0.075);
+      playTone(state, 659.25, now + 0.16, 0.14, "sine", 0.065);
+      break;
+    case "gutter":
+      playTone(state, 220, now, 0.11, "sawtooth", 0.055);
+      playTone(state, 164.81, now + 0.1, 0.18, "sine", 0.045);
+      playNoise(state, now + 0.02, 0.16, 0.035, 120);
       break;
     case "lantern":
       playTone(state, 493.88, now, 0.1, "sine", 0.08);

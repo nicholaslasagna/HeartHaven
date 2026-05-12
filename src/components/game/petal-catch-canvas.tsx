@@ -260,7 +260,7 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
           const comboBonus = Math.floor(this.combo / 5) * 5;
           this.score += item.value + comboBonus;
           this.screenPulse(item.kind === "heart" ? 0xd87e8c : 0xfaebc2);
-          playCozyCue(item.kind === "heart" ? "heart" : "catch");
+          playCozyCue(this.combo > 0 && this.combo % 5 === 0 ? "combo" : item.kind === "heart" ? "heart" : "catch");
           setStatus(`${item.kind === "heart" ? "Heart" : "Petal"} caught. Combo x${this.combo}.`);
         }
 

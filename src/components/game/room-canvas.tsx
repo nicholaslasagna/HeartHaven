@@ -100,6 +100,7 @@ export function RoomCanvas({
         private remotePlayersHandler?: (event: Event) => void;
         private remoteEmoteHandler?: (event: Event) => void;
         private moveBroadcastTimer = 0;
+        private footstepTimer = 0;
         private lastSentPosition = { x: 390, y: 374 };
 
         constructor() {
@@ -540,12 +541,18 @@ export function RoomCanvas({
           this.avatarShadow.setDepth(this.avatar.y - 1);
 
           this.moveBroadcastTimer += delta;
+          this.footstepTimer += delta;
           const hasMoved = PhaserModule.Math.Distance.Between(
             this.avatar.x,
             this.avatar.y,
             this.lastSentPosition.x,
             this.lastSentPosition.y,
           ) > 3;
+
+          if (hasMoved && this.footstepTimer > 260) {
+            this.footstepTimer = 0;
+            playCozyCue("avatarStep");
+          }
 
           if (hasMoved && this.moveBroadcastTimer > 110) {
             this.moveBroadcastTimer = 0;
@@ -615,15 +622,15 @@ export function RoomCanvas({
 
           if (furniture.placement.kind === "bed") {
             this.petMood = "sleep";
-            playCozyCue("pet");
+            playCozyCue("petSleep");
             setStatus("Casper curls up near the canopy bed.");
           } else if (furniture.placement.kind === "chair") {
             this.petMood = "sit";
-            playCozyCue("pet");
+            playCozyCue("petPurr");
             setStatus("Casper sits beside the lavender chair.");
           } else if (["lantern", "table", "plant"].includes(furniture.placement.kind)) {
             this.petMood = "react";
-            playCozyCue("heart");
+            playCozyCue("petChirp");
             this.playInteractionSparkles(furniture.container.x, furniture.container.y);
           }
 

@@ -6,6 +6,7 @@ import { Cookie, HandHeart, Heart, Sparkles } from "lucide-react";
 import { PetIllustration } from "@/components/brand/illustrations";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { playCozyCue } from "@/lib/game/cozy-audio";
 
 type PetType = "bunny" | "kitten" | "fox" | "bear" | "duck";
 type PetTone = "cream" | "blush" | "lavender" | "sky" | "honey" | "mint";
@@ -46,17 +47,20 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
   function play() {
     setCurrentHappiness((value) => Math.min(100, value + 6));
     setMood("Playful");
+    playCozyCue("petChirp");
   }
 
   function feed() {
     setCurrentHunger((value) => Math.max(0, value - 8));
     setCurrentHappiness((value) => Math.min(100, value + 2));
     setMood("Snack-happy");
+    playCozyCue("petPurr");
   }
 
   function pet() {
     setCurrentHappiness((value) => Math.min(100, value + 4));
     setMood("Loved");
+    playCozyCue("heart");
   }
 
   return (
@@ -106,6 +110,7 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
               onClick={() => {
                 setPetType(look.type);
                 setMood("Styled");
+                playCozyCue("petChirp");
               }}
               type="button"
             >
@@ -122,6 +127,7 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
               onClick={() => {
                 setPetTone(tone.tone);
                 setMood("Glowing");
+                playCozyCue("ui");
               }}
               style={{ backgroundColor: tone.swatch }}
               type="button"
@@ -138,6 +144,7 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
               onClick={() => {
                 setAccessory(item);
                 setMood("Loved");
+                playCozyCue("heart");
               }}
               type="button"
             >

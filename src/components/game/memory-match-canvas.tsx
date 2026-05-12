@@ -238,6 +238,7 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           if (this.busy || card.matched || card.revealed || this.revealed.length >= 2) return;
 
           this.revealCard(card, true);
+          playCozyCue("cardFlip");
           this.revealed.push(card);
 
           if (this.revealed.length === 2) {
