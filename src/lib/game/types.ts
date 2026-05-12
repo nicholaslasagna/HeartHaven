@@ -4,6 +4,7 @@ export type ItemCategory =
   | "decor"
   | "furniture"
   | "garden"
+  | "room"
   | "keepsake";
 
 export type PlacementType = "floor" | "wall" | "garden_plot" | "inventory_only";
@@ -55,4 +56,16 @@ export type RealtimeRoomPlayer = {
   petName: string;
   emote?: RoomEmote;
   updatedAt: number;
+};
+
+export type RoomBlueprint = {
+  id: string;
+  name: string;
+  description: string;
+  priceCoins: number;
+  priceHearts: number;
+  theme: "loft" | "kitchen" | "library" | "patio" | "lodge" | "observatory";
+  capacity: number;
+  tags: string[];
+  href: string;
 };

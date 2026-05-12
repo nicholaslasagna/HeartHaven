@@ -72,7 +72,8 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
         } = await supabase.auth.getUser();
         const localId = user?.id ?? createGuestId();
         const displayName = createDisplayName(user?.email);
-        const color = colors[Math.abs(hashCode(localId)) % colors.length];
+        const savedColor = window.localStorage.getItem("hearthaven:keeper-palette");
+        const color = savedColor ?? colors[Math.abs(hashCode(localId)) % colors.length];
         const localPlayer: RealtimeRoomPlayer = {
           id: localId,
           displayName,

@@ -51,6 +51,9 @@ http://localhost:3000/auth/callback
 
 Enable email/password and magic link email providers. For 2FA, enable TOTP factors in Supabase Auth MFA settings.
 
+For production email delivery, follow [SUPABASE_AUTH_EMAIL.md](./SUPABASE_AUTH_EMAIL.md) and configure custom SMTP plus
+the templates in `supabase/auth-templates/`.
+
 ## Cloudflare Notes
 
 - `wrangler.jsonc` points to `.open-next/worker.js`.

@@ -1,9 +1,13 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, LockKeyhole, UsersRound } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { Badge } from "@/components/ui/badge";
+import { roomBlueprints } from "@/lib/catalog";
 
 export function RoomPreview() {
+  const [starterRoom, ...unlockableRooms] = roomBlueprints;
+
   return (
     <CozyCard className="overflow-hidden">
       <div className="relative h-48 bg-cream-100">
@@ -14,15 +18,35 @@ export function RoomPreview() {
         <div className="absolute bottom-10 left-20 h-16 w-20 rounded-md border-2 border-lavender-500/40 bg-lavender-200" />
       </div>
       <div className="p-5">
-        <h2 className="font-display text-3xl text-ink-900">Moonlit Loft</h2>
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Badge variant="garden">
+            <UsersRound className="size-3.5" /> {starterRoom.capacity} players
+          </Badge>
+          <Badge variant="outline">2.5D decoratable</Badge>
+        </div>
+        <h2 className="font-display text-3xl text-ink-900">{starterRoom.name}</h2>
         <p className="mt-2 text-sm font-semibold leading-6 text-ink-700">
-          A small starter room with furniture placeholders, a pet companion, and a Phaser movement loop.
+          {starterRoom.description}
         </p>
         <CozyButton asChild className="mt-4">
-          <Link href="/app/room">
+          <Link href={starterRoom.href}>
             Open room <ArrowRight />
           </Link>
         </CozyButton>
+        <div className="mt-5 grid gap-2">
+          {unlockableRooms.slice(0, 3).map((room) => (
+            <Link
+              className="flex items-center justify-between rounded-lg border border-cream-300 bg-cream-50/80 px-3 py-2 text-sm font-black text-ink-800 transition hover:border-blush-300 hover:bg-blush-100/40"
+              href={room.href}
+              key={room.id}
+            >
+              <span className="inline-flex items-center gap-2">
+                <LockKeyhole className="size-4 text-honey-700" /> {room.name}
+              </span>
+              <span className="text-xs text-ink-500">{room.priceCoins}c / {room.priceHearts}h</span>
+            </Link>
+          ))}
+        </div>
       </div>
     </CozyCard>
   );

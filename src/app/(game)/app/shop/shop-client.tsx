@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { useGameWallet } from "@/lib/game/use-game-wallet";
 import type { CatalogItem, ItemCategory } from "@/lib/game/types";
 
-const filters: Array<ItemCategory | "all"> = ["all", "furniture", "decor", "garden", "keepsake"];
+const filters: Array<ItemCategory | "all"> = ["all", "room", "furniture", "decor", "flooring", "wall", "garden", "keepsake"];
 
 type ShopClientProps = {
   items: CatalogItem[];

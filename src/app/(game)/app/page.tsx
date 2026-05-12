@@ -3,6 +3,7 @@ import { ArrowRight, BookHeart, Inbox, Leaf, Sparkles } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
+import { KeeperCustomizerCard } from "@/components/cozy/keeper-customizer-card";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
 import { PetCard } from "@/components/cozy/pet-card";
 import { RoomPreview } from "@/components/cozy/room-preview";
@@ -59,6 +60,7 @@ export default function DashboardPage() {
         <RoomPreview />
         <div className="grid gap-5">
           <FriendInviteCard {...friendInvite} />
+          <KeeperCustomizerCard />
           <CozyCard className="p-5">
             <div className="flex items-center gap-2">
               <Leaf className="size-5 text-garden-500" />

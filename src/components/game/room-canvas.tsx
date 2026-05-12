@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import { playCozyCue } from "@/lib/game/cozy-audio";
-import type { RealtimeRoomPlayer, RoomEmote, RoomPlacement } from "@/lib/game/types";
+import type { RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 
 type RoomCanvasProps = {
   remotePlayers?: RealtimeRoomPlayer[];
+  roomName?: string;
+  roomTheme?: RoomBlueprint["theme"];
   placements: RoomPlacement[];
   onAvatarMove?: (position: { x: number; y: number }) => void;
   onRoomEmote?: (emote: RoomEmote) => void;
@@ -46,7 +48,15 @@ const roomEmotes: { emote: RoomEmote; label: string }[] = [
   { emote: "cozy", label: "Cozy" },
 ];
 
-export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoomEmote, onPlacementsChange }: RoomCanvasProps) {
+export function RoomCanvas({
+  remotePlayers = [],
+  roomName = "Moonlit Loft",
+  roomTheme = "loft",
+  placements,
+  onAvatarMove,
+  onRoomEmote,
+  onPlacementsChange,
+}: RoomCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotePlayersRef = useRef(remotePlayers);
   const [status, setStatus] = useState("Lighting the Moonlit Loft");
@@ -77,7 +87,7 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
         private petMoodTimer = 0;
         private blinkTimer = 0;
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-        private wasd?: Record<"up" | "left" | "down" | "right" | "rotate", Phaser.Input.Keyboard.Key>;
+        private wasd?: Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown", Phaser.Input.Keyboard.Key>;
         private target?: Phaser.Math.Vector2;
         private floorPolygon!: Phaser.Geom.Polygon;
         private furniture: FurnitureObject[] = [];
@@ -119,7 +129,7 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
           this.sortDepths();
 
           this.add
-            .text(34, 30, "Moonlit Loft", {
+            .text(34, 30, roomName, {
               color: "#3A2A2A",
               fontFamily: "Nunito, sans-serif",
               fontSize: "22px",
@@ -128,7 +138,7 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
             .setDepth(5000);
 
           this.add
-            .text(34, 58, "Click the floor or use WASD. Drag furniture. Press R to rotate.", {
+            .text(34, 58, "Click or WASD to move. Drag furniture. R rotates. Q/E adjusts 2.5D depth.", {
               color: "#84675F",
               fontFamily: "Nunito, sans-serif",
               fontSize: "13px",
@@ -150,7 +160,7 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
 
         private drawRoomShell() {
           this.add.image(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, "cozy-room-bg").setDisplaySize(ROOM_WIDTH, ROOM_HEIGHT).setDepth(-20);
-          this.add.rectangle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, ROOM_WIDTH, ROOM_HEIGHT, 0xfffcf3, 0.08).setDepth(-19);
+          this.add.rectangle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, ROOM_WIDTH, ROOM_HEIGHT, getThemeTint(roomTheme), 0.1).setDepth(-19);
 
           this.floorPolygon = new PhaserModule.Geom.Polygon([
             154, 238,
@@ -317,7 +327,9 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
             down: PhaserModule.Input.Keyboard.KeyCodes.S,
             right: PhaserModule.Input.Keyboard.KeyCodes.D,
             rotate: PhaserModule.Input.Keyboard.KeyCodes.R,
-          }) as Record<"up" | "left" | "down" | "right" | "rotate", Phaser.Input.Keyboard.Key> | undefined;
+            layerUp: PhaserModule.Input.Keyboard.KeyCodes.E,
+            layerDown: PhaserModule.Input.Keyboard.KeyCodes.Q,
+          }) as Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown", Phaser.Input.Keyboard.Key> | undefined;
 
           this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             if (pointer.y < 198 || this.dragStarted) return;
@@ -517,6 +529,12 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
           if (this.wasd?.rotate && PhaserModule.Input.Keyboard.JustDown(this.wasd.rotate)) {
             this.rotateSelectedFurniture();
           }
+          if (this.wasd?.layerUp && PhaserModule.Input.Keyboard.JustDown(this.wasd.layerUp)) {
+            this.changeSelectedLayer(1);
+          }
+          if (this.wasd?.layerDown && PhaserModule.Input.Keyboard.JustDown(this.wasd.layerDown)) {
+            this.changeSelectedLayer(-1);
+          }
 
           this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
           this.avatarShadow.setDepth(this.avatar.y - 1);
@@ -593,7 +611,7 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
           this.selectedFurniture = furniture;
           furniture.glow.setVisible(true);
           setSelected(furniture.placement.label);
-          setStatus(`${furniture.placement.label}: drag to place, press R or use Rotate.`);
+          setStatus(`${furniture.placement.label}: drag to place, press R to rotate, Q/E to adjust depth.`);
 
           if (furniture.placement.kind === "bed") {
             this.petMood = "sleep";
@@ -618,9 +636,9 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
           const bubble = this.add.container(furniture.container.x, furniture.container.y - furniture.placement.height * 0.72).setDepth(6000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.95);
-          bg.fillRoundedRect(-92, -34, 184, 68, 18);
+          bg.fillRoundedRect(-124, -34, 248, 68, 18);
           bg.lineStyle(2, 0xf6cfd2, 0.9);
-          bg.strokeRoundedRect(-92, -34, 184, 68, 18);
+          bg.strokeRoundedRect(-124, -34, 248, 68, 18);
 
           const label = this.add
             .text(0, -18, furniture.placement.label, {
@@ -647,7 +665,39 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
             this.rotateSelectedFurniture();
           });
 
-          bubble.add([bg, label, rotateButton]);
+          const downButton = this.add
+            .text(-72, 12, "Depth -", {
+              color: "#5B3F3F",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "12px",
+              fontStyle: "900",
+              backgroundColor: "#F5E9D0",
+              padding: { x: 10, y: 5 },
+            })
+            .setOrigin(0.5)
+            .setInteractive({ useHandCursor: true });
+          downButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            pointer.event.stopPropagation();
+            this.changeSelectedLayer(-1);
+          });
+
+          const upButton = this.add
+            .text(74, 12, "Depth +", {
+              color: "#5B3F3F",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "12px",
+              fontStyle: "900",
+              backgroundColor: "#E4EFD7",
+              padding: { x: 10, y: 5 },
+            })
+            .setOrigin(0.5)
+            .setInteractive({ useHandCursor: true });
+          upButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            pointer.event.stopPropagation();
+            this.changeSelectedLayer(1);
+          });
+
+          bubble.add([bg, label, downButton, rotateButton, upButton]);
           this.interactionBubble = bubble;
         }
 
@@ -667,6 +717,20 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
           playCozyCue("rotate");
           this.playInteractionSparkles(this.selectedFurniture.container.x, this.selectedFurniture.container.y);
           setStatus(`${placement.label} rotated to ${placement.rotation} degrees.`);
+          onPlacementsChange?.(this.exportPlacements());
+        }
+
+        private changeSelectedLayer(delta: number) {
+          if (!this.selectedFurniture) return;
+          const placement = this.selectedFurniture.placement;
+          placement.zIndex = PhaserModule.Math.Clamp(placement.zIndex + delta, -6, 12);
+          playCozyCue("place");
+          this.playInteractionSparkles(
+            this.selectedFurniture.container.x,
+            this.selectedFurniture.container.y,
+            delta > 0 ? 0xe4efd7 : 0xf5e9d0,
+          );
+          setStatus(`${placement.label} depth layer is now ${placement.zIndex}.`);
           onPlacementsChange?.(this.exportPlacements());
         }
 
@@ -704,7 +768,9 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
           this.avatar.setDepth(this.avatar.y);
           this.pet.setDepth(this.pet.y + (this.petMood === "sleep" ? -8 : 0));
           this.furniture.forEach((item) => {
-            const baseDepth = item.placement.floorLocked ? item.container.y : 130 + item.placement.zIndex;
+            const baseDepth = item.placement.floorLocked
+              ? item.container.y + item.placement.zIndex * 10
+              : 130 + item.placement.zIndex * 10;
             item.container.setDepth(baseDepth);
           });
           this.remoteAvatars.forEach((remote) => {
@@ -752,7 +818,7 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
       destroyed = true;
       game?.destroy(true);
     };
-  }, [onAvatarMove, onPlacementsChange, onRoomEmote, placements]);
+  }, [onAvatarMove, onPlacementsChange, onRoomEmote, placements, roomName, roomTheme]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">
@@ -766,6 +832,7 @@ export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoo
           <span className="rounded-md bg-blush-100 px-2.5 py-1">Click to move</span>
           <span className="rounded-md bg-lavender-100 px-2.5 py-1">Drag furniture</span>
           <span className="rounded-md bg-honey-100 px-2.5 py-1">R rotates</span>
+          <span className="rounded-md bg-garden-100 px-2.5 py-1">Q/E depth</span>
         </div>
       </div>
       <div
@@ -910,4 +977,17 @@ function getFurnitureSpriteOffsetY(kind: FurnitureKind) {
   };
 
   return offsets[kind] ?? 0;
+}
+
+function getThemeTint(theme: RoomBlueprint["theme"]) {
+  const tints: Record<RoomBlueprint["theme"], number> = {
+    loft: 0xfffcf3,
+    kitchen: 0xfaebc2,
+    library: 0xc0a8dc,
+    patio: 0xe4efd7,
+    lodge: 0xf6cfd2,
+    observatory: 0xc7e0eb,
+  };
+
+  return tints[theme];
 }
