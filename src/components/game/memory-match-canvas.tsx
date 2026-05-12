@@ -16,8 +16,10 @@ type MatchCard = {
   pair: string;
   container: Phaser.GameObjects.Container;
   front: Phaser.GameObjects.Rectangle;
+  frontGlow: Phaser.GameObjects.Rectangle;
   back: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
+  art: Phaser.GameObjects.Image;
   matched: boolean;
   revealed: boolean;
 };
@@ -67,8 +69,22 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           super("MemoryMatch");
         }
 
+        preload() {
+          this.load.image("cozy-room-bg", "/game-assets/generated/cozy-room-bg.png");
+          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
+            frameWidth: 384,
+            frameHeight: 512,
+          });
+          this.load.spritesheet("cozy-furniture-sprites", "/game-assets/generated/cozy-furniture-sprites.png", {
+            frameWidth: 384,
+            frameHeight: 512,
+          });
+        }
+
         create() {
           this.drawBackdrop();
+          this.createMascot();
           this.createHud();
           this.createCards();
           setStatus(`${this.players[this.turnIndex]}'s turn. Find a pair.`);
@@ -78,8 +94,11 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
 
         private drawBackdrop() {
           this.cameras.main.setBackgroundColor("#fbf3e2");
+          this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "cozy-room-bg").setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-20);
+          this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfffcf3, 0.16).setDepth(-19);
+
           const bg = this.add.graphics();
-          bg.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 1);
+          bg.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 0.12);
           bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
           bg.fillStyle(0xffffff, 0.34);
           bg.fillRoundedRect(48, 106, GAME_WIDTH - 96, 448, 26);
@@ -106,6 +125,20 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
               ease: "Sine.inOut",
             });
           }
+        }
+
+        private createMascot() {
+          const mascot = this.add.container(802, 484).setDepth(484);
+          mascot.add(this.add.ellipse(0, 42, 88, 22, 0x3a2a2a, 0.14));
+          mascot.add(this.add.image(0, -18, "casper-sprite").setDisplaySize(112, 112));
+          this.tweens.add({
+            targets: mascot,
+            y: mascot.y - 5,
+            duration: 1040,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
         }
 
         private createHud() {
@@ -139,10 +172,10 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
 
         private createCards() {
           const pairs = PhaserModule.Utils.Array.Shuffle([...pairData, ...pairData]);
-          const startX = 170;
-          const startY = 154;
-          const gapX = 146;
-          const gapY = 98;
+          const startX = 178;
+          const startY = 160;
+          const gapX = 188;
+          const gapY = 102;
 
           pairs.forEach((pair, index) => {
             const x = startX + (index % 4) * gapX;
@@ -154,24 +187,26 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
 
         private createCard(id: string, pair: string, label: string, color: number, x: number, y: number): MatchCard {
           const container = this.add.container(x, y).setDepth(y);
-          const shadow = this.add.rectangle(4, 8, 112, 72, 0x3a2a2a, 0.12);
-          const back = this.add.rectangle(0, 0, 112, 72, 0xfbe3e3).setStrokeStyle(3, 0xd87e8c, 0.55);
-          const front = this.add.rectangle(0, 0, 112, 72, color).setStrokeStyle(3, 0x8b5e3c, 0.28);
-          const frontGlow = this.add.rectangle(0, 0, 92, 52, 0xffffff, 0.22);
-          const text = this.add.text(0, 0, label, {
+          const shadow = this.add.rectangle(5, 9, 128, 88, 0x3a2a2a, 0.12);
+          const back = this.add.rectangle(0, 0, 128, 88, 0xfbe3e3).setStrokeStyle(3, 0xd87e8c, 0.55);
+          const front = this.add.rectangle(0, 0, 128, 88, color).setStrokeStyle(3, 0x8b5e3c, 0.28);
+          const frontGlow = this.add.rectangle(0, 0, 106, 66, 0xffffff, 0.22);
+          const art = this.createCardArt(pair);
+          const text = this.add.text(0, 30, label, {
             align: "center",
             color: pair === "casper" ? "#3A2A2A" : "#FFFDF6",
             fontFamily: "Nunito, sans-serif",
-            fontSize: "13px",
+            fontSize: "11px",
             fontStyle: "900",
-            wordWrap: { width: 88 },
+            wordWrap: { width: 96 },
           }).setOrigin(0.5);
           const mark = this.add.star(0, 0, 5, 8, 20, 0xffffff, 0.7);
           front.setVisible(false);
           frontGlow.setVisible(false);
+          art.setVisible(false);
           text.setVisible(false);
-          container.add([shadow, back, mark, front, frontGlow, text]);
-          container.setSize(112, 72);
+          container.add([shadow, back, mark, front, frontGlow, art, text]);
+          container.setSize(128, 88);
           container.setInteractive({ useHandCursor: true });
 
           const card: MatchCard = {
@@ -179,8 +214,10 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
             pair,
             container,
             front,
+            frontGlow,
             back,
             label: text,
+            art,
             matched: false,
             revealed: false,
           };
@@ -217,6 +254,8 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
         private revealCard(card: MatchCard, revealed: boolean) {
           card.revealed = revealed;
           card.front.setVisible(revealed);
+          card.frontGlow.setVisible(revealed);
+          card.art.setVisible(revealed);
           card.label.setVisible(revealed);
           card.back.setVisible(!revealed);
           this.tweens.add({
@@ -227,6 +266,24 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
             yoyo: true,
             ease: "Sine.out",
           });
+        }
+
+        private createCardArt(pair: string) {
+          if (pair === "casper") {
+            return this.add.image(0, -12, "casper-sprite").setDisplaySize(56, 56);
+          }
+
+          const mapping: Record<string, { texture: string; frame: number; width: number; height: number; y: number }> = {
+            heart: { texture: "minigame-props", frame: 3, width: 68, height: 86, y: -12 },
+            petal: { texture: "minigame-props", frame: 4, width: 68, height: 86, y: -12 },
+            lantern: { texture: "minigame-props", frame: 6, width: 74, height: 92, y: -14 },
+            tree: { texture: "cozy-furniture-sprites", frame: 7, width: 86, height: 92, y: -14 },
+            moon: { texture: "cozy-furniture-sprites", frame: 4, width: 82, height: 92, y: -14 },
+            note: { texture: "cozy-furniture-sprites", frame: 6, width: 80, height: 86, y: -14 },
+            garden: { texture: "minigame-props", frame: 7, width: 78, height: 90, y: -14 },
+          };
+          const art = mapping[pair] ?? mapping.heart;
+          return this.add.image(0, art.y, art.texture, art.frame).setDisplaySize(art.width, art.height);
         }
 
         private resolveMatch(first: MatchCard, second: MatchCard) {

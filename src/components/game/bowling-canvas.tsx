@@ -51,8 +51,18 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           super("MoonberryBowling");
         }
 
+        preload() {
+          this.load.image("moonberry-bowling-bg", "/game-assets/generated/moonberry-bowling-bg.png");
+          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
+            frameWidth: 384,
+            frameHeight: 512,
+          });
+        }
+
         create() {
           this.drawBackdrop();
+          this.createMascot();
           this.createHud();
           this.createPins();
           this.createBall();
@@ -108,8 +118,11 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
 
         private drawBackdrop() {
           this.cameras.main.setBackgroundColor("#fbf3e2");
+          this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "moonberry-bowling-bg").setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-20);
+          this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfffcf3, 0.06).setDepth(-19);
+
           const bg = this.add.graphics();
-          bg.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 1);
+          bg.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 0.08);
           bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
           bg.fillStyle(0xffffff, 0.38);
@@ -118,7 +131,7 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           bg.strokeRoundedRect(70, 78, 780, 468, 28);
 
           const lane = this.add.graphics();
-          lane.fillGradientStyle(0xf5e9d0, 0xfdf8ee, 0xead9b5, 0xf8d9bf, 1);
+          lane.fillGradientStyle(0xf5e9d0, 0xfdf8ee, 0xead9b5, 0xf8d9bf, 0.1);
           lane.fillPoints(
             [
               new PhaserModule.Geom.Point(318, 112),
@@ -167,6 +180,20 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           }
         }
 
+        private createMascot() {
+          const mascot = this.add.container(108, 472).setDepth(472);
+          mascot.add(this.add.ellipse(0, 42, 88, 22, 0x3a2a2a, 0.16));
+          mascot.add(this.add.image(0, -18, "casper-sprite").setDisplaySize(112, 112));
+          this.tweens.add({
+            targets: mascot,
+            y: mascot.y - 5,
+            duration: 980,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
+        }
+
         private createHud() {
           const style = {
             color: "#3A2A2A",
@@ -190,10 +217,7 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
         private createBall() {
           this.ballShadow = this.add.ellipse(460, 526, 84, 24, 0x3a2a2a, 0.16).setDepth(500);
           this.ball = this.add.container(460, 496).setDepth(496);
-          this.ball.add(this.add.circle(0, 0, 34, 0xc0a8dc).setStrokeStyle(4, 0x8e70bd, 0.55));
-          this.ball.add(this.add.circle(-10, -10, 6, 0xfffcf3, 0.5));
-          this.ball.add(this.add.circle(8, 7, 4, 0x8e70bd, 0.7));
-          this.ball.add(this.add.circle(18, -5, 4, 0x8e70bd, 0.7));
+          this.ball.add(this.add.image(0, 0, "minigame-props", 0).setDisplaySize(112, 150));
           this.ball.setSize(76, 76);
           this.ball.setInteractive({ useHandCursor: true });
         }
@@ -218,15 +242,7 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           positions.forEach(([x, y], index) => {
             const pin = this.add.container(x, y).setDepth(y);
             pin.add(this.add.ellipse(0, 31, 34, 10, 0x3a2a2a, 0.14));
-            pin.add(this.add.rectangle(0, 4, 22, 54, 0xfffcf3).setStrokeStyle(3, 0xc9a998, 0.55));
-            pin.add(this.add.rectangle(0, -4, 24, 10, 0xf6cfd2, 0.92));
-            pin.add(this.add.circle(0, -24, 13, 0xfffcf3).setStrokeStyle(3, 0xc9a998, 0.55));
-            pin.add(this.add.text(0, 4, "♥", {
-              color: "#D87E8C",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "14px",
-              fontStyle: "900",
-            }).setOrigin(0.5));
+            pin.add(this.add.image(0, -10, "minigame-props", 1).setDisplaySize(86, 136));
             this.pins.push({ node: pin, standing: true });
             if (index === 0) {
               this.tweens.add({

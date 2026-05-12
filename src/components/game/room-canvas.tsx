@@ -69,6 +69,16 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
           super("HeartHavenRoom");
         }
 
+        preload() {
+          this.load.image("cozy-room-bg", "/game-assets/generated/cozy-room-bg.png");
+          this.load.image("keeper-sprite", "/game-assets/generated/keeper-sprite.png");
+          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.spritesheet("cozy-furniture-sprites", "/game-assets/generated/cozy-furniture-sprites.png", {
+            frameWidth: 384,
+            frameHeight: 512,
+          });
+        }
+
         create() {
           this.cameras.main.setBackgroundColor("#fbf3e2");
           this.drawRoomShell();
@@ -110,78 +120,22 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
         }
 
         private drawRoomShell() {
-          const backWall = this.add.graphics().setDepth(0);
-          backWall.fillGradientStyle(0xfffcf3, 0xfffcf3, 0xefe6f7, 0xfbe3e3, 1);
-          backWall.fillRoundedRect(112, 88, 736, 252, 18);
-          backWall.lineStyle(3, 0xc9a998, 0.26);
-          backWall.strokeRoundedRect(112, 88, 736, 252, 18);
-
-          const leftWall = this.add.graphics().setDepth(1);
-          leftWall.fillStyle(0xf7ead3, 0.92);
-          leftWall.fillPoints(
-            [
-              new PhaserModule.Geom.Point(112, 122),
-              new PhaserModule.Geom.Point(214, 214),
-              new PhaserModule.Geom.Point(214, 426),
-              new PhaserModule.Geom.Point(112, 340),
-            ],
-            true,
-          );
-          leftWall.lineStyle(2, 0xc9a998, 0.22);
-          leftWall.strokePath();
-
-          const rightWall = this.add.graphics().setDepth(1);
-          rightWall.fillStyle(0xf3e2cb, 0.92);
-          rightWall.fillPoints(
-            [
-              new PhaserModule.Geom.Point(848, 122),
-              new PhaserModule.Geom.Point(746, 214),
-              new PhaserModule.Geom.Point(746, 426),
-              new PhaserModule.Geom.Point(848, 340),
-            ],
-            true,
-          );
-          rightWall.lineStyle(2, 0xc9a998, 0.22);
-          rightWall.strokePath();
+          this.add.image(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, "cozy-room-bg").setDisplaySize(ROOM_WIDTH, ROOM_HEIGHT).setDepth(-20);
+          this.add.rectangle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, ROOM_WIDTH, ROOM_HEIGHT, 0xfffcf3, 0.08).setDepth(-19);
 
           this.floorPolygon = new PhaserModule.Geom.Polygon([
-            214, 214,
-            746, 214,
-            862, 424,
-            480, 536,
-            98, 424,
+            154, 238,
+            810, 238,
+            840, 490,
+            480, 552,
+            112, 490,
           ]);
 
-          const floorShadow = this.add.graphics().setDepth(2);
-          floorShadow.fillStyle(0x8b5e3c, 0.13);
-          floorShadow.fillPoints(
-            this.floorPolygon.points.map((point) => new PhaserModule.Geom.Point(point.x + 0, point.y + 14)),
-            true,
-          );
-
-          const floor = this.add.graphics().setDepth(3);
-          floor.fillGradientStyle(0xfdf8ee, 0xf7e8cf, 0xe4efd7, 0xf5d9d9, 1);
-          floor.fillPoints(this.floorPolygon.points, true);
-          floor.lineStyle(4, 0xb49e94, 0.35);
-          floor.strokePoints(this.floorPolygon.points, true);
-
-          const floorLines = this.add.graphics().setDepth(4);
-          floorLines.lineStyle(1, 0xffffff, 0.22);
-          for (let row = 0; row < 6; row += 1) {
-            const y = 248 + row * 40;
-            floorLines.lineBetween(174 + row * 12, y, 786 - row * 12, y);
-          }
-          for (let col = 0; col < 7; col += 1) {
-            const x = 230 + col * 84;
-            floorLines.lineBetween(x, 222, x - 140, 450);
-            floorLines.lineBetween(x, 222, x + 140, 450);
-          }
-
-          const glow = this.add.graphics().setDepth(5);
-          glow.fillStyle(0xf8d4d8, 0.13);
-          glow.fillEllipse(480, 346, 580, 210);
-          glow.fillStyle(0xfaebc2, 0.16);
-          glow.fillEllipse(592, 228, 260, 130);
+          const playableArea = this.add.graphics().setDepth(-5);
+          playableArea.fillStyle(0xfffcf3, 0.06);
+          playableArea.fillPoints(this.floorPolygon.points, true);
+          playableArea.lineStyle(3, 0xffffff, 0.24);
+          playableArea.strokePoints(this.floorPolygon.points, true);
         }
 
         private drawAmbientMagic() {
@@ -295,14 +249,8 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
         private createAvatar() {
           this.avatarShadow = this.add.ellipse(390, 396, 58, 22, 0x3a2a2a, 0.18).setDepth(350);
           this.avatar = this.add.container(390, 374).setDepth(374);
-
-          const body = this.add.ellipse(0, 10, 44, 58, 0xd87e8c).setStrokeStyle(3, 0x8b5e3c, 0.45);
-          const face = this.add.circle(0, -18, 24, 0xffdfcf).setStrokeStyle(3, 0x8b5e3c, 0.35);
-          const hair = this.add.ellipse(0, -28, 42, 20, 0x5b3f3f, 0.78);
-          const eyeLeft = this.add.circle(-8, -18, 3, 0x3a2a2a);
-          const eyeRight = this.add.circle(8, -18, 3, 0x3a2a2a);
-          const scarf = this.add.rectangle(0, 6, 42, 9, 0xfaebc2).setStrokeStyle(1, 0xd9a53e, 0.35);
-          this.avatar.add([body, face, hair, eyeLeft, eyeRight, scarf]);
+          this.avatar.add(this.add.image(0, -46, "keeper-sprite").setDisplaySize(78, 106));
+          this.avatar.setSize(70, 104);
 
           this.tweens.add({
             targets: this.avatar,
@@ -317,17 +265,9 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
         private createPet() {
           this.petShadow = this.add.ellipse(456, 410, 52, 18, 0x3a2a2a, 0.15).setDepth(360);
           this.pet = this.add.container(456, 388).setDepth(388);
-
-          const tail = this.add.ellipse(24, 8, 34, 16, 0xfdf8ee).setStrokeStyle(2, 0xc9a998, 0.55);
-          const body = this.add.ellipse(0, 8, 52, 34, 0xfffcf3).setStrokeStyle(3, 0xc9a998, 0.55);
-          const head = this.add.circle(-18, -9, 21, 0xfffcf3).setStrokeStyle(3, 0xc9a998, 0.55);
-          const earLeft = this.add.triangle(-30, -27, 0, 16, 9, 0, 18, 16, 0xfffcf3).setStrokeStyle(2, 0xc9a998, 0.55);
-          const earRight = this.add.triangle(-11, -29, 0, 15, 9, 0, 18, 15, 0xfffcf3).setStrokeStyle(2, 0xc9a998, 0.55);
-          const blush = this.add.circle(-30, -4, 5, 0xf6cfd2, 0.75);
-          const eyeLeft = this.add.ellipse(-26, -12, 4, 6, 0x3a2a2a);
-          const eyeRight = this.add.ellipse(-12, -12, 4, 6, 0x3a2a2a);
-          this.petEyes = [eyeLeft, eyeRight];
-          this.pet.add([tail, body, head, earLeft, earRight, blush, eyeLeft, eyeRight]);
+          this.petEyes = [];
+          this.pet.add(this.add.image(0, -35, "casper-sprite").setDisplaySize(90, 90));
+          this.pet.setSize(82, 82);
 
           this.tweens.add({
             targets: this.pet,
@@ -679,84 +619,66 @@ function labelFromCatalogId(id: string) {
 
 function drawFurnitureShape(scene: Phaser.Scene, container: Phaser.GameObjects.Container, placement: PlayablePlacement) {
   const add = scene.add;
+  const spriteFrame = getFurnitureSpriteFrame(placement.kind);
 
-  if (placement.kind === "rug") {
-    container.add(add.ellipse(0, 8, 206, 72, 0xf6cfd2).setStrokeStyle(4, 0xd87e8c, 0.45));
-    container.add(add.ellipse(0, 8, 156, 44, 0xfffcf3, 0.38).setStrokeStyle(2, 0xffffff, 0.34));
-    return;
-  }
-
-  if (placement.kind === "window") {
-    container.add(add.rectangle(0, 0, 118, 96, 0xc7e0eb).setStrokeStyle(5, 0x8b5e3c, 0.72));
-    container.add(add.rectangle(0, 0, 96, 74, 0xe1eff5, 0.72).setStrokeStyle(2, 0xffffff, 0.8));
-    container.add(add.line(0, 0, -48, 0, 48, 0, 0x8b5e3c, 0.5));
-    container.add(add.line(0, 0, 0, -36, 0, 36, 0x8b5e3c, 0.5));
-    container.add(add.arc(0, -48, 55, Math.PI, 0, false, 0xfbe3e3, 0.48).setStrokeStyle(3, 0xd87e8c, 0.35));
-    return;
-  }
-
-  if (placement.kind === "lantern") {
-    container.add(add.circle(0, -8, 42, 0xfaebc2, 0.18));
-    container.add(add.rectangle(0, 0, 38, 64, 0xfaebc2).setStrokeStyle(3, 0x8b5e3c, 0.72));
-    container.add(add.circle(0, 8, 14, 0xd9a53e, 0.8));
-    container.add(add.arc(0, -34, 16, Math.PI, 0, false, 0xffffff, 0).setStrokeStyle(3, 0x8b5e3c, 0.72));
-    return;
-  }
-
-  if (placement.kind === "chair") {
-    container.add(add.rectangle(0, -18, 72, 68, 0xddceec).setStrokeStyle(3, 0x8e70bd, 0.48));
-    container.add(add.rectangle(0, 18, 92, 30, 0xc0a8dc).setStrokeStyle(3, 0x8e70bd, 0.42));
-    container.add(add.circle(-34, 5, 13, 0xf6cfd2, 0.7));
-    container.add(add.circle(34, 5, 13, 0xf6cfd2, 0.7));
-    return;
-  }
-
-  if (placement.kind === "bed") {
-    container.add(add.rectangle(0, 0, 146, 82, 0xfffcf3).setStrokeStyle(4, 0xc9a998, 0.58));
-    container.add(add.rectangle(-20, -20, 92, 36, 0xfbe3e3).setStrokeStyle(2, 0xd87e8c, 0.34));
-    container.add(add.rectangle(42, -22, 42, 32, 0xefe6f7).setStrokeStyle(2, 0x8e70bd, 0.26));
-    container.add(add.line(-76, -52, -76, 48, 0x8b5e3c, 0.55).setLineWidth(4));
-    container.add(add.line(76, -52, 76, 48, 0x8b5e3c, 0.55).setLineWidth(4));
-    container.add(add.arc(0, -52, 76, Math.PI, 0, false, 0xfbe3e3, 0.3).setStrokeStyle(3, 0xd87e8c, 0.28));
-    return;
-  }
-
-  if (placement.kind === "table") {
-    container.add(add.ellipse(0, -12, 86, 48, 0xfaebc2).setStrokeStyle(4, 0x9c6f1f, 0.42));
-    container.add(add.rectangle(0, 22, 18, 52, 0x8b5e3c, 0.78));
-    container.add(add.ellipse(0, 48, 58, 16, 0x8b5e3c, 0.38));
-    container.add(add.circle(-20, -18, 8, 0xf6cfd2, 0.8));
-    container.add(add.circle(18, -16, 7, 0xe4efd7, 0.9));
-    return;
-  }
-
-  if (placement.kind === "shelf") {
-    container.add(add.rectangle(0, 0, 118, 62, 0xead9b5).setStrokeStyle(4, 0x8b5e3c, 0.55));
-    container.add(add.line(0, 0, -54, 0, 54, 0, 0x8b5e3c, 0.45));
-    container.add(add.circle(-34, -18, 9, 0xf6cfd2, 0.82));
-    container.add(add.rectangle(0, -16, 20, 18, 0xefe6f7).setStrokeStyle(2, 0x8e70bd, 0.3));
-    container.add(add.circle(34, 18, 8, 0xfaebc2, 0.9));
-    return;
-  }
-
-  if (placement.kind === "plant") {
-    container.add(add.rectangle(0, 34, 42, 36, 0xf6cfd2).setStrokeStyle(3, 0xd87e8c, 0.45));
-    for (let index = 0; index < 7; index += 1) {
-      const angle = -80 + index * 26;
-      const leaf = add.ellipse(0, -8, 22, 54, 0x6e9651, 0.88);
-      leaf.setRotation((angle * Math.PI) / 180);
-      container.add(leaf);
-      scene.tweens.add({
-        targets: leaf,
-        rotation: leaf.rotation + 0.1,
-        duration: 1400 + index * 120,
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.inOut",
-      });
+  if (spriteFrame !== undefined) {
+    if (placement.kind === "lantern") {
+      container.add(add.circle(0, 0, 48, 0xfaebc2, 0.16));
     }
+
+    const size = getFurnitureSpriteDisplaySize(placement.kind);
+    container.add(
+      add
+        .image(0, getFurnitureSpriteOffsetY(placement.kind), "cozy-furniture-sprites", spriteFrame)
+        .setDisplaySize(size.width, size.height),
+    );
     return;
   }
 
   container.add(add.rectangle(0, 0, placement.width, placement.height, 0xfffcf3).setStrokeStyle(3, 0xc9a998, 0.5));
+}
+
+function getFurnitureSpriteFrame(kind: FurnitureKind) {
+  const frames: Partial<Record<FurnitureKind, number>> = {
+    rug: 0,
+    chair: 1,
+    bed: 2,
+    table: 3,
+    window: 4,
+    lantern: 5,
+    shelf: 6,
+    plant: 7,
+  };
+
+  return frames[kind];
+}
+
+function getFurnitureSpriteDisplaySize(kind: FurnitureKind) {
+  const sizes: Partial<Record<FurnitureKind, { width: number; height: number }>> = {
+    rug: { width: 300, height: 200 },
+    chair: { width: 170, height: 230 },
+    bed: { width: 240, height: 240 },
+    table: { width: 214, height: 206 },
+    window: { width: 210, height: 236 },
+    lantern: { width: 124, height: 220 },
+    shelf: { width: 232, height: 226 },
+    plant: { width: 196, height: 220 },
+  };
+
+  return sizes[kind] ?? { width: 140, height: 140 };
+}
+
+function getFurnitureSpriteOffsetY(kind: FurnitureKind) {
+  const offsets: Partial<Record<FurnitureKind, number>> = {
+    rug: -4,
+    chair: -34,
+    bed: -48,
+    table: -34,
+    window: -16,
+    lantern: -34,
+    shelf: -34,
+    plant: -36,
+  };
+
+  return offsets[kind] ?? 0;
 }

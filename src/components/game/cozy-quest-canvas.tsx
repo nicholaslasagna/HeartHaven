@@ -60,8 +60,19 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           super("CozyQuest");
         }
 
+        preload() {
+          this.load.image("cozy-room-bg", "/game-assets/generated/cozy-room-bg.png");
+          this.load.image("moonberry-garden-bg", "/game-assets/generated/moonberry-garden-bg.png");
+          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
+            frameWidth: 384,
+            frameHeight: 512,
+          });
+        }
+
         create() {
           this.drawBackdrop();
+          this.createCasperMascot();
           this.createHud();
           if (variant === "lantern-relay") {
             this.createLanternRelay();
@@ -83,8 +94,12 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
 
         private drawBackdrop() {
           this.cameras.main.setBackgroundColor("#fbf3e2");
+          const bgKey = variant === "lantern-relay" ? "moonberry-garden-bg" : "cozy-room-bg";
+          this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, bgKey).setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-20);
+          this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfffcf3, 0.16).setDepth(-19);
+
           const bg = this.add.graphics();
-          bg.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 1);
+          bg.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 0.1);
           bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
           bg.fillStyle(0xffffff, 0.35);
           bg.fillRoundedRect(52, 86, GAME_WIDTH - 104, 422, 26);
@@ -94,8 +109,22 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           const ground = this.add.graphics();
           ground.fillStyle(0x3a2a2a, 0.08);
           ground.fillEllipse(450, 424, 680, 188);
-          ground.fillGradientStyle(0xe4efd7, 0xf5e9d0, 0xfbe3e3, 0xefe6f7, 1);
+          ground.fillGradientStyle(0xe4efd7, 0xf5e9d0, 0xfbe3e3, 0xefe6f7, 0.18);
           ground.fillEllipse(450, 404, 640, 178);
+        }
+
+        private createCasperMascot() {
+          const casper = this.add.container(790, 438).setDepth(438);
+          casper.add(this.add.ellipse(0, 42, 86, 22, 0x3a2a2a, 0.15));
+          casper.add(this.add.image(0, -18, "casper-sprite").setDisplaySize(106, 106));
+          this.tweens.add({
+            targets: casper,
+            y: casper.y - 5,
+            duration: 980,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
         }
 
         private createHud() {
@@ -129,7 +158,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           path.forEach(([x, y], index) => {
             const lantern = this.add.container(x, y).setDepth(y);
             const glow = this.add.circle(0, 0, 36, 0xfaebc2, index === 0 ? 0.34 : 0.08);
-            const body = this.add.rectangle(0, 0, 32, 48, 0xfffcf3).setStrokeStyle(3, 0x9c6f1f, 0.55);
+            const body = this.add.image(0, -18, "minigame-props", 6).setDisplaySize(96, 132);
             const flame = this.add.circle(0, 4, 8, index === 0 ? 0xd9a53e : 0xc9a998, 0.85);
             lantern.add([glow, body, flame]);
             lantern.setSize(72, 82);
@@ -195,9 +224,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
 
           positions.forEach(([x, y], index) => {
             const target = this.add.container(x, y).setDepth(y);
-            target.add(this.add.circle(-7, -3, 9, 0xd87e8c, 0.18));
-            target.add(this.add.circle(7, -3, 9, 0xd87e8c, 0.18));
-            target.add(this.add.triangle(0, 11, -18, -1, 18, -1, 0, 25, 0xd87e8c, 0.18));
+            target.add(this.add.image(0, 0, "minigame-props", 3).setDisplaySize(74, 104).setAlpha(0.2));
             target.add(this.add.circle(0, 0, 28, 0xffffff, 0.01));
             target.setSize(64, 64);
             target.setInteractive({ useHandCursor: true });
@@ -213,7 +240,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           this.currentIndex += 1;
           this.score += 65 + Math.ceil(this.timeLeft * 1.5);
           target.node.each((child: Phaser.GameObjects.GameObject) => {
-            const node = child as Phaser.GameObjects.Shape;
+            const node = child as Phaser.GameObjects.GameObject & { setAlpha?: (alpha: number) => void };
             node.setAlpha?.(0.92);
           });
           this.spawnBurst(target.node.x, target.node.y);

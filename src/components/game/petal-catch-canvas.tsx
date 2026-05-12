@@ -52,8 +52,18 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
           super("PetalCatch");
         }
 
+        preload() {
+          this.load.image("moonberry-garden-bg", "/game-assets/generated/moonberry-garden-bg.png");
+          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
+            frameWidth: 384,
+            frameHeight: 512,
+          });
+        }
+
         create() {
           this.drawBackdrop();
+          this.createCasperMascot();
           this.createBasket();
           this.createHud();
           this.cursors = this.input.keyboard?.createCursorKeys();
@@ -83,9 +93,11 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
 
         private drawBackdrop() {
           this.cameras.main.setBackgroundColor("#fbf3e2");
+          this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "moonberry-garden-bg").setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-20);
+          this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfffcf3, 0.14).setDepth(-19);
 
           const sky = this.add.graphics();
-          sky.fillGradientStyle(0xfbe3e3, 0xefe6f7, 0xfdf8ee, 0xe4efd7, 1);
+          sky.fillGradientStyle(0xfbe3e3, 0xefe6f7, 0xfdf8ee, 0xe4efd7, 0.12);
           sky.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
           const sun = this.add.circle(748, 92, 62, 0xfaebc2, 0.55);
@@ -129,13 +141,24 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
           }
         }
 
+        private createCasperMascot() {
+          const casper = this.add.container(104, 448).setDepth(448);
+          casper.add(this.add.ellipse(0, 42, 86, 22, 0x3a2a2a, 0.15));
+          casper.add(this.add.image(0, -18, "casper-sprite").setDisplaySize(110, 110));
+          this.tweens.add({
+            targets: casper,
+            y: casper.y - 5,
+            duration: 980,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
+        }
+
         private createBasket() {
           this.basketGlow = this.add.ellipse(450, 518, 132, 30, 0x3a2a2a, 0.16);
           this.basket = this.add.container(450, 484);
-          this.basket.add(this.add.ellipse(0, 20, 126, 38, 0x9c6f1f, 0.32));
-          this.basket.add(this.add.rectangle(0, 5, 118, 52, 0xfaebc2).setStrokeStyle(4, 0x9c6f1f, 0.58));
-          this.basket.add(this.add.arc(0, -18, 54, Math.PI, 0, false, 0xffffff, 0).setStrokeStyle(5, 0x9c6f1f, 0.58));
-          this.basket.add(this.add.rectangle(0, -12, 102, 12, 0xf6cfd2, 0.92).setStrokeStyle(2, 0xd87e8c, 0.45));
+          this.basket.add(this.add.image(0, -16, "minigame-props", 2).setDisplaySize(172, 150));
         }
 
         private createHud() {
@@ -179,18 +202,9 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
           const kind: FallingItem["kind"] = roll > 0.9 ? "thorn" : roll > 0.7 ? "heart" : "petal";
           const x = PhaserModule.Math.Between(60, GAME_WIDTH - 60);
           const node = this.add.container(x, -30).setDepth(100);
-
-          if (kind === "heart") {
-            node.add(this.add.circle(-8, -2, 10, 0xd87e8c));
-            node.add(this.add.circle(8, -2, 10, 0xd87e8c));
-            node.add(this.add.triangle(0, 16, -20, 0, 20, 0, 0, 28, 0xd87e8c));
-          } else if (kind === "thorn") {
-            node.add(this.add.triangle(0, 0, -15, 24, 15, 24, 0, -18, 0x84675f).setStrokeStyle(2, 0x3a2a2a, 0.35));
-            node.add(this.add.line(0, 0, -10, 14, 10, 14, 0xfdf8ee, 0.6));
-          } else {
-            node.add(this.add.ellipse(0, 0, 22, 42, 0xf6cfd2).setStrokeStyle(2, 0xd87e8c, 0.35));
-            node.add(this.add.ellipse(5, 2, 10, 30, 0xfffcf3, 0.28));
-          }
+          const frame = kind === "heart" ? 3 : kind === "thorn" ? 5 : 4;
+          const size = kind === "thorn" ? { width: 88, height: 104 } : kind === "heart" ? { width: 86, height: 118 } : { width: 92, height: 116 };
+          node.add(this.add.image(0, 0, "minigame-props", frame).setDisplaySize(size.width, size.height));
 
           this.falling.push({
             node,

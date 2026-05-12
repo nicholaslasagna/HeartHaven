@@ -42,6 +42,19 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
           super("HeartHavenGarden");
         }
 
+        preload() {
+          this.load.image("moonberry-garden-bg", "/game-assets/generated/moonberry-garden-bg.png");
+          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
+            frameWidth: 384,
+            frameHeight: 512,
+          });
+          this.load.spritesheet("cozy-furniture-sprites", "/game-assets/generated/cozy-furniture-sprites.png", {
+            frameWidth: 384,
+            frameHeight: 512,
+          });
+        }
+
         create() {
           this.cameras.main.setBackgroundColor("#fbf3e2");
           this.drawBackdrop();
@@ -75,8 +88,11 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
         }
 
         private drawBackdrop() {
+          this.add.image(GARDEN_WIDTH / 2, GARDEN_HEIGHT / 2, "moonberry-garden-bg").setDisplaySize(GARDEN_WIDTH, GARDEN_HEIGHT).setDepth(-20);
+          this.add.rectangle(GARDEN_WIDTH / 2, GARDEN_HEIGHT / 2, GARDEN_WIDTH, GARDEN_HEIGHT, 0xfffcf3, 0.08).setDepth(-19);
+
           const sky = this.add.graphics();
-          sky.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 1);
+          sky.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 0.18);
           sky.fillRect(0, 0, GARDEN_WIDTH, GARDEN_HEIGHT);
 
           const distant = this.add.graphics();
@@ -92,7 +108,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
           const ground = this.add.graphics();
           ground.fillStyle(0x3a2a2a, 0.12);
           ground.fillEllipse(482, 422, 760, 286);
-          ground.fillGradientStyle(0xfdf8ee, 0xe4efd7, 0xd8e9c8, 0xfbe3e3, 1);
+          ground.fillGradientStyle(0xfdf8ee, 0xe4efd7, 0xd8e9c8, 0xfbe3e3, 0.22);
           ground.fillPoints(
             [
               new PhaserModule.Geom.Point(190, 226),
@@ -146,9 +162,9 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
           positions.forEach(([x, y], index) => {
             const lantern = this.add.container(x, y).setDepth(y);
             lantern.add(this.add.ellipse(0, 14, 44, 14, 0x3a2a2a, 0.12));
-            lantern.add(this.add.rectangle(0, -2, 26, 42, 0xfaebc2).setStrokeStyle(2, 0x9c6f1f, 0.5));
             const glow = this.add.circle(0, 2, 24, 0xfaebc2, 0.18);
             lantern.addAt(glow, 0);
+            lantern.add(this.add.image(0, -18, "minigame-props", 6).setDisplaySize(74, 112));
             this.tweens.add({
               targets: glow,
               alpha: 0.34,
@@ -210,11 +226,26 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
           container.add(this.add.ellipse(0, 12, 96, 38, 0x8b5e3c, 0.22));
 
           const growth = Math.max(0.18, plot.progress / 100);
+          const plantArt = this.add
+            .image(0, -26, "cozy-furniture-sprites", 7)
+            .setDisplaySize(106 + growth * 76, 128 + growth * 92)
+            .setAlpha(0.95);
+          container.add(plantArt);
+          this.tweens.add({
+            targets: plantArt,
+            rotation: 0.035,
+            duration: 1600,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
           for (let index = 0; index < 5; index += 1) {
             const stem = this.add.rectangle(-36 + index * 18, -2, 6, 50 * growth, 0x6e9651);
             stem.setOrigin(0.5, 1);
+            stem.setAlpha(0.22);
             container.add(stem);
             const bloom = this.add.circle(-36 + index * 18, -4 - 46 * growth, 8 + growth * 7, color, 0.86);
+            bloom.setAlpha(0.38);
             container.add(bloom);
             this.tweens.add({
               targets: [stem, bloom],
@@ -309,11 +340,8 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
         private createGuardianStatue() {
           const statue = this.add.container(480, 444).setDepth(444);
           statue.add(this.add.ellipse(0, 44, 118, 30, 0x3a2a2a, 0.14));
-          statue.add(this.add.rectangle(0, 36, 94, 32, 0xead9b5).setStrokeStyle(3, 0xc9a998, 0.5));
-          statue.add(this.add.ellipse(0, -4, 76, 54, 0xfffcf3).setStrokeStyle(4, 0xc9a998, 0.58));
-          statue.add(this.add.circle(-26, -28, 20, 0xfffcf3).setStrokeStyle(3, 0xc9a998, 0.58));
-          statue.add(this.add.triangle(-38, -52, -12, -26, -34, -18, -52, -18, 0xfffcf3).setStrokeStyle(2, 0xc9a998, 0.5));
-          statue.add(this.add.circle(-32, -30, 3, 0x3a2a2a));
+          statue.add(this.add.image(0, -20, "casper-sprite").setDisplaySize(104, 104));
+          statue.add(this.add.rectangle(0, 50, 104, 26, 0xead9b5, 0.86).setStrokeStyle(3, 0xc9a998, 0.5));
           const zone = this.add.zone(480, 424, 130, 106).setInteractive({ useHandCursor: true });
           zone.on("pointerdown", () => {
             setStatus("Casper is protecting the shared gate.");
@@ -324,7 +352,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
         private createQuestMarker(x: number, y: number, title: string, message: string) {
           const marker = this.add.container(x, y).setDepth(y);
           marker.add(this.add.circle(0, 0, 34, 0xfffcf3, 0.9).setStrokeStyle(3, 0xf6cfd2, 0.8));
-          marker.add(this.add.star(0, 0, 5, 8, 18, 0xd87e8c, 0.82));
+          marker.add(this.add.image(0, -4, "minigame-props", 3).setDisplaySize(72, 90));
           marker.add(
             this.add.text(0, -48, title, {
               align: "center",
