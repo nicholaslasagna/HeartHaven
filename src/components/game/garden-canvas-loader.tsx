@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { RealtimeRoomPlayer } from "@/lib/game/types";
 
 type GardenPlotState = {
   id: string;
@@ -21,10 +22,12 @@ const GardenCanvas = dynamic(() => import("@/components/game/garden-canvas").the
 });
 
 type GardenCanvasLoaderProps = {
+  remotePlayers?: RealtimeRoomPlayer[];
   variant: "personal" | "partner";
   plots: GardenPlotState[];
+  onAvatarMove?: (position: { x: number; y: number }) => void;
 };
 
-export function GardenCanvasLoader({ variant, plots }: GardenCanvasLoaderProps) {
-  return <GardenCanvas variant={variant} plots={plots} />;
+export function GardenCanvasLoader({ onAvatarMove, remotePlayers, variant, plots }: GardenCanvasLoaderProps) {
+  return <GardenCanvas onAvatarMove={onAvatarMove} plots={plots} remotePlayers={remotePlayers} variant={variant} />;
 }

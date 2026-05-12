@@ -6,8 +6,10 @@ import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
+import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
+import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import type { friendInvite, partnerGardenPlots } from "@/lib/mock-data";
 
 type PartnerGardenClientProps = {
@@ -18,6 +20,11 @@ type PartnerGardenClientProps = {
 export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps) {
   const [sunshine, setSunshine] = useState(3);
   const [message, setMessage] = useState("Casper is watching the shared gate.");
+  const realtime = useGardenRealtime({
+    gardenId: "shared-heart-garden",
+    gardenName: "Shared Heart Garden",
+    invitePath: "/app/partner-garden",
+  });
 
   function sendSunshine() {
     setSunshine((value) => value + 1);
@@ -47,7 +54,23 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
           <Sun /> Send sunshine ({sunshine})
         </CozyButton>
       </CozyCard>
-      <GardenCanvasLoader plots={plots} variant="partner" />
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <GardenCanvasLoader
+          onAvatarMove={realtime.sendMove}
+          plots={plots}
+          remotePlayers={realtime.players}
+          variant="partner"
+        />
+        <GardenSocialPanel
+          connectionState={realtime.connectionState}
+          inviteUrl={realtime.inviteUrl}
+          messages={realtime.messages}
+          players={realtime.players}
+          roomCode={realtime.gardenCode}
+          sendChat={realtime.sendChat}
+          status={realtime.status}
+        />
+      </section>
       <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">
         <FriendInviteCard {...invite} />
         <CozyCard className="p-5">

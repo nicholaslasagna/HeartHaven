@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Move, Radio, RotateCcw, Save, Sparkles, UsersRound } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Button } from "@/components/ui/button";
-import { roomBlueprints, starterPlacements } from "@/lib/catalog";
-import type { RoomPlacement } from "@/lib/game/types";
+import { marketCatalog, roomBlueprints, starterPlacements } from "@/lib/catalog";
+import type { CatalogItem, RoomPlacement } from "@/lib/game/types";
+import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { useRoomRealtime } from "@/lib/game/use-room-realtime";
+import { isItemVisibleForSeason } from "@/lib/seasonal-events";
 
 const ROOM_STORAGE_PREFIX = "hearthaven:room-placements:";
 
@@ -36,7 +38,13 @@ export function RoomClient() {
   const [draftPlacements, setDraftPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [saveStatus, setSaveStatus] = useState("Loaded starter layout");
   const [inviteStatus, setInviteStatus] = useState("Invite link ready");
+  const placementCounter = useRef(0);
   const realtime = useRoomRealtime({ roomId: activeRoom.id, roomName: activeRoom.name });
+  const { activeEvent } = useSeasonalEvent();
+  const roomDrawerItems = marketCatalog
+    .filter((item) => isItemVisibleForSeason(item, activeEvent))
+    .filter((item) => item.placementType === "floor" || item.placementType === "wall")
+    .slice(0, 12);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -65,6 +73,23 @@ export function RoomClient() {
     setDraftPlacements(starterPlacements);
     setPlacements(starterPlacements);
     setSaveStatus("Starter layout restored");
+  }
+
+  function addRoomItem(item: CatalogItem) {
+    placementCounter.current += 1;
+    const nextPlacement: RoomPlacement = {
+      id: `placement-${item.id}-${draftPlacements.length}-${placementCounter.current}`,
+      catalogItemId: item.id,
+      x: item.placementType === "wall" ? 330 : 460,
+      y: item.placementType === "wall" ? 150 : 340,
+      rotation: 0,
+      scale: 1,
+      zIndex: item.placementType === "wall" ? 0 : 3,
+    };
+    const next = [...draftPlacements, nextPlacement];
+    setDraftPlacements(next);
+    setPlacements(next);
+    setSaveStatus(`${item.name} added. Drag it in the room, then save layout.`);
   }
 
   async function copyInvite() {
@@ -116,6 +141,28 @@ export function RoomClient() {
           </Button>
         </div>
         <p className="md:col-span-2 rounded-md bg-white/65 px-3 py-2 text-xs font-bold text-ink-700">{inviteStatus}</p>
+      </section>
+      <section className="rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-normal text-blush-500">Room decor drawer</p>
+            <p className="text-sm font-bold text-ink-700">Add items here, then drag and rotate them directly in the room viewport.</p>
+          </div>
+          <span className="rounded-full bg-cream-100 px-3 py-1 text-xs font-black text-ink-700">{roomDrawerItems.length} ready</span>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {roomDrawerItems.map((item) => (
+            <button
+              className="min-w-[154px] rounded-lg border border-cream-300 bg-cream-50 px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/70"
+              key={item.id}
+              onClick={() => addRoomItem(item)}
+              type="button"
+            >
+              <span className="block text-sm font-black text-ink-900">{item.name}</span>
+              <span className="mt-0.5 block text-xs font-bold text-ink-600">{item.category} | {item.placementType}</span>
+            </button>
+          ))}
+        </div>
       </section>
       <RoomCanvasLoader
         onAvatarMove={realtime.sendMove}
