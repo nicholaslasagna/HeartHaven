@@ -3,10 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import { playCozyCue } from "@/lib/game/cozy-audio";
-import type { RoomPlacement } from "@/lib/game/types";
+import type { RealtimeRoomPlayer, RoomEmote, RoomPlacement } from "@/lib/game/types";
 
 type RoomCanvasProps = {
+  remotePlayers?: RealtimeRoomPlayer[];
   placements: RoomPlacement[];
+  onAvatarMove?: (position: { x: number; y: number }) => void;
+  onRoomEmote?: (emote: RoomEmote) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
 
@@ -28,7 +31,11 @@ type FurnitureObject = {
 };
 
 type PetMood = "idle" | "follow" | "sit" | "sleep" | "react";
-type RoomEmote = "heart" | "wave" | "sparkle" | "cozy";
+type RemoteAvatarObject = {
+  container: Phaser.GameObjects.Container;
+  shadow: Phaser.GameObjects.Ellipse;
+  label: Phaser.GameObjects.Text;
+};
 
 const ROOM_WIDTH = 960;
 const ROOM_HEIGHT = 600;
@@ -39,10 +46,16 @@ const roomEmotes: { emote: RoomEmote; label: string }[] = [
   { emote: "cozy", label: "Cozy" },
 ];
 
-export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) {
+export function RoomCanvas({ remotePlayers = [], placements, onAvatarMove, onRoomEmote, onPlacementsChange }: RoomCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const remotePlayersRef = useRef(remotePlayers);
   const [status, setStatus] = useState("Lighting the Moonlit Loft");
   const [selected, setSelected] = useState("No item selected");
+
+  useEffect(() => {
+    remotePlayersRef.current = remotePlayers;
+    window.dispatchEvent(new CustomEvent("hearthaven:remote-players", { detail: { players: remotePlayers } }));
+  }, [remotePlayers]);
 
   useEffect(() => {
     let destroyed = false;
@@ -72,7 +85,12 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
         private interactionBubble?: Phaser.GameObjects.Container;
         private dragStarted = false;
         private sparkleLayer!: Phaser.GameObjects.Container;
+        private remoteAvatars = new Map<string, RemoteAvatarObject>();
         private roomEmoteHandler?: (event: Event) => void;
+        private remotePlayersHandler?: (event: Event) => void;
+        private remoteEmoteHandler?: (event: Event) => void;
+        private moveBroadcastTimer = 0;
+        private lastSentPosition = { x: 390, y: 374 };
 
         constructor() {
           super("HeartHavenRoom");
@@ -96,7 +114,8 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
           this.createAvatar();
           this.createPet();
           this.createInput();
-          this.createRoomEmoteBridge();
+          this.createRealtimeBridge();
+          this.syncRemotePlayers(remotePlayersRef.current);
           this.sortDepths();
 
           this.add
@@ -118,7 +137,7 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
             .setDepth(5000);
 
           setStatus("Click the floor to move. Hover, drag, click, and rotate furniture.");
-          // TODO: Broadcast avatar position and furniture edits through Supabase Realtime room sessions.
+          // TODO: Persist furniture edits through Supabase Realtime room sessions for collaborative decorating.
           // TODO: Save mutable placement state to Supabase placed_items after drag/rotate interactions.
         }
 
@@ -310,18 +329,85 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
           });
         }
 
-        private createRoomEmoteBridge() {
+        private createRealtimeBridge() {
           this.roomEmoteHandler = (event: Event) => {
             const emote = (event as CustomEvent<{ emote?: RoomEmote }>).detail?.emote;
             if (!emote) return;
             this.playRoomEmote(emote);
           };
+          this.remotePlayersHandler = (event: Event) => {
+            const players = (event as CustomEvent<{ players?: RealtimeRoomPlayer[] }>).detail?.players;
+            this.syncRemotePlayers(players ?? []);
+          };
+          this.remoteEmoteHandler = (event: Event) => {
+            const player = (event as CustomEvent<RealtimeRoomPlayer>).detail;
+            if (!player?.id || !player.emote) return;
+            this.playRemoteEmote(player);
+          };
           window.addEventListener("hearthaven:room-emote", this.roomEmoteHandler);
+          window.addEventListener("hearthaven:remote-players", this.remotePlayersHandler);
+          window.addEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
           const cleanup = () => {
             if (this.roomEmoteHandler) window.removeEventListener("hearthaven:room-emote", this.roomEmoteHandler);
+            if (this.remotePlayersHandler) window.removeEventListener("hearthaven:remote-players", this.remotePlayersHandler);
+            if (this.remoteEmoteHandler) window.removeEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
+        }
+
+        private syncRemotePlayers(players: RealtimeRoomPlayer[]) {
+          const activeIds = new Set(players.map((player) => player.id));
+
+          this.remoteAvatars.forEach((avatar, id) => {
+            if (!activeIds.has(id)) {
+              avatar.container.destroy(true);
+              avatar.shadow.destroy();
+              this.remoteAvatars.delete(id);
+            }
+          });
+
+          players.forEach((player) => {
+            const existing = this.remoteAvatars.get(player.id);
+            if (existing) {
+              this.tweens.add({
+                targets: existing.container,
+                x: player.x,
+                y: player.y,
+                duration: 140,
+                ease: "Sine.out",
+              });
+              this.tweens.add({
+                targets: existing.shadow,
+                x: player.x,
+                y: player.y + 22,
+                duration: 140,
+                ease: "Sine.out",
+              });
+              existing.label.setText(player.displayName);
+              return;
+            }
+
+            const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
+            const shadow = this.add.ellipse(player.x, player.y + 22, 54, 20, 0x3a2a2a, 0.14).setDepth(player.y - 1);
+            const container = this.add.container(player.x, player.y).setDepth(player.y);
+            const aura = this.add.circle(0, -94, 15, color, 0.28);
+            const sprite = this.add.image(0, -46, "keeper-sprite").setDisplaySize(72, 98).setAlpha(0.92);
+            sprite.setTint(color);
+            const label = this.add
+              .text(0, -114, player.displayName, {
+                align: "center",
+                color: "#3A2A2A",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "11px",
+                fontStyle: "900",
+                backgroundColor: "#FFFDF6DD",
+                padding: { x: 8, y: 3 },
+              })
+              .setOrigin(0.5);
+            container.add([aura, sprite, label]);
+            this.remoteAvatars.set(player.id, { container, shadow, label });
+          });
         }
 
         private playRoomEmote(emote: RoomEmote) {
@@ -338,6 +424,7 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
             cozy: 0xc0a8dc,
           };
           playCozyCue("emote");
+          onRoomEmote?.(emote);
           const bubble = this.add.container(this.avatar.x, this.avatar.y - 112).setDepth(7000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.95);
@@ -362,6 +449,47 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
             onComplete: () => bubble.destroy(true),
           });
           setStatus(`You sent a ${labels[emote]} emote. Casper noticed.`);
+        }
+
+        private playRemoteEmote(player: RealtimeRoomPlayer) {
+          const remote = this.remoteAvatars.get(player.id);
+          if (!remote || !player.emote) return;
+          const labels: Record<RoomEmote, string> = {
+            heart: "love",
+            wave: "hello",
+            sparkle: "sparkle",
+            cozy: "cozy",
+          };
+          const colors: Record<RoomEmote, number> = {
+            heart: 0xd87e8c,
+            wave: 0x5e94b0,
+            sparkle: 0xfaebc2,
+            cozy: 0xc0a8dc,
+          };
+          const bubble = this.add.container(remote.container.x, remote.container.y - 112).setDepth(7000);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.95);
+          bg.fillRoundedRect(-54, -22, 108, 44, 18);
+          bg.lineStyle(2, colors[player.emote], 0.72);
+          bg.strokeRoundedRect(-54, -22, 108, 44, 18);
+          bubble.add(bg);
+          bubble.add(this.add.text(0, 0, labels[player.emote], {
+            align: "center",
+            color: "#3A2A2A",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "13px",
+            fontStyle: "900",
+          }).setOrigin(0.5));
+          this.playInteractionSparkles(remote.container.x, remote.container.y - 28, colors[player.emote]);
+          this.tweens.add({
+            targets: bubble,
+            y: bubble.y - 32,
+            alpha: 0,
+            duration: 1200,
+            ease: "Sine.out",
+            onComplete: () => bubble.destroy(true),
+          });
+          setStatus(`${player.displayName} sent ${labels[player.emote]}.`);
         }
 
         private updateAvatar(delta: number) {
@@ -392,6 +520,20 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
 
           this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
           this.avatarShadow.setDepth(this.avatar.y - 1);
+
+          this.moveBroadcastTimer += delta;
+          const hasMoved = PhaserModule.Math.Distance.Between(
+            this.avatar.x,
+            this.avatar.y,
+            this.lastSentPosition.x,
+            this.lastSentPosition.y,
+          ) > 3;
+
+          if (hasMoved && this.moveBroadcastTimer > 110) {
+            this.moveBroadcastTimer = 0;
+            this.lastSentPosition = { x: this.avatar.x, y: this.avatar.y };
+            onAvatarMove?.(this.lastSentPosition);
+          }
         }
 
         private readKeyboard() {
@@ -565,6 +707,10 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
             const baseDepth = item.placement.floorLocked ? item.container.y : 130 + item.placement.zIndex;
             item.container.setDepth(baseDepth);
           });
+          this.remoteAvatars.forEach((remote) => {
+            remote.container.setDepth(remote.container.y);
+            remote.shadow.setDepth(remote.container.y - 1);
+          });
           this.interactionBubble?.setDepth(6000);
         }
 
@@ -606,7 +752,7 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
       destroyed = true;
       game?.destroy(true);
     };
-  }, [onPlacementsChange, placements]);
+  }, [onAvatarMove, onPlacementsChange, onRoomEmote, placements]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">

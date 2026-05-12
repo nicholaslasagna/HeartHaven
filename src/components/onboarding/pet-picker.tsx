@@ -1,4 +1,5 @@
 import { ArrowRight } from "lucide-react";
+import { adoptPetAction } from "@/app/onboarding/actions";
 import { PetIllustration } from "@/components/brand/illustrations";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +17,7 @@ export function PetPicker() {
         <CardDescription>Pick a starter friend. The adoption record becomes a persistent pet in Phase 2.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="grid gap-5" action="/app">
+        <form className="grid gap-5" action={adoptPetAction}>
           <div className="grid gap-3 sm:grid-cols-2">
             {petSpecies.map((pet, index) => (
               <label key={pet.id} className="cursor-pointer rounded-lg border border-cream-300 bg-cream-50/80 p-4 transition hover:border-blush-300 hover:bg-blush-100/40">

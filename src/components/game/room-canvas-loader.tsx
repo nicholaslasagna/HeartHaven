@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { RoomPlacement } from "@/lib/game/types";
+import type { RealtimeRoomPlayer, RoomEmote, RoomPlacement } from "@/lib/game/types";
 
 const RoomCanvas = dynamic(() => import("@/components/game/room-canvas").then((module) => module.RoomCanvas), {
   ssr: false,
@@ -13,10 +13,27 @@ const RoomCanvas = dynamic(() => import("@/components/game/room-canvas").then((m
 });
 
 type RoomCanvasLoaderProps = {
+  remotePlayers?: RealtimeRoomPlayer[];
   placements: RoomPlacement[];
+  onAvatarMove?: (position: { x: number; y: number }) => void;
+  onRoomEmote?: (emote: RoomEmote) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
 
-export function RoomCanvasLoader({ placements, onPlacementsChange }: RoomCanvasLoaderProps) {
-  return <RoomCanvas onPlacementsChange={onPlacementsChange} placements={placements} />;
+export function RoomCanvasLoader({
+  remotePlayers,
+  placements,
+  onAvatarMove,
+  onRoomEmote,
+  onPlacementsChange,
+}: RoomCanvasLoaderProps) {
+  return (
+    <RoomCanvas
+      onAvatarMove={onAvatarMove}
+      onPlacementsChange={onPlacementsChange}
+      onRoomEmote={onRoomEmote}
+      placements={placements}
+      remotePlayers={remotePlayers}
+    />
+  );
 }

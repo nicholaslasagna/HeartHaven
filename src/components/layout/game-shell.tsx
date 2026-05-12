@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, ShoppingBag, UserRound } from "lucide-react";
+import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, ShieldCheck, ShoppingBag, UserRound } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
@@ -22,6 +22,7 @@ const navItems = [
   { href: "/app/inventory", label: "Inventory", icon: Package },
   { href: "/app/mailbox", label: "Mailbox", icon: Inbox },
   { href: "/app/memory-book", label: "Memory Book", icon: BookHeart },
+  { href: "/app/account", label: "Account", icon: ShieldCheck },
 ];
 
 export function GameShell({ children }: { children: React.ReactNode }) {
@@ -33,8 +34,10 @@ export function GameShell({ children }: { children: React.ReactNode }) {
           <div className="hidden items-center gap-2 xl:flex">
             <CozyAudioDock />
             <RewardWalletPanel compact />
-            <Button variant="warm" size="sm">
-              <UserRound /> Keeper
+            <Button asChild variant="warm" size="sm">
+              <Link href="/app/account">
+                <UserRound /> Keeper
+              </Link>
             </Button>
           </div>
           <div className="xl:hidden">

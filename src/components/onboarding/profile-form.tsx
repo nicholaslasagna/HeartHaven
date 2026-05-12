@@ -1,4 +1,5 @@
 import { ArrowRight, BadgeCheck } from "lucide-react";
+import { createProfileAction } from "@/app/onboarding/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ export function ProfileForm() {
         <CardDescription>Your public name, private preferences, and friend code live here.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="grid gap-4" action="/onboarding/adopt-pet">
+        <form className="grid gap-4" action={createProfileAction}>
           <label className="grid gap-2 text-sm font-extrabold text-ink-700">
             Display name
             <Input name="displayName" placeholder="Avery" />
@@ -30,7 +31,7 @@ export function ProfileForm() {
               <BadgeCheck className="size-4" />
               Phase 2 ready
             </div>
-            This form maps to <code>profiles</code>, <code>worlds</code>, <code>rooms</code>, <code>gardens</code>, and the starter wallet seed.
+            This form now writes <code>profiles</code>, <code>worlds</code>, <code>rooms</code>, <code>gardens</code>, starter inventory, room placements, and the wallet seed when Supabase is configured.
           </div>
           <Button className="justify-self-start">
             Continue to adoption <ArrowRight />

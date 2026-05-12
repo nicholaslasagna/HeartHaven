@@ -43,3 +43,16 @@ export type Wallet = {
   coins: number;
   hearts: number;
 };
+
+export type RoomEmote = "heart" | "wave" | "sparkle" | "cozy";
+
+export type RealtimeRoomPlayer = {
+  id: string;
+  displayName: string;
+  color: string;
+  x: number;
+  y: number;
+  petName: string;
+  emote?: RoomEmote;
+  updatedAt: number;
+};

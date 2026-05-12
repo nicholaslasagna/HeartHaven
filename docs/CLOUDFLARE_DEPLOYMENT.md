@@ -31,8 +31,25 @@ Set these in Cloudflare Workers & Pages project settings before using real auth:
 
 ```text
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+NEXT_PUBLIC_SITE_URL=
 ```
+
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` is still accepted as a legacy fallback, but Supabase now recommends publishable keys for
+browser and SSR clients. `NEXT_PUBLIC_SITE_URL` should match the deployed Cloudflare URL so magic links and password
+reset emails return to `/auth/callback`.
+
+## Supabase Auth Settings
+
+In Supabase Auth URL configuration, add each deployed domain to the allowed redirect URLs:
+
+```text
+https://your-hearthaven-domain.com/auth/callback
+https://*.pages.dev/auth/callback
+http://localhost:3000/auth/callback
+```
+
+Enable email/password and magic link email providers. For 2FA, enable TOTP factors in Supabase Auth MFA settings.
 
 ## Cloudflare Notes
 
