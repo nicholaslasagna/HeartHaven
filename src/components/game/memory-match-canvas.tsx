@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import type { GameReward } from "@/lib/game/rewards";
+import { playCozyCue } from "@/lib/game/cozy-audio";
 
 export type MemoryMatchMode = "couples" | "party";
 
@@ -243,9 +244,9 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
             this.moves += 1;
             this.busy = true;
             const [first, second] = this.revealed;
-            if (first.pair === second.pair) {
-              this.time.delayedCall(280, () => this.resolveMatch(first, second));
-            } else {
+          if (first.pair === second.pair) {
+            this.time.delayedCall(280, () => this.resolveMatch(first, second));
+          } else {
               this.time.delayedCall(720, () => this.resolveMiss(first, second));
             }
           }
@@ -291,6 +292,7 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           second.matched = true;
           this.matches += 1;
           this.scores[this.turnIndex] += mode === "couples" ? 2 : 1;
+          playCozyCue("match");
           this.spawnBurst((first.container.x + second.container.x) / 2, (first.container.y + second.container.y) / 2);
           this.revealed = [];
           this.busy = false;
@@ -308,6 +310,7 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           this.revealed = [];
           this.turnIndex = (this.turnIndex + 1) % this.players.length;
           this.busy = false;
+          playCozyCue("miss");
           this.updateHud();
           setStatus(`${this.players[this.turnIndex]}'s turn.`);
         }
@@ -374,6 +377,7 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           }).setOrigin(0.5).setInteractive({ useHandCursor: true });
           restart.on("pointerdown", () => this.scene.restart());
           layer.add(restart);
+          playCozyCue("reward");
           setStatus(`Winner: ${winners}. Rewards ready to persist.`);
           onReward?.({
             gameId: `memory-match-${mode}`,

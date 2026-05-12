@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, ShoppingBag, UserRound } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
+import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ const navItems = [
   { href: "/app/partner-garden", label: "Partner", icon: HeartHandshake },
   { href: "/app/games", label: "Games", icon: Gamepad2 },
   { href: "/app/memory-match", label: "Memory Match", icon: Gamepad2 },
+  { href: "/app/garden-four", label: "Garden Four", icon: Gamepad2 },
   { href: "/app/petal-catch", label: "Petal Catch", icon: Gamepad2 },
   { href: "/app/bowling", label: "Bowling", icon: Gamepad2 },
   { href: "/app/lantern-relay", label: "Lantern Relay", icon: Gamepad2 },
@@ -29,10 +31,14 @@ export function GameShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           <Logo />
           <div className="hidden items-center gap-2 xl:flex">
+            <CozyAudioDock />
             <RewardWalletPanel compact />
             <Button variant="warm" size="sm">
               <UserRound /> Keeper
             </Button>
+          </div>
+          <div className="xl:hidden">
+            <CozyAudioDock />
           </div>
         </div>
       </header>

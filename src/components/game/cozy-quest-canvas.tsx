@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import type { GameReward } from "@/lib/game/rewards";
+import { playCozyCue } from "@/lib/game/cozy-audio";
 
 export type CozyQuestVariant = "lantern-relay" | "heart-hunt";
 
@@ -181,6 +182,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           if (this.gameOver || this.targets[index].found) return;
           if (index !== this.currentIndex) {
             this.score = Math.max(0, this.score - 10);
+            playCozyCue("miss");
             setStatus("Wrong lantern. Follow the glowing path.");
             this.pulse(0x84675f);
             return;
@@ -189,6 +191,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           this.targets[index].found = true;
           this.currentIndex += 1;
           this.score += 50 + Math.ceil(this.timeLeft);
+          playCozyCue("lantern");
           glow.setFillStyle(0xfaebc2, 0.46);
           flame.setFillStyle(0xd9a53e, 1);
           this.spawnBurst(this.targets[index].node.x, this.targets[index].node.y);
@@ -239,6 +242,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           target.found = true;
           this.currentIndex += 1;
           this.score += 65 + Math.ceil(this.timeLeft * 1.5);
+          playCozyCue("heart");
           target.node.each((child: Phaser.GameObjects.GameObject) => {
             const node = child as Phaser.GameObjects.GameObject & { setAlpha?: (alpha: number) => void };
             node.setAlpha?.(0.92);
@@ -313,6 +317,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           restart.on("pointerdown", () => this.scene.restart());
           layer.add(restart);
           this.rewardLayer = layer;
+          playCozyCue("reward");
           onReward?.({
             gameId: variant,
             label: questCopy[variant].title,

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import type { GameReward } from "@/lib/game/rewards";
+import { playCozyCue } from "@/lib/game/cozy-audio";
 
 type FallingItem = {
   node: Phaser.GameObjects.Container;
@@ -250,6 +251,7 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
             this.combo = 0;
             this.score = Math.max(0, this.score + item.value);
             this.screenPulse(0x84675f);
+            playCozyCue("thorn");
             setStatus("Thorn caught. Combo reset.");
             return;
           }
@@ -258,6 +260,7 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
           const comboBonus = Math.floor(this.combo / 5) * 5;
           this.score += item.value + comboBonus;
           this.screenPulse(item.kind === "heart" ? 0xd87e8c : 0xfaebc2);
+          playCozyCue(item.kind === "heart" ? "heart" : "catch");
           setStatus(`${item.kind === "heart" ? "Heart" : "Petal"} caught. Combo x${this.combo}.`);
         }
 
@@ -324,6 +327,7 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
           this.rewardLayer = layer;
 
           setStatus(`Round complete: ${coins} coins and ${hearts} hearts ready to award.`);
+          playCozyCue("reward");
           onReward?.({
             gameId: "petal-catch",
             label: "Petal Catch",

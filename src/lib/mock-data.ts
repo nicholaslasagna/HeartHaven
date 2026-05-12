@@ -107,6 +107,14 @@ export const miniGames = [
     status: "Playable",
     href: "/app/bowling",
   },
+  {
+    id: "garden-four",
+    title: "Garden Four",
+    reward: "Coins + hearts",
+    description: "Drop keepsakes into a shared arbor and connect four in a pass-and-play party board game.",
+    status: "Playable party",
+    href: "/app/garden-four",
+  },
 ];
 
 export const partyGames = [
@@ -116,6 +124,13 @@ export const partyGames = [
     mode: "2 couples or 6 guests",
     href: "/app/memory-match",
     description: "Pass turns around a keepsake board, score pairs, and award the winning couple or party guest.",
+  },
+  {
+    id: "garden-four-party",
+    title: "Garden Four",
+    mode: "2 teams or couples",
+    href: "/app/garden-four",
+    description: "A cozy connect-four style party table with animated keepsake drops, win detection, and wallet rewards.",
   },
   {
     id: "petal-catch-party",

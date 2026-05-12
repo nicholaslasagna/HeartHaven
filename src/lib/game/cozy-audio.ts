@@ -1,0 +1,245 @@
+"use client";
+
+export type CozyCue =
+  | "ui"
+  | "move"
+  | "pet"
+  | "place"
+  | "rotate"
+  | "water"
+  | "catch"
+  | "thorn"
+  | "score"
+  | "reward"
+  | "bowling"
+  | "match"
+  | "miss"
+  | "lantern"
+  | "heart"
+  | "emote";
+
+type CozyAudioState = {
+  context: AudioContext | null;
+  enabled: boolean;
+  effectsGain: GainNode | null;
+  masterGain: GainNode | null;
+  musicGain: GainNode | null;
+  musicStep: number;
+  musicTimer: number | null;
+};
+
+declare global {
+  interface Window {
+    __hearthavenAudio?: CozyAudioState;
+  }
+}
+
+const MUSIC_NOTES = [261.63, 329.63, 392, 493.88, 587.33, 493.88, 392, 329.63];
+
+function getState(): CozyAudioState | null {
+  if (typeof window === "undefined") return null;
+
+  window.__hearthavenAudio ??= {
+    context: null,
+    enabled: false,
+    effectsGain: null,
+    masterGain: null,
+    musicGain: null,
+    musicStep: 0,
+    musicTimer: null,
+  };
+
+  return window.__hearthavenAudio;
+}
+
+function ensureAudioGraph() {
+  const state = getState();
+  if (!state) return null;
+
+  if (!state.context) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    state.context = new AudioContextClass();
+
+    state.masterGain = state.context.createGain();
+    state.masterGain.gain.value = 0.74;
+    state.masterGain.connect(state.context.destination);
+
+    state.musicGain = state.context.createGain();
+    state.musicGain.gain.value = 0.12;
+    state.musicGain.connect(state.masterGain);
+
+    state.effectsGain = state.context.createGain();
+    state.effectsGain.gain.value = 0.34;
+    state.effectsGain.connect(state.masterGain);
+  }
+
+  return state;
+}
+
+export async function startCozyAudio() {
+  const state = ensureAudioGraph();
+  if (!state?.context) return false;
+
+  state.enabled = true;
+  await state.context.resume();
+  startMusicLoop(state);
+  playCozyCue("reward");
+  return true;
+}
+
+export function stopCozyAudio() {
+  const state = getState();
+  if (!state) return;
+
+  state.enabled = false;
+  if (state.musicTimer) {
+    window.clearInterval(state.musicTimer);
+    state.musicTimer = null;
+  }
+}
+
+export function isCozyAudioEnabled() {
+  return Boolean(getState()?.enabled);
+}
+
+export function playCozyCue(cue: CozyCue) {
+  const state = ensureAudioGraph();
+  if (!state?.enabled || !state.context || !state.effectsGain) return;
+
+  const now = state.context.currentTime;
+
+  switch (cue) {
+    case "move":
+      playTone(state, 392, now, 0.08, "sine", 0.11);
+      playTone(state, 523.25, now + 0.06, 0.11, "triangle", 0.08);
+      break;
+    case "pet":
+      playTone(state, 659.25, now, 0.1, "triangle", 0.1);
+      playTone(state, 880, now + 0.08, 0.16, "sine", 0.08);
+      break;
+    case "place":
+      playTone(state, 349.23, now, 0.06, "triangle", 0.08);
+      playTone(state, 440, now + 0.05, 0.08, "triangle", 0.07);
+      break;
+    case "rotate":
+      playTone(state, 523.25, now, 0.05, "square", 0.045);
+      playTone(state, 659.25, now + 0.04, 0.07, "triangle", 0.075);
+      break;
+    case "water":
+      playNoise(state, now, 0.2, 0.08, 900);
+      playTone(state, 783.99, now + 0.03, 0.16, "sine", 0.06);
+      break;
+    case "catch":
+      playTone(state, 587.33, now, 0.08, "triangle", 0.09);
+      playTone(state, 783.99, now + 0.05, 0.12, "triangle", 0.08);
+      break;
+    case "thorn":
+      playTone(state, 174.61, now, 0.18, "sawtooth", 0.08);
+      playNoise(state, now, 0.12, 0.06, 220);
+      break;
+    case "score":
+    case "match":
+      playTone(state, 523.25, now, 0.08, "triangle", 0.09);
+      playTone(state, 659.25, now + 0.07, 0.08, "triangle", 0.08);
+      playTone(state, 783.99, now + 0.14, 0.12, "sine", 0.08);
+      break;
+    case "miss":
+      playTone(state, 329.63, now, 0.08, "triangle", 0.07);
+      playTone(state, 246.94, now + 0.06, 0.13, "sine", 0.06);
+      break;
+    case "bowling":
+      playNoise(state, now, 0.18, 0.1, 180);
+      playTone(state, 196, now, 0.12, "triangle", 0.08);
+      break;
+    case "lantern":
+      playTone(state, 493.88, now, 0.1, "sine", 0.08);
+      playTone(state, 739.99, now + 0.08, 0.18, "triangle", 0.07);
+      break;
+    case "heart":
+    case "emote":
+      playTone(state, 659.25, now, 0.07, "triangle", 0.08);
+      playTone(state, 987.77, now + 0.07, 0.16, "sine", 0.07);
+      break;
+    case "reward":
+      playTone(state, 392, now, 0.1, "triangle", 0.08);
+      playTone(state, 523.25, now + 0.09, 0.11, "triangle", 0.08);
+      playTone(state, 659.25, now + 0.18, 0.12, "triangle", 0.08);
+      playTone(state, 1046.5, now + 0.28, 0.22, "sine", 0.07);
+      break;
+    case "ui":
+    default:
+      playTone(state, 523.25, now, 0.06, "triangle", 0.07);
+      break;
+  }
+}
+
+function startMusicLoop(state: CozyAudioState) {
+  if (!state.context || !state.musicGain || state.musicTimer) return;
+
+  const playStep = () => {
+    if (!state.enabled || !state.context || !state.musicGain) return;
+    const now = state.context.currentTime;
+    const note = MUSIC_NOTES[state.musicStep % MUSIC_NOTES.length];
+    const harmony = MUSIC_NOTES[(state.musicStep + 2) % MUSIC_NOTES.length] / 2;
+    playTone(state, note, now, 0.34, "sine", 0.09, state.musicGain);
+    playTone(state, harmony, now + 0.02, 0.48, "triangle", 0.045, state.musicGain);
+    state.musicStep += 1;
+  };
+
+  playStep();
+  state.musicTimer = window.setInterval(playStep, 720);
+}
+
+function playTone(
+  state: CozyAudioState,
+  frequency: number,
+  start: number,
+  duration: number,
+  type: OscillatorType,
+  volume: number,
+  destination = state.effectsGain,
+) {
+  if (!state.context || !destination) return;
+
+  const oscillator = state.context.createOscillator();
+  const gain = state.context.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  oscillator.connect(gain);
+  gain.connect(destination);
+  oscillator.start(start);
+  oscillator.stop(start + duration + 0.03);
+}
+
+function playNoise(state: CozyAudioState, start: number, duration: number, volume: number, cutoff: number) {
+  if (!state.context || !state.effectsGain) return;
+
+  const sampleCount = Math.floor(state.context.sampleRate * duration);
+  const buffer = state.context.createBuffer(1, sampleCount, state.context.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let index = 0; index < sampleCount; index += 1) {
+    data[index] = (Math.random() * 2 - 1) * (1 - index / sampleCount);
+  }
+
+  const source = state.context.createBufferSource();
+  const filter = state.context.createBiquadFilter();
+  const gain = state.context.createGain();
+  filter.type = "lowpass";
+  filter.frequency.value = cutoff;
+  gain.gain.setValueAtTime(volume, start);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  source.buffer = buffer;
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(state.effectsGain);
+  source.start(start);
+}
+
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}

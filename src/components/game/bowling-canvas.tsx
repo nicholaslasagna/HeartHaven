@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import type { GameReward } from "@/lib/game/rewards";
+import { playCozyCue } from "@/lib/game/cozy-audio";
 
 type BowlingCanvasProps = {
   onReward?: (reward: GameReward) => void;
@@ -278,6 +279,7 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           this.vx = dx * 1.25 * power;
           this.vy = -430 * power;
           this.rolling = true;
+          playCozyCue("move");
           setStatus("Moonberry ball rolling...");
         }
 
@@ -301,6 +303,7 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
         private knockPin(pin: BowlingPin, direction: number) {
           pin.standing = false;
           this.knockedThisFrame += 1;
+          playCozyCue("bowling");
           this.tweens.add({
             targets: pin.node,
             x: pin.node.x + direction * PhaserModule.Math.Between(28, 64),
@@ -400,6 +403,7 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           restart.on("pointerdown", () => this.restartRound());
           layer.add(restart);
           this.rewardLayer = layer;
+          playCozyCue("reward");
           onReward?.({
             gameId: "moonberry-bowling",
             label: "Moonberry Bowling",

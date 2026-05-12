@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import { playCozyCue } from "@/lib/game/cozy-audio";
 import type { RoomPlacement } from "@/lib/game/types";
 
 type RoomCanvasProps = {
@@ -27,9 +28,16 @@ type FurnitureObject = {
 };
 
 type PetMood = "idle" | "follow" | "sit" | "sleep" | "react";
+type RoomEmote = "heart" | "wave" | "sparkle" | "cozy";
 
 const ROOM_WIDTH = 960;
 const ROOM_HEIGHT = 600;
+const roomEmotes: { emote: RoomEmote; label: string }[] = [
+  { emote: "heart", label: "Heart" },
+  { emote: "wave", label: "Wave" },
+  { emote: "sparkle", label: "Sparkle" },
+  { emote: "cozy", label: "Cozy" },
+];
 
 export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -64,6 +72,7 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
         private interactionBubble?: Phaser.GameObjects.Container;
         private dragStarted = false;
         private sparkleLayer!: Phaser.GameObjects.Container;
+        private roomEmoteHandler?: (event: Event) => void;
 
         constructor() {
           super("HeartHavenRoom");
@@ -87,6 +96,7 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
           this.createAvatar();
           this.createPet();
           this.createInput();
+          this.createRoomEmoteBridge();
           this.sortDepths();
 
           this.add
@@ -215,6 +225,7 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
           container.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             pointer.event.stopPropagation();
             this.dragStarted = false;
+            playCozyCue("place");
             this.selectFurniture(furniture);
           });
 
@@ -294,8 +305,63 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
             const target = this.constrainToFloor(pointer.x, pointer.y);
             this.target = new PhaserModule.Math.Vector2(target.x, target.y);
             this.petMood = "follow";
+            playCozyCue("move");
             setStatus(`Walking to x ${Math.round(target.x)}, y ${Math.round(target.y)}.`);
           });
+        }
+
+        private createRoomEmoteBridge() {
+          this.roomEmoteHandler = (event: Event) => {
+            const emote = (event as CustomEvent<{ emote?: RoomEmote }>).detail?.emote;
+            if (!emote) return;
+            this.playRoomEmote(emote);
+          };
+          window.addEventListener("hearthaven:room-emote", this.roomEmoteHandler);
+          const cleanup = () => {
+            if (this.roomEmoteHandler) window.removeEventListener("hearthaven:room-emote", this.roomEmoteHandler);
+          };
+          this.events.once("shutdown", cleanup);
+          this.events.once("destroy", cleanup);
+        }
+
+        private playRoomEmote(emote: RoomEmote) {
+          const labels: Record<RoomEmote, string> = {
+            heart: "love",
+            wave: "hello",
+            sparkle: "sparkle",
+            cozy: "cozy",
+          };
+          const colors: Record<RoomEmote, number> = {
+            heart: 0xd87e8c,
+            wave: 0x5e94b0,
+            sparkle: 0xfaebc2,
+            cozy: 0xc0a8dc,
+          };
+          playCozyCue("emote");
+          const bubble = this.add.container(this.avatar.x, this.avatar.y - 112).setDepth(7000);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.95);
+          bg.fillRoundedRect(-54, -22, 108, 44, 18);
+          bg.lineStyle(2, colors[emote], 0.72);
+          bg.strokeRoundedRect(-54, -22, 108, 44, 18);
+          bubble.add(bg);
+          bubble.add(this.add.text(0, 0, labels[emote], {
+            align: "center",
+            color: "#3A2A2A",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "13px",
+            fontStyle: "900",
+          }).setOrigin(0.5));
+          this.playInteractionSparkles(this.avatar.x, this.avatar.y - 28, colors[emote]);
+          this.tweens.add({
+            targets: bubble,
+            y: bubble.y - 32,
+            alpha: 0,
+            duration: 1200,
+            ease: "Sine.out",
+            onComplete: () => bubble.destroy(true),
+          });
+          setStatus(`You sent a ${labels[emote]} emote. Casper noticed.`);
         }
 
         private updateAvatar(delta: number) {
@@ -389,12 +455,15 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
 
           if (furniture.placement.kind === "bed") {
             this.petMood = "sleep";
+            playCozyCue("pet");
             setStatus("Casper curls up near the canopy bed.");
           } else if (furniture.placement.kind === "chair") {
             this.petMood = "sit";
+            playCozyCue("pet");
             setStatus("Casper sits beside the lavender chair.");
           } else if (["lantern", "table", "plant"].includes(furniture.placement.kind)) {
             this.petMood = "react";
+            playCozyCue("heart");
             this.playInteractionSparkles(furniture.container.x, furniture.container.y);
           }
 
@@ -453,14 +522,15 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
           const placement = this.selectedFurniture.placement;
           placement.rotation = (placement.rotation + 45) % 360;
           this.selectedFurniture.container.setRotation((placement.rotation * Math.PI) / 180);
+          playCozyCue("rotate");
           this.playInteractionSparkles(this.selectedFurniture.container.x, this.selectedFurniture.container.y);
           setStatus(`${placement.label} rotated to ${placement.rotation} degrees.`);
           onPlacementsChange?.(this.exportPlacements());
         }
 
-        private playInteractionSparkles(x: number, y: number) {
+        private playInteractionSparkles(x: number, y: number, color = 0xfaebc2) {
           for (let index = 0; index < 8; index += 1) {
-            const sparkle = this.add.star(x, y - 24, 5, 3, 9, 0xfaebc2, 0.9).setDepth(6200);
+            const sparkle = this.add.star(x, y - 24, 5, 3, 9, color, 0.9).setDepth(6200);
             this.tweens.add({
               targets: sparkle,
               x: x + PhaserModule.Math.Between(-64, 64),
@@ -559,6 +629,19 @@ export function RoomCanvas({ placements, onPlacementsChange }: RoomCanvasProps) 
         role="application"
         tabIndex={0}
       />
+      <div className="flex flex-wrap items-center gap-2 border-t border-cream-300 bg-white/72 px-4 py-3">
+        <span className="text-xs font-extrabold uppercase tracking-normal text-ink-500">Quick emotes</span>
+        {roomEmotes.map((item) => (
+          <button
+            className="rounded-md border border-blush-200 bg-blush-100 px-3 py-1.5 text-xs font-extrabold text-ink-800 shadow-sm transition-colors hover:bg-blush-200"
+            key={item.emote}
+            onClick={() => window.dispatchEvent(new CustomEvent("hearthaven:room-emote", { detail: { emote: item.emote } }))}
+            type="button"
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
       <div className="border-t border-cream-300 bg-white/70 px-4 py-2 text-xs font-extrabold text-ink-700">
         {status}
       </div>

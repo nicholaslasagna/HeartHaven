@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import { playCozyCue } from "@/lib/game/cozy-audio";
 
 type GardenPlotState = {
   id: string;
@@ -273,6 +274,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
         }
 
         private waterPlot(plot: GardenPlotState, x: number, y: number) {
+          playCozyCue("water");
           setStatus(`${plot.name} watered. ${plot.stage} growth sparkles wake up.`);
           for (let index = 0; index < 14; index += 1) {
             const drop = this.add.circle(x + PhaserModule.Math.Between(-54, 54), y - 74, 4, 0x5e94b0, 0.82).setDepth(6000);
@@ -344,6 +346,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
           statue.add(this.add.rectangle(0, 50, 104, 26, 0xead9b5, 0.86).setStrokeStyle(3, 0xc9a998, 0.5));
           const zone = this.add.zone(480, 424, 130, 106).setInteractive({ useHandCursor: true });
           zone.on("pointerdown", () => {
+            playCozyCue("pet");
             setStatus("Casper is protecting the shared gate.");
             this.spawnHeartBurst(480, 380);
           });
@@ -373,6 +376,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
           });
           const zone = this.add.zone(x, y, 138, 116).setInteractive({ useHandCursor: true });
           zone.on("pointerdown", () => {
+            playCozyCue("heart");
             setStatus(message);
             this.spawnHeartBurst(x, y);
           });
