@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import type { RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
+import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 
 type RoomCanvasProps = {
   remotePlayers?: RealtimeRoomPlayer[];
@@ -61,6 +62,7 @@ export function RoomCanvas({
   const remotePlayersRef = useRef(remotePlayers);
   const [status, setStatus] = useState("Lighting the Moonlit Loft");
   const [selected, setSelected] = useState("No item selected");
+  const { activeEvent } = useSeasonalEvent();
 
   useEffect(() => {
     remotePlayersRef.current = remotePlayers;
@@ -121,6 +123,7 @@ export function RoomCanvas({
           this.cameras.main.setBackgroundColor("#fbf3e2");
           this.drawRoomShell();
           this.drawAmbientMagic();
+          this.drawSeasonalRoomDecor();
           this.createFurniture(normalizedPlacements);
           this.createAvatar();
           this.createPet();
@@ -147,7 +150,7 @@ export function RoomCanvas({
             })
             .setDepth(5000);
 
-          setStatus("Click the floor to move. Hover, drag, click, and rotate furniture.");
+          setStatus(activeEvent?.roomMessage ?? "Click the floor to move. Hover, drag, click, and rotate furniture.");
           // TODO: Persist furniture edits through Supabase Realtime room sessions for collaborative decorating.
           // TODO: Save mutable placement state to Supabase placed_items after drag/rotate interactions.
         }
@@ -193,6 +196,161 @@ export function RoomCanvas({
             sparkle.setData("drift", PhaserModule.Math.FloatBetween(0.25, 0.8));
             sparkle.setData("phase", PhaserModule.Math.FloatBetween(0, Math.PI * 2));
             this.sparkleLayer.add(sparkle);
+          }
+        }
+
+        private drawSeasonalRoomDecor() {
+          if (!activeEvent) return;
+
+          const primary = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.primary).color;
+          const secondary = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.secondary).color;
+          const accent = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.accent).color;
+          const decorLayer = this.add.container(0, 0).setDepth(42);
+
+          this.add.rectangle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, ROOM_WIDTH, ROOM_HEIGHT, primary, 0.045).setDepth(-18);
+
+          if (activeEvent.id === "halloween") {
+            this.drawBunting(decorLayer, primary, secondary, true);
+            this.drawPumpkin(162, 410, secondary, accent);
+            this.drawPumpkin(792, 420, secondary, accent);
+            this.drawFloatingMotifs(primary, 10, "bat");
+            return;
+          }
+
+          if (activeEvent.id === "christmas") {
+            this.drawBunting(decorLayer, secondary, activeEvent.colors.accent ? PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.accent).color : primary);
+            this.drawWishTree(178, 392, secondary, primary);
+            this.drawSnowfall();
+            return;
+          }
+
+          if (activeEvent.id === "new-year") {
+            this.drawBunting(decorLayer, accent, primary);
+            this.drawCountdownClock(784, 170, primary, secondary);
+            this.drawFloatingMotifs(secondary, 18, "star");
+            return;
+          }
+
+          this.drawBunting(decorLayer, primary, secondary);
+          this.drawSparklerLantern(170, 398, primary, secondary);
+          this.drawSparklerLantern(790, 398, primary, secondary);
+          this.drawFloatingMotifs(secondary, 14, "firework");
+        }
+
+        private drawBunting(layer: Phaser.GameObjects.Container, primary: number, secondary: number, batShape = false) {
+          const rope = this.add.graphics();
+          rope.lineStyle(4, 0xffffff, 0.42);
+          rope.beginPath();
+          rope.moveTo(172, 118);
+          for (let step = 1; step <= 24; step += 1) {
+            const t = step / 24;
+            const inv = 1 - t;
+            const x = inv * inv * 172 + 2 * inv * t * 480 + t * t * 788;
+            const y = inv * inv * 118 + 2 * inv * t * 174 + t * t * 118;
+            rope.lineTo(x, y);
+          }
+          rope.strokePath();
+          layer.add(rope);
+
+          for (let index = 0; index < 12; index += 1) {
+            const x = 196 + index * 52;
+            const y = 128 + Math.sin(index / 11 * Math.PI) * 36;
+            if (batShape) {
+              layer.add(this.add.ellipse(x - 9, y, 22, 10, primary, 0.78));
+              layer.add(this.add.ellipse(x + 9, y, 22, 10, primary, 0.78));
+              layer.add(this.add.circle(x, y + 1, 5, secondary, 0.92));
+            } else {
+              const flag = this.add.triangle(x, y, -12, -10, 12, -10, 0, 18, index % 2 === 0 ? primary : secondary, 0.72);
+              layer.add(flag);
+            }
+          }
+        }
+
+        private drawPumpkin(x: number, y: number, color: number, accent: number) {
+          const pumpkin = this.add.container(x, y).setDepth(y);
+          pumpkin.add(this.add.ellipse(0, 34, 86, 24, 0x3a2a2a, 0.13));
+          pumpkin.add(this.add.ellipse(-22, 0, 42, 50, color, 0.92));
+          pumpkin.add(this.add.ellipse(0, 0, 50, 56, color, 0.98));
+          pumpkin.add(this.add.ellipse(22, 0, 42, 50, color, 0.92));
+          pumpkin.add(this.add.rectangle(0, -32, 10, 22, 0x6e9651, 0.9).setRotation(0.25));
+          const glow = this.add.circle(0, 3, 30, accent, 0.12);
+          pumpkin.addAt(glow, 1);
+          this.tweens.add({ targets: glow, alpha: 0.28, scale: 1.12, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        }
+
+        private drawWishTree(x: number, y: number, green: number, red: number) {
+          const tree = this.add.container(x, y).setDepth(y);
+          tree.add(this.add.ellipse(0, 54, 96, 24, 0x3a2a2a, 0.14));
+          tree.add(this.add.rectangle(0, 28, 18, 64, 0x8b5e3c, 0.9));
+          for (let index = 0; index < 4; index += 1) {
+            tree.add(this.add.triangle(0, -48 + index * 28, -54 + index * 8, 38, 54 - index * 8, 38, 0, -34, green, 0.9));
+          }
+          for (let index = 0; index < 10; index += 1) {
+            const light = this.add.circle(PhaserModule.Math.Between(-38, 38), PhaserModule.Math.Between(-48, 34), 4, index % 2 === 0 ? red : 0xfae3a8, 0.9);
+            tree.add(light);
+            this.tweens.add({ targets: light, alpha: 0.38, duration: 700 + index * 70, yoyo: true, repeat: -1 });
+          }
+        }
+
+        private drawCountdownClock(x: number, y: number, primary: number, gold: number) {
+          const clock = this.add.container(x, y).setDepth(y);
+          clock.add(this.add.circle(0, 0, 44, 0xfffcf3, 0.92).setStrokeStyle(4, gold, 0.82));
+          clock.add(this.add.text(0, -8, "12", { color: "#3A2A2A", fontFamily: "Caprasimo, Georgia, serif", fontSize: "18px" }).setOrigin(0.5));
+          clock.add(this.add.rectangle(0, 12, 4, 26, primary, 0.9).setRotation(-0.6));
+          this.tweens.add({ targets: clock, rotation: 0.035, duration: 900, yoyo: true, repeat: -1 });
+        }
+
+        private drawSparklerLantern(x: number, y: number, primary: number, secondary: number) {
+          const lantern = this.add.container(x, y).setDepth(y);
+          lantern.add(this.add.ellipse(0, 38, 74, 20, 0x3a2a2a, 0.14));
+          lantern.add(this.add.rectangle(0, 0, 34, 74, 0xfffcf3, 0.86).setStrokeStyle(4, primary, 0.62));
+          const glow = this.add.circle(0, 4, 34, secondary, 0.18);
+          lantern.addAt(glow, 0);
+          this.tweens.add({ targets: glow, scale: 1.25, alpha: 0.34, duration: 720, yoyo: true, repeat: -1 });
+        }
+
+        private drawFloatingMotifs(color: number, count: number, kind: "star" | "bat" | "firework") {
+          for (let index = 0; index < count; index += 1) {
+            const x = PhaserModule.Math.Between(118, 842);
+            const y = PhaserModule.Math.Between(96, 278);
+            const motif =
+              kind === "star"
+                ? this.add.star(x, y, 5, 3, 10, color, 0.62)
+                : kind === "firework"
+                  ? this.add.star(x, y, 7, 2, 18, color, 0.42)
+                  : this.add.ellipse(x, y, 28, 10, color, 0.52);
+            motif.setDepth(4920);
+            this.tweens.add({
+              targets: motif,
+              y: y + PhaserModule.Math.Between(-18, 18),
+              alpha: 0.18,
+              duration: PhaserModule.Math.Between(1100, 2200),
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
+            });
+          }
+        }
+
+        private drawSnowfall() {
+          for (let index = 0; index < 34; index += 1) {
+            const snow = this.add.circle(
+              PhaserModule.Math.Between(90, 870),
+              PhaserModule.Math.Between(80, 360),
+              PhaserModule.Math.Between(2, 4),
+              0xffffff,
+              0.58,
+            ).setDepth(4925);
+            this.tweens.add({
+              targets: snow,
+              y: snow.y + PhaserModule.Math.Between(70, 140),
+              x: snow.x + PhaserModule.Math.Between(-18, 18),
+              alpha: 0.18,
+              duration: PhaserModule.Math.Between(2800, 5200),
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
+            });
           }
         }
 
@@ -825,14 +983,17 @@ export function RoomCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, [onAvatarMove, onPlacementsChange, onRoomEmote, placements, roomName, roomTheme]);
+  }, [activeEvent, onAvatarMove, onPlacementsChange, onRoomEmote, placements, roomName, roomTheme]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cream-300/70 bg-white/68 px-4 py-3">
         <div>
           <p className="text-xs font-extrabold uppercase tracking-normal text-blush-500">Playable 2.5D room</p>
-          <p className="text-sm font-black text-ink-900">{selected}</p>
+          <p className="text-sm font-black text-ink-900">
+            {selected}
+            {activeEvent ? ` | ${activeEvent.shortName} decor active` : ""}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-extrabold text-ink-700">
           <span className="rounded-md bg-cream-200 px-2.5 py-1">WASD</span>

@@ -1,5 +1,5 @@
 import type { CatalogItem } from "@/lib/game/types";
-import { starterCatalog } from "@/lib/catalog";
+import { marketCatalog, seasonalCatalog, starterCatalog } from "@/lib/catalog";
 
 // TODO: Replace these mock arrays with Supabase reads once persistence is enabled.
 export const playerWallet = {
@@ -17,10 +17,12 @@ export const activePet = {
   trait: "Guardian of the moonberry beds",
 };
 
-export const inventoryItems = starterCatalog.map((item, index) => ({
+const mockInventoryCatalog = [...starterCatalog, ...seasonalCatalog];
+
+export const inventoryItems = mockInventoryCatalog.map((item, index) => ({
   id: `inventory-${item.id}`,
   item,
-  quantity: index < 4 ? 1 : 3,
+  quantity: item.tags.includes("seasonal") ? 1 : index < 4 ? 1 : 3,
   equipped: index < 2,
 }));
 
@@ -178,5 +180,5 @@ export const friendInvite = {
 };
 
 export function getCatalogItem(id: string): CatalogItem | undefined {
-  return starterCatalog.find((item) => item.id === id);
+  return marketCatalog.find((item) => item.id === id);
 }

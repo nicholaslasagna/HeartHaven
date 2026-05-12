@@ -1,6 +1,6 @@
 import { ShopClient } from "@/app/(game)/app/shop/shop-client";
-import { starterCatalog } from "@/lib/catalog";
+import { marketCatalog } from "@/lib/catalog";
 
 export default function ShopPage() {
-  return <ShopClient items={starterCatalog} />;
+  return <ShopClient items={marketCatalog} />;
 }

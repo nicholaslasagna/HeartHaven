@@ -19,6 +19,7 @@ const phases = [
       { label: "Room", done: true },
       { label: "Garden", done: true },
       { label: "Shop", done: true },
+      { label: "Date-based holiday events", done: true },
     ],
   },
   {
@@ -30,6 +31,7 @@ const phases = [
       { label: "RLS policies", done: true },
       { label: "Game session schema", done: true },
       { label: "Reward event schema", done: true },
+      { label: "Seasonal catalog seed data", done: true },
       { label: "Local wallet rewards", done: true },
       { label: "Persistent pets", done: false },
       { label: "Inventory", done: false },

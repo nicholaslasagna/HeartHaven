@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Copy, Move, Radio, RotateCcw, Save, Sparkles, UsersRound } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
+import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Button } from "@/components/ui/button";
 import { roomBlueprints, starterPlacements } from "@/lib/catalog";
 import type { RoomPlacement } from "@/lib/game/types";
@@ -77,6 +78,7 @@ export function RoomClient() {
 
   return (
     <div className="grid gap-5">
+      <SeasonalEventBanner compact />
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-cream-300 bg-white/64 p-5 shadow-sm md:flex-row md:items-center">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Playable room</p>

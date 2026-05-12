@@ -8,12 +8,14 @@ import { MiniGameCard } from "@/components/cozy/mini-game-card";
 import { PetCard } from "@/components/cozy/pet-card";
 import { RoomPreview } from "@/components/cozy/room-preview";
 import { DashboardWalletCard } from "@/components/game/dashboard-wallet-card";
+import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
 import { activePet, friendInvite, loveNotes, memoryPages, miniGames } from "@/lib/mock-data";
 
 export default function DashboardPage() {
   return (
     <div className="grid gap-5">
+      <SeasonalEventBanner compact />
       <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="rounded-lg border border-cream-300 bg-cream-50/75 p-6 shadow-sm">
           <Badge variant="garden">

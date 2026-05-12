@@ -1,11 +1,13 @@
 import { Leaf, Sparkles } from "lucide-react";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
+import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { gardenPlots, miniGames } from "@/lib/mock-data";
 
 export default function GardenPage() {
   return (
     <div className="grid gap-5">
+      <SeasonalEventBanner compact />
       <section className="rounded-lg border border-garden-300/50 bg-garden-100/65 p-5 shadow-sm">
         <p className="text-sm font-extrabold uppercase tracking-normal text-garden-700">My garden</p>
         <h1 className="mt-1 font-display text-4xl text-ink-900">Casper&apos;s Moonberry Beds</h1>

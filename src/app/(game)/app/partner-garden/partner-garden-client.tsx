@@ -6,6 +6,7 @@ import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
+import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
 import type { friendInvite, partnerGardenPlots } from "@/lib/mock-data";
 
@@ -26,6 +27,7 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
 
   return (
     <div className="grid gap-5">
+      <SeasonalEventBanner compact />
       <section className="rounded-lg border border-blush-300/40 bg-blush-100/55 p-5 shadow-sm">
         <Badge variant="blush">
           <Sparkles className="size-3.5" />

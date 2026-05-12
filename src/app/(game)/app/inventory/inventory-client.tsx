@@ -6,9 +6,12 @@ import { CheckCircle2, PackagePlus } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { CurrencyPill } from "@/components/cozy/currency-pill";
+import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
 import { useGameWallet } from "@/lib/game/use-game-wallet";
+import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import type { inventoryItems } from "@/lib/mock-data";
+import { getCatalogItemSeason, isItemVisibleForSeason, isSeasonalCatalogItem } from "@/lib/seasonal-events";
 
 type InventoryClientProps = {
   items: typeof inventoryItems;
@@ -17,10 +20,16 @@ type InventoryClientProps = {
 export function InventoryClient({ items }: InventoryClientProps) {
   const [equippedIds, setEquippedIds] = useState(() => items.filter((entry) => entry.equipped).map((entry) => entry.id));
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const { activeEvent } = useSeasonalEvent();
   const { wallet } = useGameWallet();
 
-  const categories = ["all", ...Array.from(new Set(items.map((entry) => entry.item.category)))];
-  const visibleItems = items.filter((entry) => selectedCategory === "all" || entry.item.category === selectedCategory);
+  const activeItems = items.filter((entry) => isItemVisibleForSeason(entry.item, activeEvent));
+  const categories = ["all", "seasonal", ...Array.from(new Set(activeItems.map((entry) => entry.item.category)))];
+  const visibleItems = activeItems.filter((entry) => {
+    if (selectedCategory === "all") return true;
+    if (selectedCategory === "seasonal") return isSeasonalCatalogItem(entry.item);
+    return entry.item.category === selectedCategory;
+  });
 
   function toggleEquip(id: string) {
     setEquippedIds((value) => (value.includes(id) ? value.filter((entryId) => entryId !== id) : [...value, id]));
@@ -29,6 +38,7 @@ export function InventoryClient({ items }: InventoryClientProps) {
 
   return (
     <div className="grid gap-5">
+      <SeasonalEventBanner compact />
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-cream-300 bg-white/64 p-5 shadow-sm md:flex-row md:items-center">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-normal text-lavender-500">Inventory</p>
@@ -57,14 +67,30 @@ export function InventoryClient({ items }: InventoryClientProps) {
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {visibleItems.map(({ id, item, quantity }) => {
           const equipped = equippedIds.includes(id);
+          const seasonalItem = getCatalogItemSeason(item);
 
           return (
             <CozyCard key={id} className="p-5">
               <div className="mb-4 flex items-center justify-between">
-                <Badge variant={equipped ? "blush" : "outline"}>{equipped ? "Equipped" : item.rarity}</Badge>
+                <Badge
+                  className={seasonalItem ? "border-white/70 bg-white/75 text-ink-900" : undefined}
+                  variant={equipped ? "blush" : "outline"}
+                >
+                  {equipped ? "Equipped" : seasonalItem ? seasonalItem.shortName : item.rarity}
+                </Badge>
                 <Badge variant="outline">x{quantity}</Badge>
               </div>
-              <div className="grid h-28 place-items-center rounded-lg border border-cream-300 bg-cream-50">
+              <div
+                className="grid h-28 place-items-center rounded-lg border border-cream-300 bg-cream-50"
+                style={
+                  seasonalItem
+                    ? {
+                        background: `linear-gradient(135deg, ${seasonalItem.colors.tint}, #fffdf6)`,
+                        borderColor: `${seasonalItem.colors.secondary}66`,
+                      }
+                    : undefined
+                }
+              >
                 <PackagePlus className="size-10 text-blush-500" />
               </div>
               <h2 className="mt-4 font-display text-2xl text-ink-900">{item.name}</h2>

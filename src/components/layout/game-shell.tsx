@@ -3,6 +3,7 @@ import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, Shield
 import { Logo } from "@/components/brand/logo";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { SeasonalEventPill } from "@/components/seasonal/seasonal-event-pill";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           <Logo />
           <div className="hidden items-center gap-2 xl:flex">
+            <SeasonalEventPill />
             <CozyAudioDock />
             <RewardWalletPanel compact />
             <Button asChild variant="warm" size="sm">
@@ -41,7 +43,10 @@ export function GameShell({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
           <div className="xl:hidden">
-            <CozyAudioDock />
+            <div className="flex items-center gap-2">
+              <SeasonalEventPill className="hidden sm:inline-flex" />
+              <CozyAudioDock />
+            </div>
           </div>
         </div>
       </header>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 
 type GardenPlotState = {
   id: string;
@@ -23,6 +24,7 @@ const GARDEN_HEIGHT = 620;
 
 export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const { activeEvent } = useSeasonalEvent();
   const [status, setStatus] = useState(
     variant === "partner" ? "The shared garden is glowing under Casper's watch." : "Click plots to water and inspect growth.",
   );
@@ -70,6 +72,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
           }
           this.drawButterflies();
           this.drawFireflies();
+          this.drawSeasonalGardenDecor();
           this.addTitle();
           // TODO: Replace local plot care events with Supabase garden_events and shared_garden_plots writes.
           // TODO: Subscribe partner garden scene to Supabase Realtime so both linked players see care pulses.
@@ -433,6 +436,150 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
           }
         }
 
+        private drawSeasonalGardenDecor() {
+          if (!activeEvent) return;
+
+          const primary = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.primary).color;
+          const secondary = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.secondary).color;
+          const accent = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.accent).color;
+          this.add.rectangle(GARDEN_WIDTH / 2, GARDEN_HEIGHT / 2, GARDEN_WIDTH, GARDEN_HEIGHT, primary, 0.035).setDepth(-17);
+
+          if (activeEvent.id === "halloween") {
+            this.drawGardenPumpkins(primary, secondary);
+            this.drawMoonMotes(primary, 18);
+            return;
+          }
+
+          if (activeEvent.id === "christmas") {
+            this.drawSnowGarden(accent);
+            this.drawWishLights(primary, secondary);
+            return;
+          }
+
+          if (activeEvent.id === "new-year") {
+            this.drawSkyLanterns(primary, secondary);
+            this.drawMoonMotes(secondary, 24);
+            return;
+          }
+
+          this.drawSparklerFountains(primary, secondary, accent);
+          this.drawMoonMotes(secondary, 20);
+        }
+
+        private drawGardenPumpkins(primary: number, secondary: number) {
+          [
+            [166, 468],
+            [808, 456],
+            [318, 274],
+            [644, 274],
+          ].forEach(([x, y], index) => {
+            const pumpkin = this.add.container(x, y).setDepth(y);
+            pumpkin.add(this.add.ellipse(0, 28, 76, 22, 0x3a2a2a, 0.12));
+            pumpkin.add(this.add.ellipse(-16, 0, 34, 40, secondary, 0.88));
+            pumpkin.add(this.add.ellipse(0, 0, 42, 48, secondary, 0.96));
+            pumpkin.add(this.add.ellipse(16, 0, 34, 40, secondary, 0.88));
+            pumpkin.add(this.add.rectangle(0, -25, 8, 18, 0x6e9651, 0.9).setRotation(0.25));
+            const glow = this.add.circle(0, 2, 28, primary, 0.12);
+            pumpkin.addAt(glow, 1);
+            this.tweens.add({ targets: glow, alpha: 0.3, scale: 1.15, duration: 820 + index * 70, yoyo: true, repeat: -1 });
+          });
+        }
+
+        private drawSnowGarden(gold: number) {
+          for (let index = 0; index < 42; index += 1) {
+            const snow = this.add.circle(
+              PhaserModule.Math.Between(80, 880),
+              PhaserModule.Math.Between(88, 520),
+              PhaserModule.Math.Between(2, 4),
+              0xffffff,
+              0.6,
+            ).setDepth(6100);
+            this.tweens.add({
+              targets: snow,
+              y: snow.y + PhaserModule.Math.Between(42, 98),
+              x: snow.x + PhaserModule.Math.Between(-18, 18),
+              alpha: 0.12,
+              duration: PhaserModule.Math.Between(2600, 5200),
+              yoyo: true,
+              repeat: -1,
+            });
+          }
+
+          const star = this.add.star(480, 164, 6, 5, 20, gold, 0.72).setDepth(6200);
+          this.tweens.add({ targets: star, alpha: 0.24, scale: 1.18, duration: 900, yoyo: true, repeat: -1 });
+        }
+
+        private drawWishLights(primary: number, secondary: number) {
+          for (let index = 0; index < 18; index += 1) {
+            const x = 216 + index * 30;
+            const y = 226 + Math.sin(index * 0.7) * 18;
+            const light = this.add.circle(x, y, 5, index % 2 === 0 ? primary : secondary, 0.72).setDepth(6080);
+            this.tweens.add({ targets: light, alpha: 0.22, duration: 700 + index * 55, yoyo: true, repeat: -1 });
+          }
+        }
+
+        private drawSkyLanterns(primary: number, secondary: number) {
+          for (let index = 0; index < 10; index += 1) {
+            const lantern = this.add.container(150 + index * 78, PhaserModule.Math.Between(110, 248)).setDepth(6060);
+            lantern.add(this.add.circle(0, 0, 22, secondary, 0.16));
+            lantern.add(this.add.rectangle(0, 0, 24, 34, 0xfffcf3, 0.82).setStrokeStyle(3, primary, 0.42));
+            this.tweens.add({
+              targets: lantern,
+              y: lantern.y - PhaserModule.Math.Between(28, 72),
+              alpha: 0.54,
+              duration: PhaserModule.Math.Between(2600, 4600),
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
+            });
+          }
+        }
+
+        private drawSparklerFountains(primary: number, secondary: number, accent: number) {
+          [
+            [190, 430],
+            [770, 430],
+          ].forEach(([x, y]) => {
+            const fountain = this.add.container(x, y).setDepth(y);
+            fountain.add(this.add.ellipse(0, 30, 104, 28, 0x3a2a2a, 0.13));
+            fountain.add(this.add.ellipse(0, 10, 88, 42, 0xc7e0eb, 0.58).setStrokeStyle(3, primary, 0.48));
+            for (let index = 0; index < 8; index += 1) {
+              const spark = this.add.star(x, y, 5, 2, 12, index % 2 === 0 ? secondary : accent, 0.68).setDepth(6180);
+              this.tweens.add({
+                targets: spark,
+                x: x + PhaserModule.Math.Between(-50, 50),
+                y: y - PhaserModule.Math.Between(50, 122),
+                alpha: 0,
+                duration: 850 + index * 70,
+                repeat: -1,
+                delay: index * 110,
+              });
+            }
+          });
+        }
+
+        private drawMoonMotes(color: number, count: number) {
+          for (let index = 0; index < count; index += 1) {
+            const mote = this.add.star(
+              PhaserModule.Math.Between(92, 868),
+              PhaserModule.Math.Between(122, 492),
+              5,
+              2,
+              PhaserModule.Math.Between(8, 18),
+              color,
+              0.32,
+            ).setDepth(6120);
+            this.tweens.add({
+              targets: mote,
+              y: mote.y + PhaserModule.Math.Between(-22, 22),
+              alpha: 0.1,
+              duration: PhaserModule.Math.Between(1200, 2600),
+              yoyo: true,
+              repeat: -1,
+            });
+          }
+        }
+
         private addTitle() {
           this.add
             .text(34, 28, variant === "partner" ? "Shared Heart Garden" : "Casper's Moonberry Beds", {
@@ -442,12 +589,21 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
             })
             .setDepth(7000);
           this.add
-            .text(34, 58, variant === "partner" ? "Click memories, quests, flowers, and Casper." : "Click plots to water them.", {
+            .text(
+              34,
+              58,
+              activeEvent
+                ? activeEvent.gardenMessage
+                : variant === "partner"
+                  ? "Click memories, quests, flowers, and Casper."
+                  : "Click plots to water them.",
+              {
               color: "#84675F",
               fontFamily: "Nunito, sans-serif",
               fontSize: "13px",
               fontStyle: "800",
-            })
+              },
+            )
             .setDepth(7000);
         }
       }
@@ -474,7 +630,7 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
       destroyed = true;
       game?.destroy(true);
     };
-  }, [plots, variant]);
+  }, [activeEvent, plots, variant]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-garden-300/50 bg-garden-100 shadow-[0_24px_70px_rgba(76,110,54,0.14)]">
@@ -484,7 +640,11 @@ export function GardenCanvas({ variant, plots }: GardenCanvasProps) {
             {variant === "partner" ? "Shared living garden" : "Living garden"}
           </p>
           <p className="text-sm font-black text-ink-900">
-            {variant === "partner" ? "Memory tree, quests, lantern path, and Casper's watch" : "Animated plots, water, butterflies, and growth"}
+            {activeEvent
+              ? `${activeEvent.shortName} garden decor active`
+              : variant === "partner"
+                ? "Memory tree, quests, lantern path, and Casper's watch"
+                : "Animated plots, water, butterflies, and growth"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-extrabold text-ink-700">
