@@ -2,6 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import {
+  getPetTone,
+  keeperFrame,
+  keeperPaletteIdFromColor,
+  KEEPER_CUSTOMIZATION_EVENT,
+  petFrame,
+  PET_CUSTOMIZATION_EVENT,
+  readKeeperCustomization,
+  readPetCustomization,
+  type KeeperCustomization,
+  type KeeperPose,
+  type PetCustomization,
+  type PetPose,
+} from "@/lib/game/avatar-customization";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
@@ -37,8 +51,11 @@ type GardenDecorPlacement = {
 type RemoteGardenAvatarObject = {
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
+  sprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
 };
+
+type GardenPetMood = "idle" | "follow" | "sit" | "happy";
 
 const GARDEN_WIDTH = 960;
 const GARDEN_HEIGHT = 620;
@@ -82,6 +99,15 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         private fireflies: Phaser.GameObjects.Arc[] = [];
         private avatar!: Phaser.GameObjects.Container;
         private avatarShadow!: Phaser.GameObjects.Ellipse;
+        private avatarSprite!: Phaser.GameObjects.Sprite;
+        private avatarPose: KeeperPose = "idle";
+        private keeperCustomization: KeeperCustomization = readKeeperCustomization();
+        private pet!: Phaser.GameObjects.Container;
+        private petShadow!: Phaser.GameObjects.Ellipse;
+        private petSprite!: Phaser.GameObjects.Sprite;
+        private petCustomization: PetCustomization = readPetCustomization();
+        private petMood: GardenPetMood = "idle";
+        private petMoodTimer = 0;
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
         private wasd?: Record<"up" | "left" | "down" | "right" | "rotate", Phaser.Input.Keyboard.Key>;
         private target?: Phaser.Math.Vector2;
@@ -94,6 +120,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         private remotePlayersHandler?: (event: Event) => void;
         private chatBubbleHandler?: (event: Event) => void;
         private addDecorHandler?: (event: Event) => void;
+        private keeperCustomizationHandler?: (event: Event) => void;
+        private petCustomizationHandler?: (event: Event) => void;
 
         constructor() {
           super("HeartHavenGarden");
@@ -102,6 +130,14 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         preload() {
           this.load.image("moonberry-garden-bg", "/game-assets/generated/moonberry-garden-bg.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-animation-sheet.svg", {
+            frameWidth: 128,
+            frameHeight: 128,
+          });
+          this.load.spritesheet("pet-animation-sheet", "/game-assets/generated/pet-animation-sheet.svg", {
+            frameWidth: 128,
+            frameHeight: 128,
+          });
           this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
             frameWidth: 384,
             frameHeight: 512,
@@ -130,6 +166,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.drawSeasonalGardenDecor();
           this.createDecorations(initialDecor);
           this.createAvatar();
+          this.createPet();
           this.createInput();
           this.createRealtimeBridge();
           this.syncRemotePlayers(remotePlayersRef.current);
@@ -143,6 +180,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
 
         update(_time: number, delta: number) {
           this.updateAvatar(delta);
+          this.updatePet(delta);
           this.butterflies.forEach((butterfly, index) => {
             butterfly.x += Math.sin((this.time.now + index * 400) * 0.0012) * 0.34;
             butterfly.y += Math.cos((this.time.now + index * 300) * 0.001) * 0.18;
@@ -533,9 +571,13 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private createAvatar() {
+          this.keeperCustomization = readKeeperCustomization();
           this.avatarShadow = this.add.ellipse(420, 452, 58, 22, 0x3a2a2a, 0.18).setDepth(429);
           this.avatar = this.add.container(420, 430).setDepth(430);
-          this.avatar.add(this.add.image(0, -46, "keeper-sprite").setDisplaySize(78, 106));
+          this.avatarSprite = this.add
+            .sprite(0, -50, "keeper-animation-sheet", keeperFrame(this.keeperCustomization.paletteId, "idle"))
+            .setDisplaySize(94, 122);
+          this.avatar.add(this.avatarSprite);
           this.avatar.setSize(70, 104);
           this.lastSentPosition = { x: this.avatar.x, y: this.avatar.y };
 
@@ -543,6 +585,26 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             targets: this.avatar,
             scaleY: 1.035,
             duration: 1050,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
+        }
+
+        private createPet() {
+          this.petCustomization = readPetCustomization();
+          this.petShadow = this.add.ellipse(486, 472, 52, 18, 0x3a2a2a, 0.15).setDepth(449);
+          this.pet = this.add.container(486, 450).setDepth(450);
+          this.petSprite = this.add
+            .sprite(0, -38, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
+            .setDisplaySize(94, 94);
+          this.tintPetForTone();
+          this.pet.add(this.petSprite);
+          this.pet.setSize(82, 82);
+          this.tweens.add({
+            targets: this.pet,
+            y: this.pet.y - 3,
+            duration: 980,
             yoyo: true,
             repeat: -1,
             ease: "Sine.inOut",
@@ -581,26 +643,57 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             const kind = (event as CustomEvent<{ kind?: GardenDecorKind }>).detail?.kind;
             if (kind) this.addDecorFromDrawer(kind);
           };
+          this.keeperCustomizationHandler = (event: Event) => {
+            this.keeperCustomization = (event as CustomEvent<KeeperCustomization>).detail ?? readKeeperCustomization();
+            this.setAvatarPose(this.avatarPose);
+          };
+          this.petCustomizationHandler = (event: Event) => {
+            this.petCustomization = (event as CustomEvent<PetCustomization>).detail ?? readPetCustomization();
+            this.setPetPose("idle");
+            this.tintPetForTone();
+          };
           window.addEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
           window.addEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
+          window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
+          window.addEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
           const cleanup = () => {
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
             if (this.chatBubbleHandler) window.removeEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
             if (this.addDecorHandler) window.removeEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
+            if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
+            if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
         }
 
+        private setAvatarPose(pose: KeeperPose) {
+          this.avatarPose = pose;
+          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose));
+        }
+
+        private setPetPose(pose: PetPose) {
+          this.petSprite?.setFrame(petFrame(this.petCustomization.speciesId, pose));
+        }
+
+        private tintPetForTone() {
+          if (!this.petSprite) return;
+          const tone = getPetTone(this.petCustomization.toneId);
+          const tint = PhaserModule.Display.Color.HexStringToColor(tone.color).color;
+          this.petSprite.setTint(tint);
+        }
+
         private updateAvatar(delta: number) {
           const keyboard = this.readKeyboard();
           const speed = 0.24 * delta;
+          let moving = false;
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
             this.target = undefined;
             const next = this.constrainToGarden(this.avatar.x + keyboard.x * speed, this.avatar.y + keyboard.y * speed);
             this.avatar.setPosition(next.x, next.y);
+            moving = true;
           } else if (this.target) {
             const distance = PhaserModule.Math.Distance.Between(this.avatar.x, this.avatar.y, this.target.x, this.target.y);
             if (distance < 5) {
@@ -612,6 +705,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
                 this.avatar.y + Math.sin(angle) * speed,
               );
               this.avatar.setPosition(next.x, next.y);
+              moving = true;
             }
           }
 
@@ -621,6 +715,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
 
           this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
           this.avatarShadow.setDepth(this.avatar.y - 1);
+          this.setAvatarPose(moving ? (Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2") : "idle");
 
           this.moveBroadcastTimer += delta;
           this.footstepTimer += delta;
@@ -641,6 +736,41 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             this.lastSentPosition = { x: this.avatar.x, y: this.avatar.y };
             onAvatarMove?.(this.lastSentPosition);
           }
+        }
+
+        private updatePet(delta: number) {
+          if (!this.pet) return;
+          this.petMoodTimer += delta;
+          if (this.petMoodTimer > 5200) {
+            this.petMoodTimer = 0;
+            this.petMood = this.petMood === "idle" ? "sit" : "idle";
+          }
+
+          const targetX = this.avatar.x + 64;
+          const targetY = this.avatar.y + 28;
+          const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, targetX, targetY);
+          let petMoving = false;
+          if (distance > 16) {
+            this.pet.x = PhaserModule.Math.Linear(this.pet.x, targetX, 0.055);
+            this.pet.y = PhaserModule.Math.Linear(this.pet.y, targetY, 0.055);
+            this.petMood = "follow";
+            petMoving = true;
+          } else if (this.petMood === "follow") {
+            this.petMood = "happy";
+            this.petMoodTimer = 0;
+          }
+
+          const pose: PetPose = this.petMood === "sit"
+            ? "sit"
+            : this.petMood === "happy"
+              ? "happy"
+              : petMoving
+                ? Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2"
+                : "idle";
+          this.setPetPose(pose);
+          this.pet.setScale(1, this.petMood === "sit" ? 0.9 : 1);
+          this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
+          this.petShadow.setDepth(this.pet.y - 1);
         }
 
         private readKeyboard() {
@@ -678,17 +808,24 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           players.forEach((player) => {
             const existing = this.remoteAvatars.get(player.id);
             if (existing) {
+              const paletteId = keeperPaletteIdFromColor(player.color);
+              existing.sprite.setFrame(keeperFrame(paletteId, Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2"));
               this.tweens.add({ targets: existing.container, x: player.x, y: player.y, duration: 140, ease: "Sine.out" });
               this.tweens.add({ targets: existing.shadow, x: player.x, y: player.y + 22, duration: 140, ease: "Sine.out" });
+              this.time.delayedCall(160, () => existing.sprite.setFrame(keeperFrame(paletteId, "idle")));
               existing.label.setText(player.displayName);
               return;
             }
 
             const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
+            const paletteId = keeperPaletteIdFromColor(player.color);
             const shadow = this.add.ellipse(player.x, player.y + 22, 54, 20, 0x3a2a2a, 0.14).setDepth(player.y - 1);
             const container = this.add.container(player.x, player.y).setDepth(player.y);
             const aura = this.add.circle(0, -94, 15, color, 0.28);
-            const sprite = this.add.image(0, -46, "keeper-sprite").setDisplaySize(72, 98).setAlpha(0.92);
+            const sprite = this.add
+              .sprite(0, -50, "keeper-animation-sheet", keeperFrame(paletteId, "idle"))
+              .setDisplaySize(86, 112)
+              .setAlpha(0.92);
             sprite.setTint(color);
             const label = this.add
               .text(0, -114, player.displayName, {
@@ -702,7 +839,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
               })
               .setOrigin(0.5);
             container.add([aura, sprite, label]);
-            this.remoteAvatars.set(player.id, { container, shadow, label });
+            this.remoteAvatars.set(player.id, { container, shadow, sprite, label });
           });
         }
 
@@ -737,6 +874,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         private sortDepths() {
           this.avatar?.setDepth(this.avatar.y);
           this.avatarShadow?.setDepth(this.avatar.y - 1);
+          this.pet?.setDepth(this.pet.y);
+          this.petShadow?.setDepth(this.pet.y - 1);
           this.decorObjects.forEach((decor) => decor.setDepth(decor.y));
           this.remoteAvatars.forEach((remote) => {
             remote.container.setDepth(remote.container.y);

@@ -23,6 +23,10 @@ const GAME_HEIGHT = 600;
 const MAX_FRAMES = 5;
 const PIN_COUNT = 10;
 const BALL_START = { x: 460, y: 502 };
+const BOWLING_PLAYERS = [
+  { name: "Blush Lane", shortName: "Blush", color: "#D87E8C" },
+  { name: "Lavender Lane", shortName: "Lavender", color: "#8E70BD" },
+];
 const PIN_POSITIONS = [
   [460, 128],
   [430, 162],
@@ -35,6 +39,10 @@ const PIN_POSITIONS = [
   [490, 230],
   [550, 230],
 ] as const;
+
+function createBowlingMatchFrames() {
+  return BOWLING_PLAYERS.map(() => Array.from({ length: MAX_FRAMES }, () => ({ rolls: [] as number[] })));
+}
 
 export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -53,8 +61,10 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
         private ballShadow!: Phaser.GameObjects.Ellipse;
         private aimLine!: Phaser.GameObjects.Graphics;
         private pins: BowlingPin[] = [];
-        private frames: BowlingFrame[] = Array.from({ length: MAX_FRAMES }, () => ({ rolls: [] }));
-        private frameIndex = 0;
+        private playerFrames: BowlingFrame[][] = createBowlingMatchFrames();
+        private playerFrameIndexes = [0, 0];
+        private playerComplete = [false, false];
+        private currentPlayerIndex = 0;
         private rolling = false;
         private aiming = false;
         private gutter = false;
@@ -66,11 +76,28 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
         private scoreText!: Phaser.GameObjects.Text;
         private pinsText!: Phaser.GameObjects.Text;
         private rollsText!: Phaser.GameObjects.Text;
+        private activePlayerText!: Phaser.GameObjects.Text;
         private powerText!: Phaser.GameObjects.Text;
         private rewardLayer?: Phaser.GameObjects.Container;
 
         constructor() {
           super("MoonberryBowling");
+        }
+
+        private get frames() {
+          return this.playerFrames[this.currentPlayerIndex];
+        }
+
+        private set frames(value: BowlingFrame[]) {
+          this.playerFrames[this.currentPlayerIndex] = value;
+        }
+
+        private get frameIndex() {
+          return this.playerFrameIndexes[this.currentPlayerIndex];
+        }
+
+        private set frameIndex(value: number) {
+          this.playerFrameIndexes[this.currentPlayerIndex] = value;
         }
 
         preload() {
@@ -259,6 +286,7 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           this.rollsText = this.add.text(350, 58, "", { ...style, fontSize: "13px" }).setDepth(7000);
           this.pinsText = this.add.text(GAME_WIDTH - 170, 58, "", style).setDepth(7000);
           this.powerText = this.add.text(30, 86, "", { ...style, color: "#9C6F1F", fontSize: "13px" }).setDepth(7000);
+          this.activePlayerText = this.add.text(GAME_WIDTH - 226, 86, "", { ...style, color: "#D87E8C", fontSize: "13px" }).setDepth(7000);
           this.updateHud();
         }
 
@@ -328,7 +356,7 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           this.ball.setAlpha(1);
           this.powerText.setText("");
           playCozyCue("roll");
-          setStatus("Moonberry ball rolling...");
+          setStatus(`${BOWLING_PLAYERS[this.currentPlayerIndex].name} rolling...`);
         }
 
         private clampAim(x: number, y: number) {
@@ -435,7 +463,12 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           }
 
           if (this.shouldEndGame()) {
-            this.time.delayedCall(820, () => this.showRewards());
+            this.playerComplete[this.currentPlayerIndex] = true;
+            if (this.playerComplete.every(Boolean)) {
+              this.time.delayedCall(820, () => this.showRewards());
+            } else {
+              this.time.delayedCall(880, () => this.switchPlayer());
+            }
             return;
           }
 
@@ -474,11 +507,17 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
 
         private nextFrame() {
           this.frameIndex += 1;
+          this.switchPlayer();
+        }
+
+        private switchPlayer() {
+          const preferred = this.currentPlayerIndex === 0 ? 1 : 0;
+          this.currentPlayerIndex = this.playerComplete[preferred] ? this.currentPlayerIndex : preferred;
           this.resetBall();
           this.createPins(true);
           this.knockedThisRoll = 0;
           this.updateHud();
-          setStatus(`Frame ${this.frameIndex + 1}. Fresh pins are set.`);
+          setStatus(`${BOWLING_PLAYERS[this.currentPlayerIndex].name}'s turn. Frame ${this.frameIndex + 1}, roll 1.`);
         }
 
         private resetBall() {
@@ -499,9 +538,11 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           const frame = this.frames[this.frameIndex];
           const rollNumber = Math.min(3, frame.rolls.length + 1);
           this.frameText?.setText(`Frame ${this.frameIndex + 1}/${MAX_FRAMES}`);
-          this.scoreText?.setText(`Score ${this.calculateScore()}`);
+          this.scoreText?.setText(`Blush ${this.calculatePlayerScore(0)}  |  Lavender ${this.calculatePlayerScore(1)}`);
           this.pinsText?.setText(`Pins ${PIN_COUNT - this.standingPins()}/10`);
           this.rollsText?.setText(`Roll ${rollNumber}${this.frameIndex === MAX_FRAMES - 1 ? " final" : ""}  |  ${this.formatFrames()}`);
+          this.activePlayerText?.setText(`Turn: ${BOWLING_PLAYERS[this.currentPlayerIndex].name}`);
+          this.activePlayerText?.setColor(BOWLING_PLAYERS[this.currentPlayerIndex].color);
         }
 
         private formatFrames() {
@@ -523,10 +564,14 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
             .join("   ");
         }
 
-        private calculateScore() {
+        private calculatePlayerScore(playerIndex: number) {
+          return this.calculateScore(this.playerFrames[playerIndex]);
+        }
+
+        private calculateScore(frames = this.frames) {
           let score = 0;
           for (let index = 0; index < MAX_FRAMES; index += 1) {
-            const rolls = this.frames[index].rolls;
+            const rolls = frames[index].rolls;
             if (rolls.length === 0) break;
 
             if (index === MAX_FRAMES - 1) {
@@ -537,10 +582,10 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
             const first = rolls[0] ?? 0;
             const second = rolls[1] ?? 0;
             if (first === PIN_COUNT) {
-              const [bonusOne = 0, bonusTwo = 0] = this.rollsAfterFrame(index);
+              const [bonusOne = 0, bonusTwo = 0] = this.rollsAfterFrame(index, frames);
               score += PIN_COUNT + bonusOne + bonusTwo;
             } else if (rolls.length >= 2 && first + second === PIN_COUNT) {
-              const [bonus = 0] = this.rollsAfterFrame(index);
+              const [bonus = 0] = this.rollsAfterFrame(index, frames);
               score += PIN_COUNT + bonus;
             } else {
               score += first + second;
@@ -549,15 +594,17 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
           return score;
         }
 
-        private rollsAfterFrame(frameIndex: number) {
-          return this.frames.slice(frameIndex + 1).flatMap((frame) => frame.rolls);
+        private rollsAfterFrame(frameIndex: number, frames = this.frames) {
+          return frames.slice(frameIndex + 1).flatMap((frame) => frame.rolls);
         }
 
         private showRewards() {
           this.gameOver = true;
-          const finalScore = this.calculateScore();
-          const coins = 100 + finalScore * 3;
-          const hearts = finalScore >= 120 ? 6 : finalScore >= 90 ? 5 : finalScore >= 60 ? 4 : 2;
+          const playerScores = BOWLING_PLAYERS.map((_, index) => this.calculatePlayerScore(index));
+          const winningIndex = playerScores[0] >= playerScores[1] ? 0 : 1;
+          const finalScore = Math.max(...playerScores);
+          const coins = 120 + finalScore * 3;
+          const hearts = finalScore >= 120 ? 7 : finalScore >= 90 ? 5 : finalScore >= 60 ? 4 : 2;
           const layer = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(8000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.96);
@@ -570,7 +617,7 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
             fontFamily: "Caprasimo, Georgia, serif",
             fontSize: "27px",
           }).setOrigin(0.5));
-          layer.add(this.add.text(0, -28, `Final score ${finalScore}\nReward ${coins} coins + ${hearts} hearts\nCasper saved a moonberry sticker for you.`, {
+          layer.add(this.add.text(0, -28, `${BOWLING_PLAYERS[winningIndex].name} wins\nBlush ${playerScores[0]} | Lavender ${playerScores[1]}\nReward ${coins} coins + ${hearts} hearts\nCasper saved a moonberry sticker for the party.`, {
             align: "center",
             color: "#5B3F3F",
             fontFamily: "Nunito, sans-serif",
@@ -598,20 +645,22 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
             coins,
             hearts,
           });
-          setStatus(`Bowling rewards awarded: ${coins} coins and ${hearts} hearts.`);
+          setStatus(`Bowling party rewards awarded: ${coins} coins and ${hearts} hearts.`);
         }
 
         private restartRound() {
           this.rewardLayer?.destroy(true);
           this.rewardLayer = undefined;
-          this.frames = Array.from({ length: MAX_FRAMES }, () => ({ rolls: [] }));
-          this.frameIndex = 0;
+          this.playerFrames = createBowlingMatchFrames();
+          this.playerFrameIndexes = [0, 0];
+          this.playerComplete = [false, false];
+          this.currentPlayerIndex = 0;
           this.knockedThisRoll = 0;
           this.gameOver = false;
           this.resetBall();
           this.createPins(true);
           this.updateHud();
-          setStatus("New bowling round started. Frame 1, roll 1.");
+          setStatus("New bowling party lane started. Blush Lane begins frame 1.");
         }
       }
 

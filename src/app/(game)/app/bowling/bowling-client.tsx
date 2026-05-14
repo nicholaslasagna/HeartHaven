@@ -17,21 +17,22 @@ export function BowlingClient() {
           <p className="text-sm font-extrabold uppercase tracking-normal text-honey-700">Mini-game</p>
           <h1 className="mt-1 font-display text-4xl text-ink-900">Moonberry Bowling</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            Roll a lavender moonberry ball down a cozy lane, knock heart pins, and let Casper cheer every frame.
+            Pass-and-play a two-lane bowling match, roll the moonberry ball, score strikes and spares, and let Casper
+            cheer every frame.
           </p>
         </div>
         <div className="flex gap-2">
           <Button asChild variant="secondary">
             <Link href="/app/games"><ArrowLeft /> Games hub</Link>
           </Button>
-          <Button variant="warm"><Heart /> Bowl with love</Button>
+          <Button variant="warm"><Heart /> Party lane live</Button>
         </div>
       </section>
       <RewardWalletPanel />
       <BowlingCanvasLoader onReward={grantReward} />
       <div className="rounded-lg border border-blush-300/40 bg-blush-100/60 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-blush-500" />
-        Bowling rewards update the same local wallet as Petal Catch and Memory Match, so game points now feel connected.
+        Bowling now alternates Blush and Lavender turns locally. Rewards update the same wallet as the arcade games.
       </div>
     </div>
   );

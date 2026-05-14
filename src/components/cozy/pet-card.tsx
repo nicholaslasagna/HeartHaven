@@ -1,15 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Cookie, HandHeart, Heart, Sparkles } from "lucide-react";
 import { PetIllustration } from "@/components/brand/illustrations";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import {
+  getPetSpecies,
+  getPetTone,
+  PET_SPECIES,
+  PET_TONES,
+  readPetCustomization,
+  writePetCustomization,
+  type PetSpeciesId,
+  type PetToneId,
+} from "@/lib/game/avatar-customization";
 import { playCozyCue } from "@/lib/game/cozy-audio";
-
-type PetType = "bunny" | "kitten" | "fox" | "bear" | "duck";
-type PetTone = "cream" | "blush" | "lavender" | "sky" | "honey" | "mint";
 
 type PetCardProps = {
   name: string;
@@ -19,30 +26,36 @@ type PetCardProps = {
   hunger: number;
 };
 
-const petLooks: Array<{ type: PetType; label: string }> = [
-  { type: "fox", label: "Fox" },
-  { type: "bunny", label: "Bunny" },
-  { type: "bear", label: "Bear" },
-  { type: "duck", label: "Duck" },
-  { type: "kitten", label: "Kitten" },
-];
-
-const petTones: Array<{ tone: PetTone; label: string; swatch: string }> = [
-  { tone: "cream", label: "Cream", swatch: "#FFFCF3" },
-  { tone: "blush", label: "Blush", swatch: "#FBD9DC" },
-  { tone: "lavender", label: "Lavender", swatch: "#DECDEF" },
-  { tone: "mint", label: "Mint", swatch: "#D2E8C7" },
-  { tone: "honey", label: "Honey", swatch: "#FBE6B6" },
-  { tone: "sky", label: "Sky", swatch: "#C9E1ED" },
-];
-
 export function PetCard({ name, species, trait, happiness, hunger }: PetCardProps) {
   const [currentHappiness, setCurrentHappiness] = useState(happiness);
   const [currentHunger, setCurrentHunger] = useState(hunger);
   const [mood, setMood] = useState("Calm");
-  const [petType, setPetType] = useState<PetType>("fox");
-  const [petTone, setPetTone] = useState<PetTone>("cream");
+  const [petType, setPetType] = useState<PetSpeciesId>("fox");
+  const [petTone, setPetTone] = useState<PetToneId>("cream");
   const [accessory, setAccessory] = useState("Moonberry bow");
+  const selectedSpecies = getPetSpecies(petType);
+  const selectedTone = getPetTone(petTone);
+
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const saved = readPetCustomization();
+      setPetType(saved.speciesId);
+      setPetTone(saved.toneId);
+      setAccessory(saved.accessory);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function updateCompanion(nextType: PetSpeciesId, nextTone: PetToneId, nextAccessory: string) {
+    setPetType(nextType);
+    setPetTone(nextTone);
+    setAccessory(nextAccessory);
+    writePetCustomization({ speciesId: nextType, toneId: nextTone, accessory: nextAccessory });
+  }
 
   function play() {
     setCurrentHappiness((value) => Math.min(100, value + 6));
@@ -75,9 +88,11 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
             Active companion
           </div>
           <h2 className="mt-1 font-display text-3xl text-ink-900">{name}</h2>
-          <p className="text-sm font-bold text-ink-700">{species}</p>
+          <p className="text-sm font-bold text-ink-700">{selectedSpecies.label || species}</p>
           <p className="mt-1 text-xs font-bold text-muted-foreground">{trait}</p>
-          <p className="mt-1 text-xs font-bold text-lavender-500">{accessory}</p>
+          <p className="mt-1 text-xs font-bold text-lavender-500">
+            {selectedTone.label} coat | {accessory}
+          </p>
           <p className="mt-2 w-fit rounded-full bg-honey-100 px-2.5 py-1 text-xs font-extrabold text-honey-700">{mood}</p>
         </div>
       </div>
@@ -101,14 +116,14 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
       <div className="mt-5 rounded-lg border border-cream-300 bg-cream-50/70 p-3">
         <p className="text-xs font-extrabold uppercase tracking-normal text-ink-500">Customize companion</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {petLooks.map((look) => (
+          {PET_SPECIES.map((look) => (
             <button
               className={`rounded-full border px-3 py-1.5 text-xs font-black transition ${
-                petType === look.type ? "border-blush-300 bg-blush-100 text-ink-900" : "border-cream-300 bg-white/70 text-ink-700"
+                petType === look.id ? "border-blush-300 bg-blush-100 text-ink-900" : "border-cream-300 bg-white/70 text-ink-700"
               }`}
-              key={look.type}
+              key={look.id}
               onClick={() => {
-                setPetType(look.type);
+                updateCompanion(look.id, petTone, accessory);
                 setMood("Styled");
                 playCozyCue("petChirp");
               }}
@@ -119,17 +134,17 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
           ))}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          {petTones.map((tone) => (
+          {PET_TONES.map((tone) => (
             <button
               aria-label={`Set pet tone to ${tone.label}`}
-              className={`size-8 rounded-full border-2 transition ${petTone === tone.tone ? "border-ink-900" : "border-white"}`}
-              key={tone.tone}
+              className={`size-8 rounded-full border-2 transition ${petTone === tone.id ? "border-ink-900" : "border-white"}`}
+              key={tone.id}
               onClick={() => {
-                setPetTone(tone.tone);
+                updateCompanion(petType, tone.id, accessory);
                 setMood("Glowing");
                 playCozyCue("ui");
               }}
-              style={{ backgroundColor: tone.swatch }}
+              style={{ backgroundColor: tone.color }}
               type="button"
             />
           ))}
@@ -142,7 +157,7 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
               }`}
               key={item}
               onClick={() => {
-                setAccessory(item);
+                updateCompanion(petType, petTone, item);
                 setMood("Loved");
                 playCozyCue("heart");
               }}

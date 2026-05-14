@@ -47,6 +47,7 @@ const phases = [
       { label: "2.5D Phaser room renderer", done: true },
       { label: "Click-to-move and WASD avatar", done: true },
       { label: "Companion behavior states", done: true },
+      { label: "Custom avatar and pet animation sheets", done: true },
       { label: "Clickable, draggable, rotatable furniture", done: true },
       { label: "Depth sorting, shadows, hover outlines", done: true },
       { label: "Local save/load placed items", done: true },
@@ -64,6 +65,8 @@ const phases = [
       { label: "Wallet reward payouts", done: true },
       { label: "Memory Match", done: true },
       { label: "Moonberry Bowling", done: true },
+      { label: "Garden Four", done: true },
+      { label: "Moonstone Rock Paper Scissors", done: true },
       { label: "Lantern Relay", done: true },
       { label: "Heart Hunt", done: true },
       { label: "Couple-vs-couple mode", done: true },
@@ -84,6 +87,7 @@ const phases = [
       { label: "Love notes", done: true },
       { label: "Memory book", done: true },
       { label: "Games hub", done: true },
+      { label: "Per-game invite links", done: true },
     ],
   },
   {
@@ -95,6 +99,7 @@ const phases = [
       { label: "Host lobby shell", done: true },
       { label: "Game session tables", done: true },
       { label: "Party mini-game routes", done: true },
+      { label: "Single-tab games launch hub", done: true },
       { label: "Garden invite links", done: true },
       { label: "Moderated garden chat", done: true },
       { label: "Presence", done: false },
@@ -139,8 +144,9 @@ export default function RoadmapPage() {
           <h1 className="mt-4 font-display text-5xl leading-tight text-ink-900">Build HeartHaven in durable phases.</h1>
           <p className="mt-4 text-base font-semibold leading-7 text-ink-700">
             The app now has a real playable layer: a 2.5D Phaser room, a living garden, a shared memory garden,
-            Petal Catch, Memory Match, Moonberry Bowling, Lantern Relay, Heart Hunt, and local wallet rewards.
-            Supabase tables are ready for protected persistence and realtime sessions.
+            custom animated keepers and companions, Petal Catch, Memory Match, Moonberry Bowling, Garden Four, Moonstone
+            Rock Paper Scissors, Lantern Relay, Heart Hunt, inviteable game cards, and local wallet rewards. Supabase
+            tables are ready for protected persistence and realtime sessions.
           </p>
         </section>
         <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">

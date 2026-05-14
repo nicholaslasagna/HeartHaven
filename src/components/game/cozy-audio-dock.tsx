@@ -8,18 +8,27 @@ import { Button } from "@/components/ui/button";
 const AUDIO_STORAGE_KEY = "hearthaven:audio-enabled";
 
 export function CozyAudioDock() {
-  const [enabled, setEnabled] = useState(() => isCozyAudioEnabled());
-  const [readyLabel, setReadyLabel] = useState(() =>
-    typeof window !== "undefined" && window.localStorage.getItem(AUDIO_STORAGE_KEY) === "true" ? "Tap to resume" : "Sound off",
-  );
+  const [enabled, setEnabled] = useState(false);
+  const [readyLabel, setReadyLabel] = useState("Sound off");
 
   useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const shouldResume = window.localStorage.getItem(AUDIO_STORAGE_KEY) === "true";
+      setEnabled(isCozyAudioEnabled());
+      setReadyLabel(shouldResume ? "Tap to resume" : "Sound off");
+    });
+
     function onReward() {
       playCozyCue("reward");
     }
 
     window.addEventListener("hearthaven:reward-granted", onReward);
-    return () => window.removeEventListener("hearthaven:reward-granted", onReward);
+    return () => {
+      active = false;
+      window.removeEventListener("hearthaven:reward-granted", onReward);
+    };
   }, []);
 
   async function toggleAudio() {

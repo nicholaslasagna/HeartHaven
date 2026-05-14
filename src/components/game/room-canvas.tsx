@@ -2,6 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import {
+  getPetTone,
+  keeperFrame,
+  keeperPaletteIdFromColor,
+  KEEPER_CUSTOMIZATION_EVENT,
+  petFrame,
+  PET_CUSTOMIZATION_EVENT,
+  readKeeperCustomization,
+  readPetCustomization,
+  type KeeperCustomization,
+  type KeeperPose,
+  type PetCustomization,
+  type PetPose,
+} from "@/lib/game/avatar-customization";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import type { RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
@@ -37,6 +51,7 @@ type PetMood = "idle" | "follow" | "sit" | "sleep" | "react";
 type RemoteAvatarObject = {
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
+  sprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
 };
 
@@ -82,8 +97,14 @@ export function RoomCanvas({
       class HeartHavenRoomScene extends PhaserModule.Scene {
         private avatar!: Phaser.GameObjects.Container;
         private avatarShadow!: Phaser.GameObjects.Ellipse;
+        private avatarSprite!: Phaser.GameObjects.Sprite;
+        private avatarPose: KeeperPose = "idle";
+        private avatarEmoteTimer = 0;
+        private keeperCustomization: KeeperCustomization = readKeeperCustomization();
         private pet!: Phaser.GameObjects.Container;
         private petShadow!: Phaser.GameObjects.Ellipse;
+        private petSprite!: Phaser.GameObjects.Sprite;
+        private petCustomization: PetCustomization = readPetCustomization();
         private petEyes: Phaser.GameObjects.Ellipse[] = [];
         private petMood: PetMood = "idle";
         private petMoodTimer = 0;
@@ -101,6 +122,8 @@ export function RoomCanvas({
         private roomEmoteHandler?: (event: Event) => void;
         private remotePlayersHandler?: (event: Event) => void;
         private remoteEmoteHandler?: (event: Event) => void;
+        private keeperCustomizationHandler?: (event: Event) => void;
+        private petCustomizationHandler?: (event: Event) => void;
         private moveBroadcastTimer = 0;
         private footstepTimer = 0;
         private lastSentPosition = { x: 390, y: 374 };
@@ -113,6 +136,14 @@ export function RoomCanvas({
           this.load.image("cozy-room-bg", "/game-assets/generated/cozy-room-bg.png");
           this.load.image("keeper-sprite", "/game-assets/generated/keeper-sprite.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-animation-sheet.svg", {
+            frameWidth: 128,
+            frameHeight: 128,
+          });
+          this.load.spritesheet("pet-animation-sheet", "/game-assets/generated/pet-animation-sheet.svg", {
+            frameWidth: 128,
+            frameHeight: 128,
+          });
           this.load.spritesheet("cozy-furniture-sprites", "/game-assets/generated/cozy-furniture-sprites.png", {
             frameWidth: 384,
             frameHeight: 512,
@@ -446,9 +477,13 @@ export function RoomCanvas({
         }
 
         private createAvatar() {
+          this.keeperCustomization = readKeeperCustomization();
           this.avatarShadow = this.add.ellipse(390, 396, 58, 22, 0x3a2a2a, 0.18).setDepth(350);
           this.avatar = this.add.container(390, 374).setDepth(374);
-          this.avatar.add(this.add.image(0, -46, "keeper-sprite").setDisplaySize(78, 106));
+          this.avatarSprite = this.add
+            .sprite(0, -50, "keeper-animation-sheet", keeperFrame(this.keeperCustomization.paletteId, "idle"))
+            .setDisplaySize(94, 122);
+          this.avatar.add(this.avatarSprite);
           this.avatar.setSize(70, 104);
 
           this.tweens.add({
@@ -462,10 +497,15 @@ export function RoomCanvas({
         }
 
         private createPet() {
+          this.petCustomization = readPetCustomization();
           this.petShadow = this.add.ellipse(456, 410, 52, 18, 0x3a2a2a, 0.15).setDepth(360);
           this.pet = this.add.container(456, 388).setDepth(388);
           this.petEyes = [];
-          this.pet.add(this.add.image(0, -35, "casper-sprite").setDisplaySize(90, 90));
+          this.petSprite = this.add
+            .sprite(0, -38, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
+            .setDisplaySize(94, 94);
+          this.tintPetForTone();
+          this.pet.add(this.petSprite);
           this.pet.setSize(82, 82);
 
           this.tweens.add({
@@ -515,16 +555,45 @@ export function RoomCanvas({
             if (!player?.id || !player.emote) return;
             this.playRemoteEmote(player);
           };
+          this.keeperCustomizationHandler = (event: Event) => {
+            this.keeperCustomization = (event as CustomEvent<KeeperCustomization>).detail ?? readKeeperCustomization();
+            this.setAvatarPose(this.avatarPose);
+          };
+          this.petCustomizationHandler = (event: Event) => {
+            this.petCustomization = (event as CustomEvent<PetCustomization>).detail ?? readPetCustomization();
+            this.setPetPose(this.petMood === "sleep" ? "sleep" : "idle");
+            this.tintPetForTone();
+          };
           window.addEventListener("hearthaven:room-emote", this.roomEmoteHandler);
           window.addEventListener("hearthaven:remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
+          window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
+          window.addEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
           const cleanup = () => {
             if (this.roomEmoteHandler) window.removeEventListener("hearthaven:room-emote", this.roomEmoteHandler);
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:remote-players", this.remotePlayersHandler);
             if (this.remoteEmoteHandler) window.removeEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
+            if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
+            if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
+        }
+
+        private setAvatarPose(pose: KeeperPose) {
+          this.avatarPose = pose;
+          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose));
+        }
+
+        private setPetPose(pose: PetPose) {
+          this.petSprite?.setFrame(petFrame(this.petCustomization.speciesId, pose));
+        }
+
+        private tintPetForTone() {
+          if (!this.petSprite) return;
+          const tone = getPetTone(this.petCustomization.toneId);
+          const tint = PhaserModule.Display.Color.HexStringToColor(tone.color).color;
+          this.petSprite.setTint(tint);
         }
 
         private syncRemotePlayers(players: RealtimeRoomPlayer[]) {
@@ -541,12 +610,15 @@ export function RoomCanvas({
           players.forEach((player) => {
             const existing = this.remoteAvatars.get(player.id);
             if (existing) {
+              const paletteId = keeperPaletteIdFromColor(player.color);
+              existing.sprite.setFrame(keeperFrame(paletteId, Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2"));
               this.tweens.add({
                 targets: existing.container,
                 x: player.x,
                 y: player.y,
                 duration: 140,
                 ease: "Sine.out",
+                onComplete: () => existing.sprite.setFrame(keeperFrame(paletteId, "idle")),
               });
               this.tweens.add({
                 targets: existing.shadow,
@@ -560,10 +632,14 @@ export function RoomCanvas({
             }
 
             const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
+            const paletteId = keeperPaletteIdFromColor(player.color);
             const shadow = this.add.ellipse(player.x, player.y + 22, 54, 20, 0x3a2a2a, 0.14).setDepth(player.y - 1);
             const container = this.add.container(player.x, player.y).setDepth(player.y);
             const aura = this.add.circle(0, -94, 15, color, 0.28);
-            const sprite = this.add.image(0, -46, "keeper-sprite").setDisplaySize(72, 98).setAlpha(0.92);
+            const sprite = this.add
+              .sprite(0, -50, "keeper-animation-sheet", keeperFrame(paletteId, "idle"))
+              .setDisplaySize(86, 112)
+              .setAlpha(0.92);
             sprite.setTint(color);
             const label = this.add
               .text(0, -114, player.displayName, {
@@ -577,7 +653,7 @@ export function RoomCanvas({
               })
               .setOrigin(0.5);
             container.add([aura, sprite, label]);
-            this.remoteAvatars.set(player.id, { container, shadow, label });
+            this.remoteAvatars.set(player.id, { container, shadow, sprite, label });
           });
         }
 
@@ -596,6 +672,9 @@ export function RoomCanvas({
           };
           playCozyCue("emote");
           onRoomEmote?.(emote);
+          if (emote === "wave") this.setAvatarPose("wave");
+          if (emote === "heart" || emote === "sparkle" || emote === "cozy") this.setAvatarPose("heart");
+          this.avatarEmoteTimer = 1050;
           const bubble = this.add.container(this.avatar.x, this.avatar.y - 112).setDepth(7000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.95);
@@ -666,11 +745,13 @@ export function RoomCanvas({
         private updateAvatar(delta: number) {
           const keyboard = this.readKeyboard();
           const speed = 0.23 * delta;
+          let moving = false;
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
             this.target = undefined;
             const next = this.constrainToFloor(this.avatar.x + keyboard.x * speed, this.avatar.y + keyboard.y * speed);
             this.avatar.setPosition(next.x, next.y);
+            moving = true;
           } else if (this.target) {
             const distance = PhaserModule.Math.Distance.Between(this.avatar.x, this.avatar.y, this.target.x, this.target.y);
             if (distance < 4) {
@@ -682,6 +763,7 @@ export function RoomCanvas({
                 this.avatar.y + Math.sin(angle) * speed,
               );
               this.avatar.setPosition(next.x, next.y);
+              moving = true;
             }
           }
 
@@ -697,6 +779,10 @@ export function RoomCanvas({
 
           this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
           this.avatarShadow.setDepth(this.avatar.y - 1);
+          this.avatarEmoteTimer = Math.max(0, this.avatarEmoteTimer - delta);
+          if (this.avatarEmoteTimer === 0) {
+            this.setAvatarPose(moving ? (Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2") : "idle");
+          }
 
           this.moveBroadcastTimer += delta;
           this.footstepTimer += delta;
@@ -753,11 +839,13 @@ export function RoomCanvas({
           const targetX = this.petMood === "sleep" ? 600 : this.avatar.x + desiredOffset.x;
           const targetY = this.petMood === "sleep" ? 266 : this.avatar.y + desiredOffset.y;
           const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, targetX, targetY);
+          let petMoving = false;
 
           if (distance > 10) {
             const followSpeed = this.petMood === "sleep" ? 0.025 : 0.055;
             this.pet.x = PhaserModule.Math.Linear(this.pet.x, targetX, followSpeed);
             this.pet.y = PhaserModule.Math.Linear(this.pet.y, targetY, followSpeed);
+            petMoving = this.petMood !== "sleep";
             if (this.petMood !== "sleep") this.petMood = "follow";
           } else if (this.petMood === "follow") {
             this.petMood = "idle";
@@ -766,6 +854,16 @@ export function RoomCanvas({
           const squish = this.petMood === "sit" ? 0.88 : this.petMood === "sleep" ? 0.7 : 1;
           this.pet.setScale(1, squish);
           this.petEyes.forEach((eye) => eye.setScale(1, this.petMood === "sleep" ? 0.1 : 1));
+          const pose: PetPose = this.petMood === "sleep"
+            ? "sleep"
+            : this.petMood === "sit"
+              ? "sit"
+              : this.petMood === "react"
+                ? "happy"
+                : petMoving
+                  ? Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2"
+                  : "idle";
+          this.setPetPose(pose);
 
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
           this.petShadow.setDepth(this.pet.y - 1);

@@ -117,6 +117,14 @@ export const miniGames = [
     status: "Playable party",
     href: "/app/garden-four",
   },
+  {
+    id: "rock-paper-scissors",
+    title: "Moonstone RPS",
+    reward: "Coins + hearts",
+    description: "Secret-pick rock paper scissors with real turn switching, round history, and best-of-five rewards.",
+    status: "Playable party",
+    href: "/app/rock-paper-scissors",
+  },
 ];
 
 export const partyGames = [
@@ -135,6 +143,13 @@ export const partyGames = [
     description: "A cozy connect-four style party table with animated keepsake drops, win detection, and wallet rewards.",
   },
   {
+    id: "moonstone-rps-party",
+    title: "Moonstone RPS",
+    mode: "2 players or teams",
+    href: "/app/rock-paper-scissors",
+    description: "Secret-pick rock paper scissors with enforced pass-and-play turns, round reveals, and best-of-five rewards.",
+  },
+  {
     id: "petal-catch-party",
     title: "Petal Catch Relay",
     mode: "solo now, co-op next",
@@ -144,9 +159,9 @@ export const partyGames = [
   {
     id: "moonberry-bowling-party",
     title: "Moonberry Bowling",
-    mode: "solo now, party lane next",
+    mode: "2-player party lane",
     href: "/app/bowling",
-    description: "A cozy bowling lane with frame scoring, pin collisions, and Casper cheering each round.",
+    description: "A cozy two-player bowling lane with alternating turns, frame scoring, pin collisions, and Casper cheering each round.",
   },
   {
     id: "lantern-relay",

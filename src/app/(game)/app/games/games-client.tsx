@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Copy, Gamepad2, HeartHandshake, PartyPopper, RadioTower, UsersRound } from "lucide-react";
+import { Copy, Gamepad2, HeartHandshake, Link2, PartyPopper, RadioTower, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
@@ -15,6 +15,7 @@ const partySizes = [2, 4, 6, 8] as const;
 export function GamesClient() {
   const [partySize, setPartySize] = useState<(typeof partySizes)[number]>(4);
   const [copied, setCopied] = useState(false);
+  const [copiedGameId, setCopiedGameId] = useState<string | null>(null);
   const inviteCode = "HH-PARTY-GLOW";
   const visibleSeats = useMemo(() => partySeats.slice(0, Math.min(partySize, partySeats.length)), [partySize]);
 
@@ -22,6 +23,14 @@ export function GamesClient() {
     setCopied(true);
     navigator.clipboard?.writeText(inviteCode).catch(() => setCopied(false));
     setTimeout(() => setCopied(false), 1200);
+  }
+
+  function copyGameInvite(gameId: string, href: string) {
+    const origin = window.location.origin;
+    const link = `${origin}${href}?party=${inviteCode}`;
+    setCopiedGameId(gameId);
+    navigator.clipboard?.writeText(link).catch(() => setCopiedGameId(null));
+    setTimeout(() => setCopiedGameId(null), 1200);
   }
 
   return (
@@ -33,8 +42,8 @@ export function GamesClient() {
         </Badge>
         <h1 className="mt-3 font-display text-4xl text-ink-900">HeartHaven Games</h1>
         <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-ink-700">
-          Couple games, couple-vs-couple games, and larger room parties now have a real home. Current modes run locally;
-          Supabase Realtime can turn these seats into online lobbies.
+          Every playable game lives in this one hub for easy party flow. Copy a room invite, launch a game, and keep the
+          party seats visible while Supabase Realtime turns local seats into online lobbies.
         </p>
       </section>
 
@@ -111,9 +120,14 @@ export function GamesClient() {
             </div>
             <h2 className="font-display text-2xl text-ink-900">{game.title}</h2>
             <p className="mt-2 text-sm font-semibold leading-6 text-ink-700">{game.description}</p>
-            <CozyButton asChild className="mt-4" size="sm" variant="warm">
-              <Link href={game.href}>{game.href === "/app/games" ? "Roadmap" : "Play"}</Link>
-            </CozyButton>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <CozyButton asChild size="sm" variant="warm">
+                <Link href={game.href}>Play</Link>
+              </CozyButton>
+              <Button onClick={() => copyGameInvite(game.id, game.href)} size="sm" variant="secondary">
+                <Link2 /> {copiedGameId === game.id ? "Copied" : "Invite"}
+              </Button>
+            </div>
           </CozyCard>
         ))}
       </section>

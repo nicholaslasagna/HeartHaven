@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="768" height="640" viewBox="0 0 768 640">
+  <defs>
+    <radialGradient id="skinGlow" cx="42%" cy="28%" r="72%">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="64%" stop-color="#f7d9c8"/>
+      <stop offset="100%" stop-color="#d8a98f"/>
+    </radialGradient>
+    <linearGradient id="creamTrim" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fffdf6"/>
+      <stop offset="100%" stop-color="#f5e9d0"/>
+    </linearGradient>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="3" flood-color="#3a2a2a" flood-opacity=".18"/>
+    </filter>
+    <style>
+      .body{fill:var(--body)}
+      .accent{fill:var(--accent)}
+      .trim{fill:url(#creamTrim)}
+      .skin{fill:url(#skinGlow)}
+      .ink{fill:#3a2a2a}
+      .shine{fill:#fffdf6;opacity:.45}
+      .line{stroke:#5b3f3f;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:.34}
+    </style>
+    <g id="keeperIdle" filter="url(#softShadow)">
+      <ellipse cx="64" cy="112" rx="31" ry="9" fill="#3a2a2a" opacity=".13"/>
+      <path class="accent" d="M43 73c-15 8-20 24-18 40h78c2-18-4-33-18-40-9-4-31-4-42 0z"/>
+      <path class="body" d="M36 54c4-16 15-26 28-26s25 10 29 26l7 31c4 18-10 31-36 31S24 103 28 85l8-31z"/>
+      <path class="trim" d="M42 66c4 6 11 10 22 10s18-4 22-10l6 48H36l6-48z"/>
+      <circle class="skin" cx="64" cy="42" r="24"/>
+      <path class="body" d="M41 33c4-15 16-24 30-22 13 2 21 11 22 27-10-6-20-7-30-3-7 3-14 2-22-2z"/>
+      <circle class="ink" cx="56" cy="42" r="3"/>
+      <circle class="ink" cx="73" cy="42" r="3"/>
+      <path class="line" d="M58 52c5 4 9 4 14 0"/>
+      <rect class="body" x="35" y="88" width="14" height="30" rx="7"/>
+      <rect class="body" x="79" y="88" width="14" height="30" rx="7"/>
+      <rect class="accent" x="48" y="108" width="13" height="16" rx="6"/>
+      <rect class="accent" x="68" y="108" width="13" height="16" rx="6"/>
+      <ellipse class="shine" cx="51" cy="57" rx="5" ry="13" transform="rotate(18 51 57)"/>
+    </g>
+    <g id="keeperWalk1" filter="url(#softShadow)">
+      <ellipse cx="64" cy="112" rx="34" ry="9" fill="#3a2a2a" opacity=".13"/>
+      <use href="#keeperIdle"/>
+      <rect class="accent" x="42" y="107" width="15" height="16" rx="6" transform="rotate(-14 49 115)"/>
+      <rect class="accent" x="73" y="108" width="15" height="16" rx="6" transform="rotate(13 80 116)"/>
+      <path class="line" d="M34 87c-7 8-8 17-2 24"/>
+      <path class="line" d="M94 88c8 7 10 16 4 24"/>
+    </g>
+    <g id="keeperWalk2" filter="url(#softShadow)">
+      <ellipse cx="64" cy="112" rx="34" ry="9" fill="#3a2a2a" opacity=".13"/>
+      <use href="#keeperIdle"/>
+      <rect class="accent" x="48" y="108" width="15" height="16" rx="6" transform="rotate(13 55 116)"/>
+      <rect class="accent" x="67" y="107" width="15" height="16" rx="6" transform="rotate(-14 74 115)"/>
+      <path class="line" d="M34 90c-3 9 0 17 8 22"/>
+      <path class="line" d="M94 86c4 10 2 18-7 24"/>
+    </g>
+    <g id="keeperSit" filter="url(#softShadow)">
+      <ellipse cx="64" cy="112" rx="38" ry="10" fill="#3a2a2a" opacity=".15"/>
+      <circle class="skin" cx="64" cy="42" r="24"/>
+      <path class="body" d="M40 34c5-16 17-25 31-23 12 2 20 11 22 26-10-5-19-6-30-2-7 2-14 1-23-1z"/>
+      <circle class="ink" cx="56" cy="42" r="3"/>
+      <circle class="ink" cx="73" cy="42" r="3"/>
+      <path class="line" d="M58 52c5 4 10 4 15 0"/>
+      <path class="body" d="M35 66c11-10 47-10 58 0 9 8 11 34 2 45H33c-9-12-7-37 2-45z"/>
+      <path class="trim" d="M43 73c7 6 34 6 42 0l3 35H40l3-35z"/>
+      <ellipse class="accent" cx="47" cy="112" rx="17" ry="8"/>
+      <ellipse class="accent" cx="82" cy="112" rx="17" ry="8"/>
+    </g>
+    <g id="keeperWave" filter="url(#softShadow)">
+      <use href="#keeperIdle"/>
+      <path class="accent" d="M88 77c12-12 18-18 25-15 6 3 4 12-4 16l-10 6c4 5 3 10-2 12-8 3-15-3-18-11z"/>
+      <path class="line" d="M108 57c8-8 14-7 18-2M112 70c10-2 15 1 17 7"/>
+    </g>
+    <g id="keeperHeart" filter="url(#softShadow)">
+      <use href="#keeperIdle"/>
+      <path d="M98 22c4-8 16-7 18 3 3-10 16-11 20-2 5 12-11 23-20 31-10-8-24-20-18-32z" fill="#d87e8c"/>
+      <circle cx="101" cy="20" r="18" fill="#faebc2" opacity=".16"/>
+    </g>
+  </defs>
+  <rect width="768" height="640" fill="none"/>
+  <g style="--body:#d87e8c;--accent:#a95f69">
+    <g transform="translate(0 0)"><use href="#keeperIdle"/></g><g transform="translate(128 0)"><use href="#keeperWalk1"/></g><g transform="translate(256 0)"><use href="#keeperWalk2"/></g><g transform="translate(384 0)"><use href="#keeperSit"/></g><g transform="translate(512 0)"><use href="#keeperWave"/></g><g transform="translate(640 0)"><use href="#keeperHeart"/></g>
+  </g>
+  <g style="--body:#8e70bd;--accent:#6e4f9a" transform="translate(0 128)">
+    <g><use href="#keeperIdle"/></g><g transform="translate(128 0)"><use href="#keeperWalk1"/></g><g transform="translate(256 0)"><use href="#keeperWalk2"/></g><g transform="translate(384 0)"><use href="#keeperSit"/></g><g transform="translate(512 0)"><use href="#keeperWave"/></g><g transform="translate(640 0)"><use href="#keeperHeart"/></g>
+  </g>
+  <g style="--body:#6e9651;--accent:#4f7337" transform="translate(0 256)">
+    <g><use href="#keeperIdle"/></g><g transform="translate(128 0)"><use href="#keeperWalk1"/></g><g transform="translate(256 0)"><use href="#keeperWalk2"/></g><g transform="translate(384 0)"><use href="#keeperSit"/></g><g transform="translate(512 0)"><use href="#keeperWave"/></g><g transform="translate(640 0)"><use href="#keeperHeart"/></g>
+  </g>
+  <g style="--body:#d9a53e;--accent:#9c6f1f" transform="translate(0 384)">
+    <g><use href="#keeperIdle"/></g><g transform="translate(128 0)"><use href="#keeperWalk1"/></g><g transform="translate(256 0)"><use href="#keeperWalk2"/></g><g transform="translate(384 0)"><use href="#keeperSit"/></g><g transform="translate(512 0)"><use href="#keeperWave"/></g><g transform="translate(640 0)"><use href="#keeperHeart"/></g>
+  </g>
+  <g style="--body:#5e94b0;--accent:#3f718d" transform="translate(0 512)">
+    <g><use href="#keeperIdle"/></g><g transform="translate(128 0)"><use href="#keeperWalk1"/></g><g transform="translate(256 0)"><use href="#keeperWalk2"/></g><g transform="translate(384 0)"><use href="#keeperSit"/></g><g transform="translate(512 0)"><use href="#keeperWave"/></g><g transform="translate(640 0)"><use href="#keeperHeart"/></g>
+  </g>
+</svg>
