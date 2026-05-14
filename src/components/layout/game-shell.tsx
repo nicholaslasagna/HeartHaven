@@ -4,6 +4,7 @@ import { Logo } from "@/components/brand/logo";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { SeasonalEventPill } from "@/components/seasonal/seasonal-event-pill";
+import { ThemeModeDock } from "@/components/theme/theme-mode-dock";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
           <Logo />
           <div className="hidden items-center gap-2 xl:flex">
             <SeasonalEventPill />
+            <ThemeModeDock />
             <CozyAudioDock />
             <RewardWalletPanel compact />
             <Button asChild variant="warm" size="sm">
@@ -40,6 +42,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
           <div className="xl:hidden">
             <div className="flex items-center gap-2">
               <SeasonalEventPill className="hidden sm:inline-flex" />
+              <ThemeModeDock />
               <CozyAudioDock />
             </div>
           </div>

@@ -41,22 +41,25 @@ type GardenCanvasProps = {
   onAvatarMove?: (position: { x: number; y: number; facing: FacingDirection }) => void;
 };
 
-type GardenDecorKind = "bbq" | "swing" | "picnic" | "lanternArch" | "fountain" | "flowerStand";
-
-type ParkGamePortal = {
-  id: string;
-  title: string;
-  href: string;
-  x: number;
-  y: number;
-  color: number;
-  frame: number;
-};
+type GardenDecorKind =
+  | "gazebo"
+  | "swing"
+  | "picnic"
+  | "bbq"
+  | "fountain"
+  | "lanternArch"
+  | "fashionStage"
+  | "arcadeKiosk"
+  | "bowlingKiosk"
+  | "greenhouse"
+  | "memoryTree"
+  | "flowerStand";
 
 type GardenDecorPlacement = {
   id: string;
   kind: GardenDecorKind;
   label: string;
+  href?: string;
   x: number;
   y: number;
   rotation: number;
@@ -79,34 +82,50 @@ type RemoteGardenAvatarObject = {
 };
 
 type GardenPetMood = "idle" | "follow" | "sit" | "happy";
+type GardenTimeOfDay = "morning" | "noon" | "night";
 
 const GARDEN_WIDTH = 960;
 const GARDEN_HEIGHT = 620;
 const GARDEN_WORLD_WIDTH = 3400;
-const GARDEN_WORLD_HEIGHT = 760;
-const GARDEN_STORAGE_PREFIX = "hearthaven:garden-decor:";
+const GARDEN_WORLD_HEIGHT = 1133;
+const GARDEN_STORAGE_PREFIX = "hearthaven:garden-decor:v2:";
 
-const gardenDecorItems: Array<{ kind: GardenDecorKind; label: string; description: string }> = [
-  { kind: "bbq", label: "BBQ", description: "Warm grill for garden parties" },
+const gardenDecorItems: Array<{ kind: GardenDecorKind; label: string; description: string; href?: string }> = [
+  { kind: "gazebo", label: "Gazebo", description: "Large meetup structure" },
   { kind: "swing", label: "Swing set", description: "A cozy two-seat swing" },
   { kind: "picnic", label: "Picnic table", description: "Snacks and letters outside" },
-  { kind: "lanternArch", label: "Lantern arch", description: "Garden entrance glow" },
+  { kind: "bbq", label: "BBQ", description: "Warm grill for garden parties" },
   { kind: "fountain", label: "Berry fountain", description: "Animated water decor" },
+  { kind: "lanternArch", label: "Lantern arch", description: "Garden entrance glow" },
+  { kind: "fashionStage", label: "Fashion stage", description: "Walk-up runway game", href: "/app/fashion-show" },
+  { kind: "arcadeKiosk", label: "Arcade kiosk", description: "Walk-up mini-game stand", href: "/app/petal-catch" },
+  { kind: "bowlingKiosk", label: "Bowling kiosk", description: "Moonberry lane game", href: "/app/bowling" },
+  { kind: "greenhouse", label: "Greenhouse", description: "Garden expansion piece" },
+  { kind: "memoryTree", label: "Memory tree", description: "Shared keepsake centerpiece" },
   { kind: "flowerStand", label: "Flower stand", description: "Extra blooms and color" },
 ];
 
-const parkGamePortals: ParkGamePortal[] = [
-  { id: "petal-catch", title: "Petal Catch", href: "/app/petal-catch", x: 2390, y: 510, color: 0xd87e8c, frame: 4 },
-  { id: "bowling", title: "Bowling", href: "/app/bowling", x: 2630, y: 522, color: 0xd9a53e, frame: 2 },
-  { id: "garden-four", title: "Garden Four", href: "/app/garden-four", x: 2860, y: 430, color: 0x6e9651, frame: 3 },
-  { id: "fashion-show", title: "Fashion Show", href: "/app/fashion-show", x: 3080, y: 382, color: 0x8e70bd, frame: 3 },
-  { id: "heart-hunt", title: "Heart Hunt", href: "/app/heart-hunt", x: 3180, y: 548, color: 0xf4b5be, frame: 6 },
-];
+const worldObjectSprites: Record<GardenDecorKind, { frame: number; width: number; height: number; yOffset: number }> = {
+  gazebo: { frame: 0, width: 260, height: 260, yOffset: -72 },
+  swing: { frame: 1, width: 248, height: 218, yOffset: -62 },
+  picnic: { frame: 2, width: 232, height: 190, yOffset: -48 },
+  bbq: { frame: 3, width: 176, height: 210, yOffset: -60 },
+  fountain: { frame: 4, width: 230, height: 220, yOffset: -58 },
+  lanternArch: { frame: 5, width: 230, height: 242, yOffset: -76 },
+  fashionStage: { frame: 6, width: 286, height: 248, yOffset: -66 },
+  arcadeKiosk: { frame: 7, width: 202, height: 236, yOffset: -64 },
+  bowlingKiosk: { frame: 8, width: 218, height: 234, yOffset: -64 },
+  greenhouse: { frame: 9, width: 268, height: 248, yOffset: -72 },
+  memoryTree: { frame: 10, width: 286, height: 254, yOffset: -78 },
+  flowerStand: { frame: 11, width: 226, height: 210, yOffset: -58 },
+};
 
 export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots }: GardenCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotePlayersRef = useRef(remotePlayers);
+  const timeOfDayRef = useRef<GardenTimeOfDay>("noon");
   const { activeEvent } = useSeasonalEvent();
+  const [timeOfDay, setTimeOfDay] = useState<GardenTimeOfDay>("noon");
   const [status, setStatus] = useState(
     variant === "partner"
       ? "The shared garden is glowing under Casper's watch."
@@ -119,6 +138,11 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
     remotePlayersRef.current = remotePlayers;
     window.dispatchEvent(new CustomEvent("hearthaven:garden-remote-players", { detail: { players: remotePlayers } }));
   }, [remotePlayers]);
+
+  useEffect(() => {
+    timeOfDayRef.current = timeOfDay;
+    window.dispatchEvent(new CustomEvent("hearthaven:garden-time", { detail: { timeOfDay } }));
+  }, [timeOfDay]);
 
   useEffect(() => {
     let destroyed = false;
@@ -159,13 +183,17 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         private addDecorHandler?: (event: Event) => void;
         private keeperCustomizationHandler?: (event: Event) => void;
         private petCustomizationHandler?: (event: Event) => void;
+        private timeOfDayHandler?: (event: Event) => void;
+        private timeOverlay?: Phaser.GameObjects.Rectangle;
+        private decorDragging = false;
 
         constructor() {
           super("HeartHavenGarden");
         }
 
         preload() {
-          this.load.image("moonberry-garden-bg", "/game-assets/generated/moonberry-garden-bg.png");
+          this.load.image("garden-bare-map", "/game-assets/generated/heartheaven-garden-bare-map.png");
+          this.load.image("park-bare-map", "/game-assets/generated/heartheaven-park-bare-map.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
           this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-art-sheet.png", {
             frameWidth: 256,
@@ -182,6 +210,10 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.load.spritesheet("cozy-furniture-sprites", "/game-assets/generated/cozy-furniture-sprites.png", {
             frameWidth: 384,
             frameHeight: 512,
+          });
+          this.load.spritesheet("world-object-sprites", "/game-assets/generated/world-object-sprites.png", {
+            frameWidth: 384,
+            frameHeight: 384,
           });
         }
 
@@ -234,248 +266,30 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private drawBackdrop() {
-          this.add.image(GARDEN_WORLD_WIDTH / 2, GARDEN_HEIGHT / 2, "moonberry-garden-bg").setDisplaySize(GARDEN_WORLD_WIDTH, GARDEN_HEIGHT).setDepth(-20);
-          this.add.rectangle(GARDEN_WORLD_WIDTH / 2, GARDEN_HEIGHT / 2, GARDEN_WORLD_WIDTH, GARDEN_HEIGHT, 0xfffcf3, 0.08).setDepth(-19);
-
-          const sky = this.add.graphics();
-          sky.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 0.18);
-          sky.fillRect(0, 0, GARDEN_WORLD_WIDTH, GARDEN_HEIGHT);
-
-          const distant = this.add.graphics();
-          distant.fillStyle(0xddceec, 0.42);
-          distant.fillEllipse(210, 224, 460, 168);
-          distant.fillStyle(0xc7e0eb, 0.34);
-          distant.fillEllipse(720, 206, 520, 166);
-          distant.fillStyle(0xddceec, 0.32);
-          distant.fillEllipse(1260, 210, 560, 164);
-          distant.fillStyle(0xf6cfd2, 0.24);
-          distant.fillEllipse(2180, 218, 760, 178);
-          distant.fillStyle(0xc7e0eb, 0.28);
-          distant.fillEllipse(3000, 206, 640, 162);
-          distant.fillStyle(0xe4efd7, 0.72);
-          distant.fillEllipse(780, 270, 1320, 190);
-          distant.fillEllipse(2520, 284, 1480, 212);
+          const mapKey = variant === "park" ? "park-bare-map" : "garden-bare-map";
+          this.add.image(GARDEN_WORLD_WIDTH / 2, GARDEN_WORLD_HEIGHT / 2, mapKey).setDisplaySize(GARDEN_WORLD_WIDTH, GARDEN_WORLD_HEIGHT).setDepth(-30);
+          this.add.rectangle(GARDEN_WORLD_WIDTH / 2, GARDEN_WORLD_HEIGHT / 2, GARDEN_WORLD_WIDTH, GARDEN_WORLD_HEIGHT, 0xfffcf3, 0.04).setDepth(-29);
+          this.timeOverlay = this.add.rectangle(
+            GARDEN_WORLD_WIDTH / 2,
+            GARDEN_WORLD_HEIGHT / 2,
+            GARDEN_WORLD_WIDTH,
+            GARDEN_WORLD_HEIGHT,
+            0xffffff,
+            0,
+          ).setDepth(6800).setBlendMode(PhaserModule.BlendModes.MULTIPLY);
+          this.applyTimeOfDay(timeOfDayRef.current);
         }
 
         private drawGardenGround() {
-          const ground = this.add.graphics();
-          ground.fillStyle(0x3a2a2a, 0.12);
-          ground.fillEllipse(860, 430, 1440, 292);
-          ground.fillGradientStyle(0xfdf8ee, 0xe4efd7, 0xd8e9c8, 0xfbe3e3, 0.22);
-          ground.fillPoints(
-            [
-              new PhaserModule.Geom.Point(190, 226),
-              new PhaserModule.Geom.Point(1518, 226),
-              new PhaserModule.Geom.Point(1628, 468),
-              new PhaserModule.Geom.Point(860, 592),
-              new PhaserModule.Geom.Point(92, 468),
-            ],
-            true,
-          );
-          ground.lineStyle(4, 0xa9c58a, 0.35);
-          ground.strokePoints(
-            [
-              new PhaserModule.Geom.Point(190, 226),
-              new PhaserModule.Geom.Point(1518, 226),
-              new PhaserModule.Geom.Point(1628, 468),
-              new PhaserModule.Geom.Point(860, 592),
-              new PhaserModule.Geom.Point(92, 468),
-            ],
-            true,
-          );
-
-          const path = this.add.graphics();
-          path.lineStyle(34, 0xf5e9d0, 0.82);
-          path.beginPath();
-          path.moveTo(420, 590);
-          path.lineTo(480, 420);
-          path.lineTo(variant === "partner" ? 780 : 340, 302);
-          path.lineTo(1040, 336);
-          path.lineTo(1390, 480);
-          path.lineTo(1760, 386);
-          path.lineTo(2160, 470);
-          path.lineTo(2580, 430);
-          path.lineTo(3140, 540);
-          path.strokePath();
-          path.lineStyle(4, 0xffffff, 0.28);
-          path.strokePath();
+          // The generated bare map now owns ground, roads, creeks, and placement pads.
         }
 
         private drawRoadNetwork() {
-          const road = this.add.graphics().setDepth(210);
-          road.lineStyle(42, 0xd9b07f, 0.42);
-          road.beginPath();
-          road.moveTo(96, 546);
-          road.lineTo(332, 498);
-          road.lineTo(620, 430);
-          road.lineTo(930, 382);
-          road.lineTo(1260, 426);
-          road.lineTo(1608, 374);
-          road.lineTo(1980, 402);
-          road.lineTo(2304, 522);
-          road.lineTo(2600, 448);
-          road.lineTo(2880, 516);
-          road.lineTo(3260, 438);
-          road.strokePath();
-          road.lineStyle(4, 0xfffcf3, 0.52);
-          road.strokePath();
-
-          [
-            [820, 360, "Garden Road"],
-            [1618, 338, "Friend Road"],
-            [2060, 366, "Honeyheart Park"],
-            [2700, 398, "Park Arcade"],
-            [3100, 334, "Fashion Stage"],
-          ].forEach(([x, y, label]) => {
-            const sign = this.add.container(Number(x), Number(y)).setDepth(Number(y) + 20);
-            sign.add(this.add.rectangle(0, 24, 8, 50, 0x8b5e3c, 0.75));
-            sign.add(this.add.rectangle(0, 0, 138, 34, 0xfffcf3, 0.92).setStrokeStyle(3, 0xc9a998, 0.7));
-            sign.add(this.add.text(0, 0, String(label), {
-              align: "center",
-              color: "#5B3F3F",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "12px",
-              fontStyle: "900",
-            }).setOrigin(0.5));
-          });
+          // Roads are painted into the map at native resolution.
         }
 
         private drawParkDistrict() {
-          const park = this.add.container(2420, 392).setDepth(392);
-          park.add(this.add.ellipse(0, 112, 1540, 210, 0x6e9651, 0.18));
-          park.add(this.add.ellipse(-620, 92, 220, 64, 0xe4efd7, 0.42).setStrokeStyle(3, 0xa9c58a, 0.56));
-          park.add(this.add.ellipse(-330, 64, 180, 72, 0xc7e0eb, 0.42).setStrokeStyle(3, 0x5e94b0, 0.46));
-          park.add(this.add.ellipse(440, 98, 360, 92, 0xfae3a8, 0.2).setStrokeStyle(3, 0xd9a53e, 0.36));
-          this.drawParkGazebo(1840, 336);
-          this.drawParkSwing(2072, 458);
-          this.drawParkPicnic(2228, 520);
-          this.drawParkFlowers(1800, 492);
-          this.drawParkFlowers(2128, 334);
-          this.drawParkFlowers(2520, 540);
-          this.drawParkFlowers(2960, 514);
-          this.drawFashionStage(3080, 382);
-          parkGamePortals.forEach((portal) => this.drawParkGamePortal(portal));
-          this.drawParkZone(1840, 336, "The gazebo is ready for friend meetups and date photos.");
-          this.drawParkZone(2072, 458, "The swing set sways softly. Casper approves.");
-          this.drawParkZone(2228, 520, "A picnic blanket is open for party chat and snacks.");
-        }
-
-        private drawFashionStage(x: number, y: number) {
-          const stage = this.add.container(x, y).setDepth(y - 12);
-          stage.add(this.add.ellipse(0, 118, 318, 50, 0x3a2a2a, 0.14));
-          stage.add(this.add.rectangle(0, 82, 304, 58, 0xf6cfd2, 0.92).setStrokeStyle(4, 0xd87e8c, 0.45));
-          stage.add(this.add.triangle(-106, 14, -54, -88, -2, 14, -54, -120, 0xddceec, 0.86).setStrokeStyle(3, 0x8e70bd, 0.42));
-          stage.add(this.add.triangle(106, 14, 54, -88, 2, 14, 54, -120, 0xfae3a8, 0.86).setStrokeStyle(3, 0xd9a53e, 0.42));
-          stage.add(this.add.rectangle(0, -2, 218, 32, 0xfffcf3, 0.94).setStrokeStyle(3, 0xd87e8c, 0.5));
-          stage.add(this.add.text(0, -2, "Fashion Show", {
-            color: "#3A2A2A",
-            fontFamily: "Caprasimo, Georgia, serif",
-            fontSize: "18px",
-          }).setOrigin(0.5));
-          for (let index = 0; index < 12; index += 1) {
-            const light = this.add.circle(-132 + index * 24, 46 + Math.sin(index) * 10, 7, index % 2 === 0 ? 0xfae3a8 : 0xddceec, 0.72);
-            stage.add(light);
-            this.tweens.add({ targets: light, alpha: 0.22, duration: 700 + index * 60, yoyo: true, repeat: -1 });
-          }
-        }
-
-        private drawParkGamePortal(portal: ParkGamePortal) {
-          const kiosk = this.add.container(portal.x, portal.y).setDepth(portal.y);
-          kiosk.add(this.add.ellipse(0, 54, 156, 30, 0x3a2a2a, 0.13));
-          kiosk.add(this.add.rectangle(0, 2, 132, 92, 0xfffcf3, 0.94).setStrokeStyle(4, portal.color, 0.42));
-          kiosk.add(this.add.rectangle(0, -52, 152, 34, portal.color, 0.78).setStrokeStyle(3, 0xffffff, 0.44));
-          kiosk.add(this.add.text(0, -52, portal.title, {
-            align: "center",
-            color: "#FFFFFF",
-            fontFamily: "Nunito, sans-serif",
-            fontSize: "13px",
-            fontStyle: "900",
-          }).setOrigin(0.5));
-          kiosk.add(this.add.image(0, -2, "minigame-props", portal.frame).setDisplaySize(80, 104).setTint(portal.id === "heart-hunt" ? 0xd87e8c : 0xffffff));
-          const glow = this.add.circle(0, 4, 60, portal.color, 0.08);
-          kiosk.addAt(glow, 0);
-          this.tweens.add({ targets: glow, alpha: 0.22, scale: 1.08, duration: 1000, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-
-          const zone = this.add.zone(portal.x, portal.y, 170, 150).setInteractive({ useHandCursor: true });
-          zone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            pointer.event.stopPropagation();
-            const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? portal.x, this.avatar?.y ?? portal.y, portal.x, portal.y);
-            if (distance > 180 && this.avatar) {
-              this.target = new PhaserModule.Math.Vector2(portal.x, portal.y + 62);
-              playCozyCue("move");
-              setStatus(`Walking to ${portal.title}. Click it again when you arrive to play.`);
-              return;
-            }
-            playCozyCue("ui");
-            setStatus(`Opening ${portal.title} from Honeyheart Park.`);
-            window.location.assign(portal.href);
-          });
-          zone.on("pointerover", () => setStatus(`${portal.title}: walk up and click to play from the park.`));
-        }
-
-        private drawParkGazebo(x: number, y: number) {
-          const gazebo = this.add.container(x, y).setDepth(y);
-          gazebo.add(this.add.ellipse(0, 76, 180, 34, 0x3a2a2a, 0.13));
-          gazebo.add(this.add.triangle(0, -64, -100, 0, 100, 0, 0, -94, 0xf6cfd2, 0.92).setStrokeStyle(4, 0xd87e8c, 0.56));
-          gazebo.add(this.add.rectangle(-72, 28, 12, 120, 0x8b5e3c, 0.78));
-          gazebo.add(this.add.rectangle(72, 28, 12, 120, 0x8b5e3c, 0.78));
-          gazebo.add(this.add.rectangle(0, 88, 168, 18, 0xd9b07f, 0.82).setStrokeStyle(3, 0x8b5e3c, 0.45));
-          gazebo.add(this.add.text(0, -106, "Honeyheart Park", {
-            color: "#3A2A2A",
-            fontFamily: "Caprasimo, Georgia, serif",
-            fontSize: "18px",
-          }).setOrigin(0.5));
-        }
-
-        private drawParkSwing(x: number, y: number) {
-          const swing = this.add.container(x, y).setDepth(y);
-          swing.add(this.add.ellipse(0, 58, 184, 32, 0x3a2a2a, 0.13));
-          swing.add(this.add.rectangle(-78, -8, 12, 144, 0x8b5e3c, 0.82).setRotation(0.14));
-          swing.add(this.add.rectangle(78, -8, 12, 144, 0x8b5e3c, 0.82).setRotation(-0.14));
-          swing.add(this.add.rectangle(0, -74, 180, 12, 0x8b5e3c, 0.86));
-          swing.add(this.add.line(0, 0, -42, -68, -34, 22, 0x5b3f3f, 0.55).setLineWidth(3));
-          swing.add(this.add.line(0, 0, 42, -68, 34, 22, 0x5b3f3f, 0.55).setLineWidth(3));
-          const seat = this.add.rectangle(0, 36, 104, 30, 0xf6cfd2, 0.92).setStrokeStyle(3, 0xd87e8c, 0.42);
-          swing.add(seat);
-          this.tweens.add({ targets: seat, rotation: 0.04, duration: 1300, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-        }
-
-        private drawParkPicnic(x: number, y: number) {
-          const picnic = this.add.container(x, y).setDepth(y);
-          picnic.add(this.add.ellipse(0, 40, 158, 34, 0x3a2a2a, 0.12));
-          picnic.add(this.add.rectangle(0, 12, 160, 76, 0xf6cfd2, 0.86).setStrokeStyle(3, 0xffffff, 0.5));
-          picnic.add(this.add.rectangle(0, 12, 160, 10, 0xffffff, 0.35));
-          picnic.add(this.add.rectangle(-44, -20, 32, 18, 0xfae3a8, 0.9));
-          picnic.add(this.add.circle(34, -18, 13, 0xe4efd7, 0.92));
-          picnic.add(this.add.circle(58, -12, 10, 0xd87e8c, 0.82));
-        }
-
-        private drawParkFlowers(x: number, y: number) {
-          for (let index = 0; index < 16; index += 1) {
-            const bloom = this.add.circle(
-              x + PhaserModule.Math.Between(-92, 92),
-              y + PhaserModule.Math.Between(-28, 28),
-              PhaserModule.Math.Between(6, 10),
-              index % 3 === 0 ? 0xf6cfd2 : index % 3 === 1 ? 0xddceec : 0xfae3a8,
-              0.78,
-            ).setDepth(y + index);
-            this.tweens.add({
-              targets: bloom,
-              y: bloom.y + PhaserModule.Math.Between(-4, 5),
-              duration: PhaserModule.Math.Between(1200, 2200),
-              yoyo: true,
-              repeat: -1,
-            });
-          }
-        }
-
-        private drawParkZone(x: number, y: number, message: string) {
-          const zone = this.add.zone(x, y, 180, 150).setInteractive({ useHandCursor: true });
-          zone.on("pointerdown", () => {
-            this.target = new PhaserModule.Math.Vector2(x, y + 64);
-            playCozyCue("heart");
-            setStatus(message);
-          });
+          // Large park pieces are generated sprites in the decor system so hosts can move, rotate, and save them.
         }
 
         private drawLanternPath() {
@@ -529,33 +343,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private drawWaterFeature() {
-          const pond = this.add.container(1008, 392).setDepth(392);
-          pond.add(this.add.ellipse(0, 12, 162, 72, 0x5e94b0, 0.32).setStrokeStyle(3, 0xc7e0eb, 0.72));
-          pond.add(this.add.ellipse(8, 2, 118, 42, 0xc7e0eb, 0.52));
-          for (let index = 0; index < 5; index += 1) {
-            const ripple = this.add.ellipse(0, 4, 48 + index * 16, 18 + index * 5, 0xffffff, 0);
-            ripple.setStrokeStyle(2, 0xffffff, 0.22);
-            pond.add(ripple);
-            this.tweens.add({
-              targets: ripple,
-              scale: 1.18,
-              alpha: 0.3,
-              duration: 1400 + index * 160,
-              yoyo: true,
-              repeat: -1,
-              ease: "Sine.inOut",
-            });
-          }
-
-          const creek = this.add.graphics().setDepth(280);
-          creek.lineStyle(28, 0xc7e0eb, 0.34);
-          creek.beginPath();
-          creek.moveTo(1130, 244);
-          creek.lineTo(1260, 328);
-          creek.lineTo(1510, 430);
-          creek.strokePath();
-          creek.lineStyle(5, 0xffffff, 0.28);
-          creek.strokePath();
+          // Water is part of the bare generated terrain so it stays pixel crisp across the scrollable map.
         }
 
         private drawPlots() {
@@ -663,17 +451,10 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private drawPersonalGardenCenterpiece() {
-          const arbor = this.add.container(346, 292).setDepth(292);
-          arbor.add(this.add.arc(0, 8, 72, Math.PI, 0, false, 0xffffff, 0).setStrokeStyle(9, 0x8b5e3c, 0.48));
-          arbor.add(this.add.rectangle(-64, 36, 12, 112, 0x8b5e3c, 0.52));
-          arbor.add(this.add.rectangle(64, 36, 12, 112, 0x8b5e3c, 0.52));
-          for (let index = 0; index < 16; index += 1) {
-            arbor.add(this.add.circle(-66 + index * 9, -36 + Math.sin(index) * 16, 7, 0xf6cfd2, 0.9));
-          }
+          // Centerpieces are generated draggable objects now, not baked into the terrain.
         }
 
         private drawPartnerHeart() {
-          this.createMemoryTree();
           this.createGuardianStatue();
           this.createQuestMarker(272, 282, "Message Milestone", "Achievement bloom unlocked.");
           this.createQuestMarker(688, 282, "Study Week Lantern", "Quest lantern is waiting.");
@@ -880,6 +661,10 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             const kind = (event as CustomEvent<{ kind?: GardenDecorKind }>).detail?.kind;
             if (kind) this.addDecorFromDrawer(kind);
           };
+          this.timeOfDayHandler = (event: Event) => {
+            const nextTime = (event as CustomEvent<{ timeOfDay?: GardenTimeOfDay }>).detail?.timeOfDay;
+            if (nextTime) this.applyTimeOfDay(nextTime);
+          };
           this.keeperCustomizationHandler = (event: Event) => {
             this.keeperCustomization = (event as CustomEvent<KeeperCustomization>).detail ?? readKeeperCustomization();
             this.setAvatarPose(this.avatarPose);
@@ -892,17 +677,35 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           window.addEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
           window.addEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
+          window.addEventListener("hearthaven:garden-time", this.timeOfDayHandler);
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
           window.addEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
           const cleanup = () => {
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
             if (this.chatBubbleHandler) window.removeEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
             if (this.addDecorHandler) window.removeEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
+            if (this.timeOfDayHandler) window.removeEventListener("hearthaven:garden-time", this.timeOfDayHandler);
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
             if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
+        }
+
+        private applyTimeOfDay(nextTime: GardenTimeOfDay) {
+          if (!this.timeOverlay) return;
+          if (nextTime === "morning") {
+            this.timeOverlay.setFillStyle(0xffe7bd, 0.08);
+            setStatus("Morning light selected for this garden visit.");
+            return;
+          }
+          if (nextTime === "night") {
+            this.timeOverlay.setFillStyle(0x332b62, 0.28);
+            setStatus("Night light selected. Lanterns and fireflies stand out more.");
+            return;
+          }
+          this.timeOverlay.setFillStyle(0xffffff, 0);
+          setStatus("Noon light selected for clear decorating.");
         }
 
         private setAvatarPose(pose: KeeperPose) {
@@ -1232,6 +1035,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             id: `garden-${kind}-${Date.now()}`,
             kind,
             label: item.label,
+            href: item.href,
             x: Math.round(center.x),
             y: Math.round(center.y),
             rotation: 0,
@@ -1243,15 +1047,16 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private createDecoration(decoration: GardenDecorPlacement) {
+          const spriteConfig = worldObjectSprites[decoration.kind];
           const container = this.add.container(decoration.x, decoration.y).setDepth(decoration.y);
           container.setRotation((decoration.rotation * Math.PI) / 180);
-          container.setSize(160, 120);
+          container.setSize(spriteConfig.width, spriteConfig.height);
           container.setInteractive({ draggable: true, useHandCursor: true });
           this.input.setDraggable(container);
 
           const glow = this.add.graphics();
           glow.lineStyle(4, 0xffffff, 0.9);
-          glow.strokeRoundedRect(-90, -92, 180, 144, 18);
+          glow.strokeRoundedRect(-spriteConfig.width / 2, -spriteConfig.height + 36, spriteConfig.width, spriteConfig.height, 18);
           glow.setVisible(false);
           container.add(glow);
           container.setData("glow", glow);
@@ -1266,12 +1071,13 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           });
           container.on("pointerover", () => {
             glow.setVisible(true);
-            setStatus(`${decoration.label}: drag to move, R rotates.`);
+            setStatus(`${decoration.label}: drag to move, R rotates${decoration.href ? ", click while nearby to play" : ""}.`);
           });
           container.on("pointerout", () => {
             if (this.selectedDecor?.id !== decoration.id) glow.setVisible(false);
           });
           container.on("drag", (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+            this.decorDragging = true;
             const next = this.constrainToGarden(dragX, dragY);
             container.setPosition(next.x, next.y);
             decoration.x = Math.round(next.x);
@@ -1280,61 +1086,33 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           container.on("dragend", () => {
             this.persistDecorations();
             setStatus(`${decoration.label} moved to x ${decoration.x}, y ${decoration.y}.`);
+            this.time.delayedCall(140, () => {
+              this.decorDragging = false;
+            });
+          });
+          container.on("pointerup", () => {
+            if (!decoration.href || this.decorDragging) return;
+            const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? decoration.x, this.avatar?.y ?? decoration.y, decoration.x, decoration.y);
+            if (distance > 180 && this.avatar) {
+              this.target = new PhaserModule.Math.Vector2(decoration.x, decoration.y + 62);
+              playCozyCue("move");
+              setStatus(`Walking to ${decoration.label}. Click it again when you arrive to play.`);
+              return;
+            }
+            playCozyCue("ui");
+            setStatus(`Opening ${decoration.label}.`);
+            window.location.assign(decoration.href);
           });
         }
 
         private drawGardenDecoration(container: Phaser.GameObjects.Container, kind: GardenDecorKind) {
-          container.add(this.add.ellipse(0, 42, 150, 34, 0x3a2a2a, 0.13));
-
-          if (kind === "bbq") {
-            container.add(this.add.rectangle(0, 10, 108, 58, 0x5b3f3f, 0.88).setStrokeStyle(4, 0x3a2a2a, 0.28));
-            container.add(this.add.ellipse(0, -22, 118, 44, 0x8e70bd, 0.84).setStrokeStyle(4, 0xfae3a8, 0.72));
-            container.add(this.add.rectangle(-38, 48, 10, 52, 0x5b3f3f, 0.86));
-            container.add(this.add.rectangle(38, 48, 10, 52, 0x5b3f3f, 0.86));
-            container.add(this.add.circle(42, -20, 10, 0xf5a142, 0.62));
-            return;
-          }
-
-          if (kind === "swing") {
-            container.add(this.add.rectangle(-62, -8, 12, 132, 0x8b5e3c, 0.82).setRotation(0.18));
-            container.add(this.add.rectangle(62, -8, 12, 132, 0x8b5e3c, 0.82).setRotation(-0.18));
-            container.add(this.add.rectangle(0, -70, 150, 12, 0x8b5e3c, 0.86));
-            container.add(this.add.line(0, 0, -42, -64, -34, 10, 0x5b3f3f, 0.55).setLineWidth(3));
-            container.add(this.add.line(0, 0, 42, -64, 34, 10, 0x5b3f3f, 0.55).setLineWidth(3));
-            container.add(this.add.rectangle(0, 24, 92, 28, 0xf6cfd2, 0.9).setStrokeStyle(3, 0xd87e8c, 0.42));
-            return;
-          }
-
-          if (kind === "picnic") {
-            container.add(this.add.rectangle(0, 20, 148, 72, 0xf6cfd2, 0.86).setStrokeStyle(3, 0xffffff, 0.55));
-            container.add(this.add.rectangle(0, 20, 148, 10, 0xffffff, 0.35));
-            container.add(this.add.rectangle(0, -2, 148, 10, 0xffffff, 0.28));
-            container.add(this.add.circle(-42, -22, 15, 0xfae3a8, 0.92));
-            container.add(this.add.circle(34, -18, 12, 0xe4efd7, 0.92));
-            return;
-          }
-
-          if (kind === "lanternArch") {
-            container.add(this.add.arc(0, -10, 86, Math.PI, 0, false, 0xffffff, 0).setStrokeStyle(10, 0x8b5e3c, 0.62));
-            container.add(this.add.rectangle(-78, 16, 12, 128, 0x8b5e3c, 0.72));
-            container.add(this.add.rectangle(78, 16, 12, 128, 0x8b5e3c, 0.72));
-            for (let index = 0; index < 7; index += 1) {
-              container.add(this.add.circle(-54 + index * 18, -76 + Math.sin(index) * 12, 9, 0xfae3a8, 0.66));
-            }
-            return;
-          }
-
-          if (kind === "fountain") {
-            container.add(this.add.ellipse(0, 26, 134, 64, 0x5e94b0, 0.36).setStrokeStyle(4, 0xc7e0eb, 0.75));
-            container.add(this.add.ellipse(0, 8, 86, 34, 0xc7e0eb, 0.58));
-            container.add(this.add.circle(0, -34, 22, 0xfae3a8, 0.18));
-            return;
-          }
-
-          container.add(this.add.rectangle(0, 16, 132, 54, 0xfffcf3, 0.88).setStrokeStyle(4, 0xa9c58a, 0.58));
-          for (let index = 0; index < 8; index += 1) {
-            container.add(this.add.circle(-52 + index * 15, -22 + Math.sin(index) * 10, 12, index % 2 === 0 ? 0xf6cfd2 : 0xddceec, 0.9));
-          }
+          const spriteConfig = worldObjectSprites[kind];
+          container.add(this.add.ellipse(0, 42, spriteConfig.width * 0.62, 34, 0x3a2a2a, 0.13));
+          container.add(
+            this.add
+              .image(0, spriteConfig.yOffset, "world-object-sprites", spriteConfig.frame)
+              .setDisplaySize(spriteConfig.width, spriteConfig.height),
+          );
         }
 
         private selectDecor(id: string) {
@@ -1572,7 +1350,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
       destroyed = true;
       game?.destroy(true);
     };
-  }, [activeEvent, onAvatarMove, plots, variant]);
+  }, [activeEvent, onAvatarMove, plots, timeOfDayRef, variant]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-garden-300/50 bg-garden-100 shadow-[0_24px_70px_rgba(76,110,54,0.14)]">
@@ -1592,6 +1370,18 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-extrabold text-ink-700">
+          {(["morning", "noon", "night"] as const).map((time) => (
+            <button
+              className={`rounded-md px-2.5 py-1 capitalize transition ${
+                timeOfDay === time ? "bg-blush-500 text-white" : "bg-white/78 text-ink-700 hover:bg-blush-100"
+              }`}
+              key={time}
+              onClick={() => setTimeOfDay(time)}
+              type="button"
+            >
+              {time}
+            </button>
+          ))}
           <span className="rounded-md bg-garden-100 px-2.5 py-1">Click flowers</span>
           <span className="rounded-md bg-sky-100 px-2.5 py-1">Water effects</span>
           <span className="rounded-md bg-honey-100 px-2.5 py-1">Lantern glow</span>
@@ -1654,10 +1444,18 @@ function readGardenDecor(variant: GardenCanvasProps["variant"]): GardenDecorPlac
     const raw = window.localStorage.getItem(getGardenStorageKey(variant));
     if (!raw) return defaultGardenDecor(variant);
     const parsed = JSON.parse(raw) as GardenDecorPlacement[];
-    return Array.isArray(parsed) ? parsed : defaultGardenDecor(variant);
+    return Array.isArray(parsed) ? parsed.map(hydrateGardenDecorPlacement) : defaultGardenDecor(variant);
   } catch {
     return defaultGardenDecor(variant);
   }
+}
+
+function hydrateGardenDecorPlacement(decoration: GardenDecorPlacement): GardenDecorPlacement {
+  const catalogEntry = gardenDecorItems.find((item) => item.kind === decoration.kind);
+  return {
+    ...decoration,
+    href: decoration.href ?? catalogEntry?.href,
+  };
 }
 
 function writeGardenDecor(variant: GardenCanvasProps["variant"], decorations: GardenDecorPlacement[]) {
@@ -1666,9 +1464,32 @@ function writeGardenDecor(variant: GardenCanvasProps["variant"], decorations: Ga
 
 function defaultGardenDecor(variant: GardenCanvasProps["variant"]): GardenDecorPlacement[] {
   const sharedOffset = variant === "partner" ? 60 : 0;
+  if (variant === "park") {
+    return [
+      { id: "decor-gazebo", kind: "gazebo", label: "Gazebo", x: 540, y: 404, rotation: 0 },
+      { id: "decor-swing", kind: "swing", label: "Swing set", x: 860, y: 548, rotation: 0 },
+      { id: "decor-picnic", kind: "picnic", label: "Picnic table", x: 1160, y: 612, rotation: 0 },
+      { id: "decor-fountain", kind: "fountain", label: "Berry fountain", x: 1560, y: 510, rotation: 0 },
+      { id: "decor-fashion", kind: "fashionStage", label: "Fashion stage", href: "/app/fashion-show", x: 2260, y: 510, rotation: 0 },
+      { id: "decor-arcade", kind: "arcadeKiosk", label: "Arcade kiosk", href: "/app/petal-catch", x: 2580, y: 618, rotation: 0 },
+      { id: "decor-bowling", kind: "bowlingKiosk", label: "Bowling kiosk", href: "/app/bowling", x: 2860, y: 590, rotation: 0 },
+      { id: "decor-flower-stand", kind: "flowerStand", label: "Flower stand", x: 3140, y: 470, rotation: 0 },
+    ];
+  }
+
+  if (variant === "partner") {
+    return [
+      { id: "decor-memory-tree", kind: "memoryTree", label: "Memory tree", x: 560, y: 414, rotation: 0 },
+      { id: "decor-lantern-arch", kind: "lanternArch", label: "Lantern arch", x: 900, y: 470, rotation: 0 },
+      { id: "decor-fountain", kind: "fountain", label: "Berry fountain", x: 1210, y: 500, rotation: 0 },
+      { id: "decor-picnic", kind: "picnic", label: "Picnic table", x: 1480, y: 570, rotation: 0 },
+    ];
+  }
+
   return [
-    { id: "decor-bbq", kind: "bbq", label: "BBQ", x: 1180 + sharedOffset, y: 432, rotation: 0 },
-    { id: "decor-swing", kind: "swing", label: "Swing set", x: 1450, y: 410, rotation: 0 },
-    { id: "decor-picnic", kind: "picnic", label: "Picnic table", x: 1280, y: 528, rotation: 0 },
+    { id: "decor-greenhouse", kind: "greenhouse", label: "Greenhouse", x: 860 + sharedOffset, y: 452, rotation: 0 },
+    { id: "decor-bbq", kind: "bbq", label: "BBQ", x: 1180 + sharedOffset, y: 552, rotation: 0 },
+    { id: "decor-swing", kind: "swing", label: "Swing set", x: 1450, y: 500, rotation: 0 },
+    { id: "decor-picnic", kind: "picnic", label: "Picnic table", x: 1280, y: 640, rotation: 0 },
   ];
 }

@@ -239,6 +239,8 @@ export const partySeats = [
   { id: "seat-maya", name: "Maya", role: "Guest", ready: false, team: "Lavender" },
   { id: "seat-open-1", name: "Open seat", role: "Invite", ready: false, team: "Garden" },
   { id: "seat-open-2", name: "Open seat", role: "Invite", ready: false, team: "Garden" },
+  { id: "seat-open-3", name: "Open seat", role: "Invite", ready: false, team: "Honey" },
+  { id: "seat-open-4", name: "Open seat", role: "Invite", ready: false, team: "Sky" },
 ];
 
 export const friendInvite = {

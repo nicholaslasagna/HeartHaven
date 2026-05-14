@@ -49,6 +49,97 @@
   --ink-500: #84675f;
 }
 
+:root[data-hearthaven-theme="mid"] {
+  --background: #f3ebdf;
+  --foreground: #332b2b;
+  --card: #fff8ef;
+  --popover: #fff8ef;
+  --primary: #b96978;
+  --primary-shadow: #8f4f5a;
+  --secondary: #e5d9ef;
+  --muted: #eadfcf;
+  --accent: #efd9df;
+  --cream-50: #f8f0e5;
+  --cream-100: #f3ebdf;
+  --cream-200: #e9ddc9;
+  --blush-100: #f0d9de;
+  --lavender-100: #e7dced;
+  --garden-100: #dce8d0;
+  --ink-900: #332b2b;
+  --ink-700: #514040;
+  --ink-500: #755f5a;
+}
+
+:root[data-hearthaven-theme="dark"] {
+  --background: #201a24;
+  --foreground: #fff7ed;
+  --card: #2a2230;
+  --card-foreground: #fff7ed;
+  --popover: #2a2230;
+  --popover-foreground: #fff7ed;
+  --primary: #f2a6b2;
+  --primary-foreground: #261b22;
+  --primary-shadow: #9d5967;
+  --secondary: #3b2e49;
+  --secondary-foreground: #fff7ed;
+  --muted: #352b2d;
+  --muted-foreground: #d6c4bc;
+  --accent: #422f3a;
+  --accent-foreground: #fff7ed;
+  --border: rgba(246, 207, 210, 0.22);
+  --input: rgba(246, 207, 210, 0.32);
+  --ring: #f2a6b2;
+  --cream-50: #2a2230;
+  --cream-100: #2f2634;
+  --cream-200: #40333b;
+  --cream-300: #57454d;
+  --blush-100: #422b35;
+  --blush-200: #5b3a47;
+  --blush-300: #8d5968;
+  --blush-500: #f2a6b2;
+  --lavender-100: #362d4a;
+  --lavender-200: #4a3c63;
+  --lavender-300: #6f5f90;
+  --lavender-500: #c6a7ef;
+  --sky-100: #253746;
+  --sky-200: #31506a;
+  --sky-500: #8fc2df;
+  --garden-100: #263827;
+  --garden-300: #52704a;
+  --garden-500: #9cc878;
+  --garden-700: #c9ebb4;
+  --honey-100: #4b3a20;
+  --honey-500: #f4c963;
+  --honey-700: #ffe0a0;
+  --ink-900: #fff7ed;
+  --ink-700: #f1ded6;
+  --ink-500: #d6c4bc;
+}
+
+:root[data-hearthaven-theme="seasonal"] {
+  --background: #f5f7fb;
+  --foreground: #2d2a3a;
+  --primary: #d5566a;
+  --primary-shadow: #8f3547;
+  --secondary: #e7edff;
+  --muted: #eef3ff;
+  --accent: #fbe9d5;
+  --cream-50: #fff9ee;
+  --cream-100: #f5f7fb;
+  --cream-200: #e7edff;
+  --blush-100: #ffe3e8;
+  --blush-500: #d5566a;
+  --lavender-100: #e7edff;
+  --lavender-500: #536bb5;
+  --garden-100: #e4f0dc;
+  --garden-500: #628c50;
+  --honey-100: #fff0bf;
+  --honey-500: #d7a93e;
+  --ink-900: #2d2a3a;
+  --ink-700: #484052;
+  --ink-500: #756b7d;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -118,13 +209,13 @@ select {
 
 .bg-meadow {
   background:
-    linear-gradient(180deg, rgba(253, 248, 238, 0.94) 0%, rgba(251, 233, 214, 0.96) 55%, rgba(228, 239, 215, 0.98) 100%),
+    linear-gradient(180deg, color-mix(in srgb, var(--cream-50) 94%, transparent) 0%, color-mix(in srgb, var(--blush-100) 56%, var(--cream-100)) 55%, color-mix(in srgb, var(--garden-100) 98%, transparent) 100%),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px 52px);
 }
 
 .bg-paper {
   background:
-    linear-gradient(180deg, #fdf8ee 0%, #f8ebd2 100%),
+    linear-gradient(180deg, var(--cream-50) 0%, var(--cream-100) 100%),
     repeating-linear-gradient(0deg, rgba(132, 103, 95, 0.04) 0 1px, transparent 1px 18px);
 }
 

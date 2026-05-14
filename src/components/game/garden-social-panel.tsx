@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, MessageCircle, Radio, Send, UsersRound } from "lucide-react";
+import { AlertTriangle, Copy, MessageCircle, Radio, Send, UsersRound, Wrench } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,7 @@ export function GardenSocialPanel({
 }: GardenSocialPanelProps) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState("Chat is moderated: no links, phone numbers, email addresses, or harmful messages.");
+  const [guestPlacementEnabled, setGuestPlacementEnabled] = useState(false);
 
   async function copyInvite() {
     try {
@@ -47,6 +48,18 @@ export function GardenSocialPanel({
     }
     setInput("");
     setNotice("Message sent.");
+  }
+
+  function toggleGuestPlacement() {
+    setGuestPlacementEnabled((current) => {
+      const next = !current;
+      setNotice(
+        next
+          ? "Guest placement enabled. Only grant this to trusted visitors because they can move, rotate, and place host-approved objects."
+          : "Guest placement disabled. Only the host can place or move world objects.",
+      );
+      return next;
+    });
   }
 
   return (
@@ -68,7 +81,16 @@ export function GardenSocialPanel({
         <CozyButton onClick={copyInvite} size="sm" variant="warm">
           <Copy /> Invite
         </CozyButton>
+        <CozyButton onClick={toggleGuestPlacement} size="sm" variant={guestPlacementEnabled ? "default" : "secondary"}>
+          <Wrench /> {guestPlacementEnabled ? "Guests can place" : "Host places"}
+        </CozyButton>
         <Badge variant="garden">{players.length} visiting</Badge>
+      </div>
+
+      <div className="mt-3 rounded-lg border border-honey-500/30 bg-honey-100/70 p-3 text-xs font-bold leading-5 text-ink-700">
+        <AlertTriangle className="mr-1 inline size-3.5 text-honey-700" />
+        Placement permissions should only be shared with trusted guests. Guests with access can move, rotate, and place
+        host-approved objects in the current lobby.
       </div>
 
       <div className="mt-4 rounded-lg border border-garden-300/50 bg-garden-100/55 p-3">

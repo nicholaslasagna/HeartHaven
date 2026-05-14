@@ -165,7 +165,7 @@ export function GamesClient() {
             <UsersRound className="size-5 text-lavender-500" />
             <h2 className="font-display text-2xl text-ink-900">Seats</h2>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {visibleSeats.map((seat) => (
               <div className="rounded-lg border border-cream-300 bg-white/76 p-3 shadow-sm" key={seat.id}>
                 <div className="flex items-center justify-between gap-2">
