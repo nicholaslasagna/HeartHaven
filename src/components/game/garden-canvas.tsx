@@ -1495,8 +1495,14 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
               ? "Scrollable interactive park canvas with avatar movement, chat bubbles, roads, picnic areas, a fashion stage, and clickable game kiosks"
               : "Scrollable interactive garden canvas with avatar movement, animated plots, water effects, lanterns, and butterflies"
         }
-        className="min-h-[380px] w-full bg-garden-100 [&_canvas]:!h-auto [&_canvas]:!w-full"
+        className="mx-auto block overflow-hidden bg-garden-100"
         role="application"
+        style={{
+          // Viewport-bounded box; Phaser Scale.FIT fits the 960x620 game
+          // (camera scrolls the larger world) inside it.
+          width: "min(100%, calc((100dvh - 320px) * 1.5484), 960px)",
+          aspectRatio: "960 / 620",
+        }}
         tabIndex={0}
       />
       <div className="border-t border-garden-300/40 bg-white/78 px-4 py-3">

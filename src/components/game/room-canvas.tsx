@@ -1132,8 +1132,16 @@ export function RoomCanvas({
       <div
         ref={mountRef}
         aria-label="Interactive 2.5D room canvas with player movement, Casper, and draggable furniture"
-        className="min-h-[360px] w-full bg-cream-100 [&_canvas]:!h-auto [&_canvas]:!w-full"
+        className="mx-auto block overflow-hidden bg-cream-100"
         role="application"
+        style={{
+          // Bounded box: never wider than the room's native 960px, never
+          // taller than the viewport minus page chrome. Phaser's Scale.FIT
+          // fits the game inside this box, so the avatar/pet/furniture stay
+          // proportional instead of ballooning on wide screens.
+          width: "min(100%, calc((100dvh - 330px) * 1.6), 960px)",
+          aspectRatio: "960 / 600",
+        }}
         tabIndex={0}
       />
       <div className="flex flex-wrap items-center gap-2 border-t border-cream-300 bg-white/72 px-4 py-3">

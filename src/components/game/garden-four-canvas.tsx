@@ -399,8 +399,12 @@ export function GardenFourCanvas({ onReward }: GardenFourCanvasProps) {
       <div
         ref={mountRef}
         aria-label="Interactive Garden Four board game canvas with pass-and-play turns, token drops, win detection, and rewards"
-        className="min-h-[360px] w-full bg-garden-100 [&_canvas]:!h-auto [&_canvas]:!w-full"
+        className="mx-auto block overflow-hidden bg-garden-100"
         role="application"
+        style={{
+          width: "min(100%, calc((100dvh - 300px) * 1.5333), 920px)",
+          aspectRatio: "920 / 600",
+        }}
         tabIndex={0}
       />
       <div className="border-t border-garden-300/40 bg-white/72 px-4 py-2 text-xs font-extrabold text-ink-700">

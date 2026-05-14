@@ -432,8 +432,12 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
       <div
         ref={mountRef}
         aria-label="Interactive multiplayer Memory Match game canvas with couple and party turn modes"
-        className="min-h-[360px] w-full bg-cream-100 [&_canvas]:!h-auto [&_canvas]:!w-full"
+        className="mx-auto block overflow-hidden bg-cream-100"
         role="application"
+        style={{
+          width: "min(100%, calc((100dvh - 300px) * 1.5333), 920px)",
+          aspectRatio: "920 / 600",
+        }}
         tabIndex={0}
       />
       <div className="border-t border-lavender-300/50 bg-white/70 px-4 py-2 text-xs font-extrabold text-ink-700">

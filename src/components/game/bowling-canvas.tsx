@@ -705,8 +705,12 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
       <div
         ref={mountRef}
         aria-label="Interactive Moonberry Bowling game canvas with aiming, gutters, pin collisions, frame scoring, and rewards"
-        className="min-h-[360px] w-full bg-cream-100 [&_canvas]:!h-auto [&_canvas]:!w-full"
+        className="mx-auto block overflow-hidden bg-cream-100"
         role="application"
+        style={{
+          width: "min(100%, calc((100dvh - 300px) * 1.5333), 920px)",
+          aspectRatio: "920 / 600",
+        }}
         tabIndex={0}
       />
       <div className="border-t border-honey-500/20 bg-white/70 px-4 py-2 text-xs font-extrabold text-ink-700">

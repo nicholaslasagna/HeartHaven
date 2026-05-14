@@ -391,8 +391,12 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
       <div
         ref={mountRef}
         aria-label="Interactive Petal Catch mini-game canvas with basket control, falling petals, score, timer, and rewards"
-        className="min-h-[340px] w-full bg-cream-100 [&_canvas]:!h-auto [&_canvas]:!w-full"
+        className="mx-auto block overflow-hidden bg-cream-100"
         role="application"
+        style={{
+          width: "min(100%, calc((100dvh - 300px) * 1.6071), 900px)",
+          aspectRatio: "900 / 560",
+        }}
         tabIndex={0}
       />
       <div className="border-t border-blush-200 bg-white/70 px-4 py-2 text-xs font-extrabold text-ink-700">
