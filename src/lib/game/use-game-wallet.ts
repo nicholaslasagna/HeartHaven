@@ -1,58 +1,36 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { playerWallet } from "@/lib/mock-data";
+import { recordActivity } from "@/lib/game/activity";
+import { REWARD_EVENT_NAME, type GameReward, type StoredRewardState } from "@/lib/game/rewards";
 import {
-  createRewardEntry,
-  REWARD_EVENT_NAME,
-  REWARD_STORAGE_KEY,
-  type GameReward,
-  type RewardLedgerEntry,
-  type StoredRewardState,
-} from "@/lib/game/rewards";
+  creditWallet,
+  defaultWalletState,
+  readWalletState,
+  resetWalletState,
+  spendFromWallet,
+} from "@/lib/game/wallet-store";
 
-const defaultState: StoredRewardState = {
-  wallet: playerWallet,
-  ledger: [],
-};
-
-function readRewardState(): StoredRewardState {
-  if (typeof window === "undefined") return defaultState;
-
-  try {
-    const raw = window.localStorage.getItem(REWARD_STORAGE_KEY);
-    if (!raw) return defaultState;
-    const parsed = JSON.parse(raw) as Partial<StoredRewardState>;
-    return {
-      wallet: {
-        coins: Number(parsed.wallet?.coins ?? defaultState.wallet.coins),
-        hearts: Number(parsed.wallet?.hearts ?? defaultState.wallet.hearts),
-      },
-      ledger: Array.isArray(parsed.ledger) ? parsed.ledger.slice(0, 12) as RewardLedgerEntry[] : [],
-    };
-  } catch {
-    return defaultState;
-  }
-}
-
-function writeRewardState(state: StoredRewardState) {
-  window.localStorage.setItem(REWARD_STORAGE_KEY, JSON.stringify(state));
-  window.dispatchEvent(new CustomEvent(REWARD_EVENT_NAME, { detail: state }));
-}
-
+/**
+ * useGameWallet — React view over the shared wallet-store.
+ *
+ * The storage logic now lives in `wallet-store.ts` so non-React modules (the
+ * daily gift, daily tasks, pet care) can credit the wallet too. This hook keeps
+ * the exact same public surface it always had, and now also feeds the activity
+ * bus so every mini-game payout advances daily tasks and achievements.
+ */
 export function useGameWallet() {
-  const [state, setState] = useState<StoredRewardState>(defaultState);
+  const [state, setState] = useState<StoredRewardState>(defaultWalletState);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setState(readRewardState()), 0);
+    const timeout = window.setTimeout(() => setState(readWalletState()), 0);
 
     function syncFromStorage() {
-      setState(readRewardState());
+      setState(readWalletState());
     }
-
     function syncFromReward(event: Event) {
       const customEvent = event as CustomEvent<StoredRewardState>;
-      setState(customEvent.detail ?? readRewardState());
+      setState(customEvent.detail ?? readWalletState());
     }
 
     window.addEventListener("storage", syncFromStorage);
@@ -65,40 +43,26 @@ export function useGameWallet() {
   }, []);
 
   const grantReward = useCallback((reward: GameReward) => {
-    const current = readRewardState();
-    const entry = createRewardEntry(reward);
-    const next: StoredRewardState = {
-      wallet: {
-        coins: current.wallet.coins + reward.coins,
-        hearts: current.wallet.hearts + reward.hearts,
-      },
-      ledger: [entry, ...current.ledger].slice(0, 12),
-    };
-    writeRewardState(next);
+    const next = creditWallet(reward);
     setState(next);
-    // TODO: Replace local ledger with Supabase game_reward_events + wallets transaction RPC.
+    // Every mini-game payout is also an "activity": it advances the day's tasks
+    // ("play a game", "earn coins") and milestone achievements.
+    recordActivity("game-played", 1, { gameId: reward.gameId, label: reward.label });
+    if (reward.coins > 0) recordActivity("coins-earned", reward.coins);
+    if (reward.hearts > 0) recordActivity("hearts-earned", reward.hearts);
   }, []);
 
   const resetWallet = useCallback(() => {
-    writeRewardState(defaultState);
-    setState(defaultState);
+    setState(resetWalletState());
   }, []);
 
   const spendCurrency = useCallback((coins: number, hearts: number) => {
-    const current = readRewardState();
-    if (current.wallet.coins < coins || current.wallet.hearts < hearts) return false;
-
-    const next: StoredRewardState = {
-      ...current,
-      wallet: {
-        coins: current.wallet.coins - coins,
-        hearts: current.wallet.hearts - hearts,
-      },
-    };
-    writeRewardState(next);
-    setState(next);
-    // TODO: Replace local spend with a Supabase wallet transaction RPC.
-    return true;
+    const ok = spendFromWallet(coins, hearts);
+    if (ok) {
+      setState(readWalletState());
+      if (coins > 0) recordActivity("coins-spent", coins);
+    }
+    return ok;
   }, []);
 
   return useMemo(

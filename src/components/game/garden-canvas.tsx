@@ -3,23 +3,28 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
+  getPetAccessory,
   getPetTone,
   keeperFrame,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
+  petAccessoryFrame,
   petFrame,
   PET_CUSTOMIZATION_EVENT,
   readKeeperCustomization,
   readPetCustomization,
   type KeeperCustomization,
+  type KeeperBodyId,
   type KeeperOutfitId,
   type KeeperPaletteId,
   type KeeperPose,
   type PetCustomization,
+  type PetAccessoryId,
   type PetPose,
   type PetSpeciesId,
   type PetToneId,
 } from "@/lib/game/avatar-customization";
+import { recordActivity } from "@/lib/game/activity";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
@@ -74,11 +79,14 @@ type RemoteGardenAvatarObject = {
   petContainer: Phaser.GameObjects.Container;
   petShadow: Phaser.GameObjects.Ellipse;
   petSprite: Phaser.GameObjects.Sprite;
+  petAccessorySprite: Phaser.GameObjects.Sprite;
   /** Cached customization so frames only rebuild when it actually changes. */
+  bodyId: KeeperBodyId;
   paletteId: KeeperPaletteId;
   outfitId: KeeperOutfitId;
   petSpeciesId: PetSpeciesId;
   petToneId: PetToneId;
+  petAccessoryId: PetAccessoryId;
 };
 
 type GardenPetMood = "idle" | "follow" | "sit" | "happy";
@@ -89,6 +97,49 @@ const GARDEN_HEIGHT = 620;
 const GARDEN_WORLD_WIDTH = 3400;
 const GARDEN_WORLD_HEIGHT = 1133;
 const GARDEN_STORAGE_PREFIX = "hearthaven:garden-decor:v2:";
+
+type WalkSegment = { x1: number; y1: number; x2: number; y2: number; radius: number };
+type WalkCircle = { x: number; y: number; radius: number };
+
+const sharedWalkSegments: WalkSegment[] = [
+  { x1: 132, y1: 690, x2: 500, y2: 570, radius: 112 },
+  { x1: 500, y1: 570, x2: 900, y2: 462, radius: 118 },
+  { x1: 900, y1: 462, x2: 1280, y2: 555, radius: 118 },
+  { x1: 1280, y1: 555, x2: 1720, y2: 610, radius: 124 },
+  { x1: 1720, y1: 610, x2: 2140, y2: 520, radius: 126 },
+  { x1: 2140, y1: 520, x2: 2600, y2: 590, radius: 126 },
+  { x1: 2600, y1: 590, x2: 3260, y2: 650, radius: 132 },
+];
+
+const parkWalkSegments: WalkSegment[] = [
+  { x1: 118, y1: 620, x2: 520, y2: 488, radius: 126 },
+  { x1: 520, y1: 488, x2: 870, y2: 420, radius: 132 },
+  { x1: 870, y1: 420, x2: 1260, y2: 440, radius: 126 },
+  { x1: 1260, y1: 440, x2: 1660, y2: 520, radius: 128 },
+  { x1: 1660, y1: 520, x2: 2140, y2: 430, radius: 132 },
+  { x1: 2140, y1: 430, x2: 2600, y2: 594, radius: 140 },
+  { x1: 2600, y1: 594, x2: 3260, y2: 520, radius: 140 },
+  { x1: 860, y1: 720, x2: 2350, y2: 722, radius: 116 },
+];
+
+const sharedWalkCircles: WalkCircle[] = [
+  { x: 500, y: 570, radius: 190 },
+  { x: 900, y: 462, radius: 170 },
+  { x: 1280, y: 555, radius: 176 },
+  { x: 2140, y: 520, radius: 184 },
+  { x: 2860, y: 610, radius: 190 },
+];
+
+const parkWalkCircles: WalkCircle[] = [
+  { x: 540, y: 404, radius: 210 },
+  { x: 860, y: 548, radius: 184 },
+  { x: 1160, y: 612, radius: 176 },
+  { x: 1560, y: 510, radius: 194 },
+  { x: 2260, y: 510, radius: 210 },
+  { x: 2580, y: 618, radius: 190 },
+  { x: 2860, y: 590, radius: 190 },
+  { x: 3140, y: 470, radius: 186 },
+];
 
 const gardenDecorItems: Array<{ kind: GardenDecorKind; label: string; description: string; href?: string }> = [
   { kind: "gazebo", label: "Gazebo", description: "Large meetup structure" },
@@ -165,6 +216,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         private pet!: Phaser.GameObjects.Container;
         private petShadow!: Phaser.GameObjects.Ellipse;
         private petSprite!: Phaser.GameObjects.Sprite;
+        private petAccessorySprite!: Phaser.GameObjects.Sprite;
         private petCustomization: PetCustomization = readPetCustomization();
         private petMood: GardenPetMood = "idle";
         private petMoodTimer = 0;
@@ -195,13 +247,17 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.load.image("garden-bare-map", "/game-assets/generated/heartheaven-garden-bare-map.png");
           this.load.image("park-bare-map", "/game-assets/generated/heartheaven-park-bare-map.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
-          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-art-sheet.png", {
+          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-sheet.png", {
             frameWidth: 256,
             frameHeight: 384,
           });
           this.load.spritesheet("pet-animation-sheet", "/game-assets/generated/pet-art-sheet.png", {
             frameWidth: 256,
             frameHeight: 288,
+          });
+          this.load.spritesheet("pet-accessory-sprites", "/game-assets/generated/pet-accessory-sprites.png", {
+            frameWidth: 256,
+            frameHeight: 256,
           });
           this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
             frameWidth: 384,
@@ -425,7 +481,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             pointer.event.stopPropagation();
             const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? x, this.avatar?.y ?? y, x, y);
             if (distance > 120 && this.avatar) {
-              this.target = new PhaserModule.Math.Vector2(x, y + 58);
+              const pathPoint = this.constrainAvatarToWalkable(x, y + 58);
+              this.target = new PhaserModule.Math.Vector2(pathPoint.x, pathPoint.y);
               setStatus(`Walking over to ${plot.name}.`);
               return;
             }
@@ -437,6 +494,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         private waterPlot(plot: GardenPlotState, x: number, y: number) {
           playCozyCue("water");
           setStatus(`${plot.name} watered. ${plot.stage} growth sparkles wake up.`);
+          // Watering a plot advances the "water a garden plot" daily task.
+          recordActivity("garden-watered");
           for (let index = 0; index < 14; index += 1) {
             const drop = this.add.circle(x + PhaserModule.Math.Between(-54, 54), y - 74, 4, 0x5e94b0, 0.82).setDepth(6000);
             this.tweens.add({
@@ -593,7 +652,12 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.avatarShadow = this.add.ellipse(420, 452, 50, 18, 0x3a2a2a, 0.18).setDepth(429);
           this.avatar = this.add.container(420, 430).setDepth(430);
           this.avatarSprite = this.add
-            .sprite(0, -66, "keeper-animation-sheet", keeperFrame(this.keeperCustomization.paletteId, "idle", this.keeperCustomization.outfitId))
+            .sprite(
+              0,
+              -66,
+              "keeper-animation-sheet",
+              keeperFrame(this.keeperCustomization.paletteId, "idle", this.keeperCustomization.outfitId, this.keeperCustomization.bodyId),
+            )
             .setDisplaySize(98, 147);
           this.avatar.add(this.avatarSprite);
           this.avatar.setSize(62, 92);
@@ -617,7 +681,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             .sprite(0, -40, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
             .setDisplaySize(94, 106);
           this.tintPetForTone();
-          this.pet.add(this.petSprite);
+          this.petAccessorySprite = this.createPetAccessorySprite(this.petCustomization.accessory);
+          this.pet.add([this.petSprite, this.petAccessorySprite]);
           this.pet.setSize(70, 70);
           this.tweens.add({
             targets: this.pet,
@@ -641,10 +706,10 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
 
           this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             if (pointer.y < 112) return;
-            const target = this.constrainToGarden(pointer.worldX, pointer.worldY);
+            const target = this.constrainAvatarToWalkable(pointer.worldX, pointer.worldY);
             this.target = new PhaserModule.Math.Vector2(target.x, target.y);
             playCozyCue("move");
-            setStatus(`Walking through the garden to x ${Math.round(target.x)}, y ${Math.round(target.y)}.`);
+            setStatus(`Walking along the paved path to x ${Math.round(target.x)}, y ${Math.round(target.y)}.`);
           });
         }
 
@@ -673,6 +738,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             this.petCustomization = (event as CustomEvent<PetCustomization>).detail ?? readPetCustomization();
             this.setPetPose("idle");
             this.tintPetForTone();
+            this.updatePetAccessory(this.petAccessorySprite, this.petCustomization.accessory);
           };
           window.addEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
@@ -710,7 +776,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
 
         private setAvatarPose(pose: KeeperPose) {
           this.avatarPose = pose;
-          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose, this.keeperCustomization.outfitId));
+          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
         }
 
         private setPetPose(pose: PetPose) {
@@ -728,6 +794,23 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.petSprite.setTint(tint);
         }
 
+        private createPetAccessorySprite(accessoryId: PetAccessoryId) {
+          const accessory = getPetAccessory(accessoryId);
+          return this.add
+            .sprite(accessory.x, accessory.y, "pet-accessory-sprites", petAccessoryFrame(accessoryId))
+            .setDisplaySize(accessory.width, accessory.height)
+            .setDepth(2);
+        }
+
+        private updatePetAccessory(sprite: Phaser.GameObjects.Sprite | undefined, accessoryId: PetAccessoryId) {
+          if (!sprite) return;
+          const accessory = getPetAccessory(accessoryId);
+          sprite
+            .setFrame(petAccessoryFrame(accessoryId))
+            .setPosition(accessory.x, accessory.y)
+            .setDisplaySize(accessory.width, accessory.height);
+        }
+
         private updateAvatar(delta: number) {
           const keyboard = this.readKeyboard();
           const speed = 0.24 * delta;
@@ -736,7 +819,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
             this.target = undefined;
-            const next = this.constrainToGarden(this.avatar.x + keyboard.x * speed, this.avatar.y + keyboard.y * speed);
+            const next = this.constrainAvatarToWalkable(this.avatar.x + keyboard.x * speed, this.avatar.y + keyboard.y * speed);
             moveDx = next.x - this.avatar.x;
             this.avatar.setPosition(next.x, next.y);
             moving = true;
@@ -746,7 +829,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
               this.target = undefined;
             } else {
               const angle = PhaserModule.Math.Angle.Between(this.avatar.x, this.avatar.y, this.target.x, this.target.y);
-              const next = this.constrainToGarden(
+              const next = this.constrainAvatarToWalkable(
                 this.avatar.x + Math.cos(angle) * speed,
                 this.avatar.y + Math.sin(angle) * speed,
               );
@@ -850,11 +933,58 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           return { x: x / length, y: y / length };
         }
 
-        private constrainToGarden(x: number, y: number) {
+        private constrainToWorldBounds(x: number, y: number) {
           return {
             x: PhaserModule.Math.Clamp(x, 120, GARDEN_WORLD_WIDTH - 120),
             y: PhaserModule.Math.Clamp(y, 250, GARDEN_WORLD_HEIGHT - 120),
           };
+        }
+
+        private constrainAvatarToWalkable(x: number, y: number) {
+          const bounded = this.constrainToWorldBounds(x, y);
+          const segments = variant === "park" ? parkWalkSegments : sharedWalkSegments;
+          const circles = variant === "park" ? parkWalkCircles : sharedWalkCircles;
+          let best = { ...bounded };
+          let bestDistance = Number.POSITIVE_INFINITY;
+
+          segments.forEach((segment) => {
+            const projected = projectPointToSegment(bounded.x, bounded.y, segment);
+            const dx = bounded.x - projected.x;
+            const dy = bounded.y - projected.y;
+            const distance = Math.hypot(dx, dy);
+            const candidate =
+              distance <= segment.radius || distance === 0
+                ? bounded
+                : {
+                    x: projected.x + (dx / distance) * segment.radius,
+                    y: projected.y + (dy / distance) * segment.radius,
+                  };
+            const correction = Math.hypot(bounded.x - candidate.x, bounded.y - candidate.y);
+            if (correction < bestDistance) {
+              bestDistance = correction;
+              best = candidate;
+            }
+          });
+
+          circles.forEach((circle) => {
+            const dx = bounded.x - circle.x;
+            const dy = bounded.y - circle.y;
+            const distance = Math.hypot(dx, dy);
+            const candidate =
+              distance <= circle.radius || distance === 0
+                ? bounded
+                : {
+                    x: circle.x + (dx / distance) * circle.radius,
+                    y: circle.y + (dy / distance) * circle.radius,
+                  };
+            const correction = Math.hypot(bounded.x - candidate.x, bounded.y - candidate.y);
+            if (correction < bestDistance) {
+              bestDistance = correction;
+              best = candidate;
+            }
+          });
+
+          return this.constrainToWorldBounds(best.x, best.y);
         }
 
         private applyRemotePetTone(sprite: Phaser.GameObjects.Sprite, toneId: PetToneId) {
@@ -892,20 +1022,26 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             const existing = this.remoteAvatars.get(player.id);
             if (existing) {
               const changed =
+                existing.bodyId !== custom.bodyId ||
                 existing.paletteId !== custom.paletteId ||
                 existing.outfitId !== custom.outfitId ||
                 existing.petSpeciesId !== custom.petSpeciesId ||
-                existing.petToneId !== custom.petToneId;
+                existing.petToneId !== custom.petToneId ||
+                existing.petAccessoryId !== custom.petAccessoryId;
               if (changed) {
+                existing.bodyId = custom.bodyId;
                 existing.paletteId = custom.paletteId;
                 existing.outfitId = custom.outfitId;
                 existing.petSpeciesId = custom.petSpeciesId;
                 existing.petToneId = custom.petToneId;
+                existing.petAccessoryId = custom.petAccessoryId;
                 this.applyRemotePetTone(existing.petSprite, custom.petToneId);
+                this.updatePetAccessory(existing.petAccessorySprite, custom.petAccessoryId);
               }
-              existing.sprite.setFrame(keeperFrame(custom.paletteId, walkFrame, custom.outfitId));
+              existing.sprite.setFrame(keeperFrame(custom.paletteId, walkFrame, custom.outfitId, custom.bodyId));
               existing.sprite.setFlipX(facingLeft);
               existing.petSprite.setFlipX(facingLeft);
+              existing.petAccessorySprite.setFlipX(facingLeft);
               existing.petSprite.setFrame(petFrame(custom.petSpeciesId, petWalkFrame));
               existing.label.setText(player.displayName);
               this.tweens.add({
@@ -927,7 +1063,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
               });
               this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: 200, ease: "Sine.out" });
               this.time.delayedCall(180, () => {
-                existing.sprite.setFrame(keeperFrame(custom.paletteId, "idle", custom.outfitId));
+                existing.sprite.setFrame(keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId));
                 existing.petSprite.setFrame(petFrame(custom.petSpeciesId, "idle"));
               });
               return;
@@ -939,7 +1075,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             const container = this.add.container(player.x, player.y).setDepth(player.y);
             const aura = this.add.circle(0, -80, 14, color, 0.28);
             const sprite = this.add
-              .sprite(0, -66, "keeper-animation-sheet", keeperFrame(custom.paletteId, "idle", custom.outfitId))
+              .sprite(0, -66, "keeper-animation-sheet", keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId))
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
@@ -965,7 +1101,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
               .setAlpha(0.94)
               .setFlipX(facingLeft);
             this.applyRemotePetTone(petSprite, custom.petToneId);
-            petContainer.add(petSprite);
+            const petAccessorySprite = this.createPetAccessorySprite(custom.petAccessoryId).setAlpha(0.94).setFlipX(facingLeft);
+            petContainer.add([petSprite, petAccessorySprite]);
 
             this.remoteAvatars.set(player.id, {
               container,
@@ -975,10 +1112,13 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
               petContainer,
               petShadow,
               petSprite,
+              petAccessorySprite,
+              bodyId: custom.bodyId,
               paletteId: custom.paletteId,
               outfitId: custom.outfitId,
               petSpeciesId: custom.petSpeciesId,
               petToneId: custom.petToneId,
+              petAccessoryId: custom.petAccessoryId,
             });
           });
         }
@@ -1030,7 +1170,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         private addDecorFromDrawer(kind: GardenDecorKind) {
           const item = gardenDecorItems.find((entry) => entry.kind === kind);
           if (!item) return;
-          const center = this.constrainToGarden(this.cameras.main.scrollX + GARDEN_WIDTH / 2, this.cameras.main.scrollY + GARDEN_HEIGHT / 2 + 80);
+          const center = this.constrainToWorldBounds(this.cameras.main.scrollX + GARDEN_WIDTH / 2, this.cameras.main.scrollY + GARDEN_HEIGHT / 2 + 80);
           const decoration: GardenDecorPlacement = {
             id: `garden-${kind}-${Date.now()}`,
             kind,
@@ -1078,7 +1218,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           });
           container.on("drag", (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
             this.decorDragging = true;
-            const next = this.constrainToGarden(dragX, dragY);
+            const next = this.constrainToWorldBounds(dragX, dragY);
             container.setPosition(next.x, next.y);
             decoration.x = Math.round(next.x);
             decoration.y = Math.round(next.y);
@@ -1094,7 +1234,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             if (!decoration.href || this.decorDragging) return;
             const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? decoration.x, this.avatar?.y ?? decoration.y, decoration.x, decoration.y);
             if (distance > 180 && this.avatar) {
-              this.target = new PhaserModule.Math.Vector2(decoration.x, decoration.y + 62);
+              const pathPoint = this.constrainAvatarToWalkable(decoration.x, decoration.y + 62);
+              this.target = new PhaserModule.Math.Vector2(pathPoint.x, pathPoint.y);
               playCozyCue("move");
               setStatus(`Walking to ${decoration.label}. Click it again when you arrive to play.`);
               return;
@@ -1455,6 +1596,17 @@ function hydrateGardenDecorPlacement(decoration: GardenDecorPlacement): GardenDe
   return {
     ...decoration,
     href: decoration.href ?? catalogEntry?.href,
+  };
+}
+
+function projectPointToSegment(x: number, y: number, segment: WalkSegment) {
+  const dx = segment.x2 - segment.x1;
+  const dy = segment.y2 - segment.y1;
+  const lengthSquared = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((x - segment.x1) * dx + (y - segment.y1) * dy) / lengthSquared));
+  return {
+    x: segment.x1 + dx * t,
+    y: segment.y1 + dy * t,
   };
 }
 

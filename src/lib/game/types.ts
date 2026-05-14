@@ -66,6 +66,10 @@ export type RealtimeRoomPlayer = {
   /** Hex palette color — kept for back-compat and aura tint. */
   color: string;
   /** Keeper customization. */
+  bodyId: string;
+  skinId: string;
+  hairStyleId: string;
+  hairColorId: string;
   paletteId: string;
   outfitId: string;
   /** Pet customization. */

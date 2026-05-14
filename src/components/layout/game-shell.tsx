@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, ShieldCheck, ShoppingBag, UserRound } from "lucide-react";
+import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, PawPrint, ShieldCheck, ShoppingBag, UserRound } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/app", label: "Home", icon: Home },
+  { href: "/app/pet", label: "Companion", icon: PawPrint },
   { href: "/app/room", label: "Room", icon: Home },
   { href: "/app/garden", label: "Garden", icon: Leaf },
   { href: "/app/park", label: "Park", icon: Leaf },

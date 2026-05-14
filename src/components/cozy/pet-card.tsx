@@ -7,12 +7,15 @@ import { Cookie, HandHeart, Heart, Sparkles } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import {
+  getPetAccessory,
   getPetSpecies,
   getPetTone,
+  PET_ACCESSORIES,
   PET_SPECIES,
   PET_TONES,
   readPetCustomization,
   writePetCustomization,
+  type PetAccessoryId,
   type PetSpeciesId,
   type PetToneId,
 } from "@/lib/game/avatar-customization";
@@ -32,9 +35,10 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
   const [mood, setMood] = useState("Calm");
   const [petType, setPetType] = useState<PetSpeciesId>("fox");
   const [petTone, setPetTone] = useState<PetToneId>("cream");
-  const [accessory, setAccessory] = useState("Moonberry bow");
+  const [accessory, setAccessory] = useState<PetAccessoryId>("moonberry-bow");
   const selectedSpecies = getPetSpecies(petType);
   const selectedTone = getPetTone(petTone);
+  const selectedAccessory = getPetAccessory(accessory);
   const previewSrc = `/game-assets/generated/pet-art-preview-${petType}.png`;
 
   useEffect(() => {
@@ -51,7 +55,7 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
     };
   }, []);
 
-  function updateCompanion(nextType: PetSpeciesId, nextTone: PetToneId, nextAccessory: string) {
+  function updateCompanion(nextType: PetSpeciesId, nextTone: PetToneId, nextAccessory: PetAccessoryId) {
     setPetType(nextType);
     setPetTone(nextTone);
     setAccessory(nextAccessory);
@@ -107,7 +111,7 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
           <p className="text-sm font-bold text-ink-700">{selectedSpecies.label || species}</p>
           <p className="mt-1 text-xs font-bold text-muted-foreground">{trait}</p>
           <p className="mt-1 text-xs font-bold text-lavender-500">
-            {selectedTone.label} coat | {accessory}
+            {selectedTone.label} coat | {selectedAccessory.label}
           </p>
           <p className="mt-2 w-fit rounded-full bg-honey-100 px-2.5 py-1 text-xs font-extrabold text-honey-700">{mood}</p>
         </div>
@@ -166,20 +170,20 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
           ))}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          {["Moonberry bow", "Lantern scarf", "Garden crown"].map((item) => (
+          {PET_ACCESSORIES.map((item) => (
             <button
               className={`rounded-full border px-3 py-1.5 text-xs font-black transition ${
-                accessory === item ? "border-lavender-300 bg-lavender-100 text-ink-900" : "border-cream-300 bg-white/70 text-ink-700"
+                accessory === item.id ? "border-lavender-300 bg-lavender-100 text-ink-900" : "border-cream-300 bg-white/70 text-ink-700"
               }`}
-              key={item}
+              key={item.id}
               onClick={() => {
-                updateCompanion(petType, petTone, item);
+                updateCompanion(petType, petTone, item.id);
                 setMood("Loved");
                 playCozyCue("heart");
               }}
               type="button"
             >
-              {item}
+              {item.label}
             </button>
           ))}
         </div>

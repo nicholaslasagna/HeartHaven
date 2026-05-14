@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Button } from "@/components/ui/button";
+import { recordActivity } from "@/lib/game/activity";
 import { marketCatalog, roomBlueprints, starterPlacements } from "@/lib/catalog";
 import type { CatalogItem, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
@@ -56,6 +57,11 @@ export function RoomClient() {
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [activeRoom.id]);
+
+  // Spending time in your room advances the "spend time in your room" daily task.
+  useEffect(() => {
+    recordActivity("room-visited");
+  }, []);
 
   const handlePlacementsChange = useCallback((next: RoomPlacement[]) => {
     setDraftPlacements(next);
