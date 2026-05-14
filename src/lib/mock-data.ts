@@ -125,6 +125,14 @@ export const miniGames = [
     status: "Playable party",
     href: "/app/rock-paper-scissors",
   },
+  {
+    id: "fashion-show",
+    title: "Fashion Show",
+    reward: "Coins + hearts",
+    description: "Style your keeper and companion for themed runway rounds with judges, poses, and rewards.",
+    status: "Playable",
+    href: "/app/fashion-show",
+  },
 ];
 
 export const partyGames = [
@@ -176,6 +184,51 @@ export const partyGames = [
     mode: "playable room party",
     href: "/app/heart-hunt",
     description: "Guests search rooms for hidden keepsakes, emote clues, and unlock a shared memory-book reward.",
+  },
+  {
+    id: "fashion-show-party",
+    title: "Fashion Show",
+    mode: "park stage party",
+    href: "/app/fashion-show",
+    description: "A runway stage game with outfit choices, pet poses, judging rounds, and wallet rewards.",
+  },
+];
+
+export const parkGames = [
+  {
+    id: "park-petal-catch",
+    title: "Petal Catch Stall",
+    mode: "solo arcade",
+    href: "/app/petal-catch",
+    description: "A flower-cart mini-game kiosk beside the lantern path.",
+  },
+  {
+    id: "park-bowling",
+    title: "Moonberry Bowling Lane",
+    mode: "two-player lane",
+    href: "/app/bowling",
+    description: "A cozy party lane tucked next to Casper's snack stand.",
+  },
+  {
+    id: "park-garden-four",
+    title: "Garden Four Table",
+    mode: "couples table",
+    href: "/app/garden-four",
+    description: "A board-game table for turn-based couples and parties.",
+  },
+  {
+    id: "park-fashion-show",
+    title: "Fashion Show Stage",
+    mode: "runway stage",
+    href: "/app/fashion-show",
+    description: "A dress-up runway with animated character and pet poses.",
+  },
+  {
+    id: "park-heart-hunt",
+    title: "Heart Hunt Trail",
+    mode: "party search",
+    href: "/app/heart-hunt",
+    description: "A little trailhead for keepsake hunts and friend clues.",
   },
 ];
 

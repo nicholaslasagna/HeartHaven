@@ -69,6 +69,7 @@ const phases = [
       { label: "Moonberry Bowling", done: true },
       { label: "Garden Four", done: true },
       { label: "Moonstone Rock Paper Scissors", done: true },
+      { label: "Fashion Show", done: true },
       { label: "Lantern Relay", done: true },
       { label: "Heart Hunt", done: true },
       { label: "Couple-vs-couple mode", done: true },
@@ -87,6 +88,8 @@ const phases = [
       { label: "Scrollable walkable garden", done: true },
       { label: "Garden decoration drawer", done: true },
       { label: "Honeyheart Park road district", done: true },
+      { label: "Walk-up park game kiosks", done: true },
+      { label: "Fashion stage in the park", done: true },
       { label: "Love notes", done: true },
       { label: "Memory book", done: true },
       { label: "Games hub", done: true },
@@ -146,11 +149,12 @@ export default function RoadmapPage() {
           <Badge variant="blush">Implementation plan</Badge>
           <h1 className="mt-4 font-display text-5xl leading-tight text-ink-900">Build HeartHaven in durable phases.</h1>
           <p className="mt-4 text-base font-semibold leading-7 text-ink-700">
-            The app now has a real playable layer: blank expandable 2.5D rooms, a living garden, Honeyheart Park roads,
-            a shared memory garden, painted wardrobe sprite rows, Casper-style companion variants, Petal Catch, Memory
-            Match, Moonberry Bowling, Garden Four, Moonstone Rock Paper Scissors, Lantern Relay, Heart Hunt, inviteable
-            game cards, moderated garden chat, realtime movement, and local wallet rewards. Supabase tables are ready for
-            protected persistence and session-backed multiplayer.
+            The app now has a real playable layer: blank expandable 2.5D rooms, a living garden, an expanded Honeyheart
+            Park with walk-up game kiosks and a fashion stage, a shared memory garden, painted wardrobe sprite rows,
+            Casper-style companion variants, Petal Catch, Memory Match, Moonberry Bowling, Garden Four, Moonstone Rock
+            Paper Scissors, Fashion Show, Lantern Relay, Heart Hunt, inviteable game cards, moderated garden chat,
+            realtime movement, and local wallet rewards. Supabase tables are ready for protected persistence and
+            session-backed multiplayer.
           </p>
         </section>
         <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">

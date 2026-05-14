@@ -39,6 +39,16 @@ type GardenCanvasProps = {
 
 type GardenDecorKind = "bbq" | "swing" | "picnic" | "lanternArch" | "fountain" | "flowerStand";
 
+type ParkGamePortal = {
+  id: string;
+  title: string;
+  href: string;
+  x: number;
+  y: number;
+  color: number;
+  frame: number;
+};
+
 type GardenDecorPlacement = {
   id: string;
   kind: GardenDecorKind;
@@ -59,8 +69,8 @@ type GardenPetMood = "idle" | "follow" | "sit" | "happy";
 
 const GARDEN_WIDTH = 960;
 const GARDEN_HEIGHT = 620;
-const GARDEN_WORLD_WIDTH = 2400;
-const GARDEN_WORLD_HEIGHT = 720;
+const GARDEN_WORLD_WIDTH = 3400;
+const GARDEN_WORLD_HEIGHT = 760;
 const GARDEN_STORAGE_PREFIX = "hearthaven:garden-decor:";
 
 const gardenDecorItems: Array<{ kind: GardenDecorKind; label: string; description: string }> = [
@@ -70,6 +80,14 @@ const gardenDecorItems: Array<{ kind: GardenDecorKind; label: string; descriptio
   { kind: "lanternArch", label: "Lantern arch", description: "Garden entrance glow" },
   { kind: "fountain", label: "Berry fountain", description: "Animated water decor" },
   { kind: "flowerStand", label: "Flower stand", description: "Extra blooms and color" },
+];
+
+const parkGamePortals: ParkGamePortal[] = [
+  { id: "petal-catch", title: "Petal Catch", href: "/app/petal-catch", x: 2390, y: 510, color: 0xd87e8c, frame: 4 },
+  { id: "bowling", title: "Bowling", href: "/app/bowling", x: 2630, y: 522, color: 0xd9a53e, frame: 2 },
+  { id: "garden-four", title: "Garden Four", href: "/app/garden-four", x: 2860, y: 430, color: 0x6e9651, frame: 3 },
+  { id: "fashion-show", title: "Fashion Show", href: "/app/fashion-show", x: 3080, y: 382, color: 0x8e70bd, frame: 3 },
+  { id: "heart-hunt", title: "Heart Hunt", href: "/app/heart-hunt", x: 3180, y: 548, color: 0xf4b5be, frame: 6 },
 ];
 
 export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots }: GardenCanvasProps) {
@@ -215,8 +233,13 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           distant.fillEllipse(720, 206, 520, 166);
           distant.fillStyle(0xddceec, 0.32);
           distant.fillEllipse(1260, 210, 560, 164);
+          distant.fillStyle(0xf6cfd2, 0.24);
+          distant.fillEllipse(2180, 218, 760, 178);
+          distant.fillStyle(0xc7e0eb, 0.28);
+          distant.fillEllipse(3000, 206, 640, 162);
           distant.fillStyle(0xe4efd7, 0.72);
           distant.fillEllipse(780, 270, 1320, 190);
+          distant.fillEllipse(2520, 284, 1480, 212);
         }
 
         private drawGardenGround() {
@@ -256,6 +279,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           path.lineTo(1390, 480);
           path.lineTo(1760, 386);
           path.lineTo(2160, 470);
+          path.lineTo(2580, 430);
+          path.lineTo(3140, 540);
           path.strokePath();
           path.lineStyle(4, 0xffffff, 0.28);
           path.strokePath();
@@ -273,6 +298,9 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           road.lineTo(1608, 374);
           road.lineTo(1980, 402);
           road.lineTo(2304, 522);
+          road.lineTo(2600, 448);
+          road.lineTo(2880, 516);
+          road.lineTo(3260, 438);
           road.strokePath();
           road.lineStyle(4, 0xfffcf3, 0.52);
           road.strokePath();
@@ -281,6 +309,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             [820, 360, "Garden Road"],
             [1618, 338, "Friend Road"],
             [2060, 366, "Honeyheart Park"],
+            [2700, 398, "Park Arcade"],
+            [3100, 334, "Fashion Stage"],
           ].forEach(([x, y, label]) => {
             const sign = this.add.container(Number(x), Number(y)).setDepth(Number(y) + 20);
             sign.add(this.add.rectangle(0, 24, 8, 50, 0x8b5e3c, 0.75));
@@ -296,18 +326,76 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private drawParkDistrict() {
-          const park = this.add.container(1960, 392).setDepth(392);
-          park.add(this.add.ellipse(0, 92, 620, 158, 0x6e9651, 0.18));
-          park.add(this.add.ellipse(-160, 92, 220, 64, 0xe4efd7, 0.42).setStrokeStyle(3, 0xa9c58a, 0.56));
-          park.add(this.add.ellipse(124, 64, 180, 72, 0xc7e0eb, 0.42).setStrokeStyle(3, 0x5e94b0, 0.46));
+          const park = this.add.container(2420, 392).setDepth(392);
+          park.add(this.add.ellipse(0, 112, 1540, 210, 0x6e9651, 0.18));
+          park.add(this.add.ellipse(-620, 92, 220, 64, 0xe4efd7, 0.42).setStrokeStyle(3, 0xa9c58a, 0.56));
+          park.add(this.add.ellipse(-330, 64, 180, 72, 0xc7e0eb, 0.42).setStrokeStyle(3, 0x5e94b0, 0.46));
+          park.add(this.add.ellipse(440, 98, 360, 92, 0xfae3a8, 0.2).setStrokeStyle(3, 0xd9a53e, 0.36));
           this.drawParkGazebo(1840, 336);
           this.drawParkSwing(2072, 458);
           this.drawParkPicnic(2228, 520);
           this.drawParkFlowers(1800, 492);
           this.drawParkFlowers(2128, 334);
+          this.drawParkFlowers(2520, 540);
+          this.drawParkFlowers(2960, 514);
+          this.drawFashionStage(3080, 382);
+          parkGamePortals.forEach((portal) => this.drawParkGamePortal(portal));
           this.drawParkZone(1840, 336, "The gazebo is ready for friend meetups and date photos.");
           this.drawParkZone(2072, 458, "The swing set sways softly. Casper approves.");
           this.drawParkZone(2228, 520, "A picnic blanket is open for party chat and snacks.");
+        }
+
+        private drawFashionStage(x: number, y: number) {
+          const stage = this.add.container(x, y).setDepth(y - 12);
+          stage.add(this.add.ellipse(0, 118, 318, 50, 0x3a2a2a, 0.14));
+          stage.add(this.add.rectangle(0, 82, 304, 58, 0xf6cfd2, 0.92).setStrokeStyle(4, 0xd87e8c, 0.45));
+          stage.add(this.add.triangle(-106, 14, -54, -88, -2, 14, -54, -120, 0xddceec, 0.86).setStrokeStyle(3, 0x8e70bd, 0.42));
+          stage.add(this.add.triangle(106, 14, 54, -88, 2, 14, 54, -120, 0xfae3a8, 0.86).setStrokeStyle(3, 0xd9a53e, 0.42));
+          stage.add(this.add.rectangle(0, -2, 218, 32, 0xfffcf3, 0.94).setStrokeStyle(3, 0xd87e8c, 0.5));
+          stage.add(this.add.text(0, -2, "Fashion Show", {
+            color: "#3A2A2A",
+            fontFamily: "Caprasimo, Georgia, serif",
+            fontSize: "18px",
+          }).setOrigin(0.5));
+          for (let index = 0; index < 12; index += 1) {
+            const light = this.add.circle(-132 + index * 24, 46 + Math.sin(index) * 10, 7, index % 2 === 0 ? 0xfae3a8 : 0xddceec, 0.72);
+            stage.add(light);
+            this.tweens.add({ targets: light, alpha: 0.22, duration: 700 + index * 60, yoyo: true, repeat: -1 });
+          }
+        }
+
+        private drawParkGamePortal(portal: ParkGamePortal) {
+          const kiosk = this.add.container(portal.x, portal.y).setDepth(portal.y);
+          kiosk.add(this.add.ellipse(0, 54, 156, 30, 0x3a2a2a, 0.13));
+          kiosk.add(this.add.rectangle(0, 2, 132, 92, 0xfffcf3, 0.94).setStrokeStyle(4, portal.color, 0.42));
+          kiosk.add(this.add.rectangle(0, -52, 152, 34, portal.color, 0.78).setStrokeStyle(3, 0xffffff, 0.44));
+          kiosk.add(this.add.text(0, -52, portal.title, {
+            align: "center",
+            color: "#FFFFFF",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "13px",
+            fontStyle: "900",
+          }).setOrigin(0.5));
+          kiosk.add(this.add.image(0, -2, "minigame-props", portal.frame).setDisplaySize(80, 104).setTint(portal.id === "heart-hunt" ? 0xd87e8c : 0xffffff));
+          const glow = this.add.circle(0, 4, 60, portal.color, 0.08);
+          kiosk.addAt(glow, 0);
+          this.tweens.add({ targets: glow, alpha: 0.22, scale: 1.08, duration: 1000, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+
+          const zone = this.add.zone(portal.x, portal.y, 170, 150).setInteractive({ useHandCursor: true });
+          zone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            pointer.event.stopPropagation();
+            const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? portal.x, this.avatar?.y ?? portal.y, portal.x, portal.y);
+            if (distance > 180 && this.avatar) {
+              this.target = new PhaserModule.Math.Vector2(portal.x, portal.y + 62);
+              playCozyCue("move");
+              setStatus(`Walking to ${portal.title}. Click it again when you arrive to play.`);
+              return;
+            }
+            playCozyCue("ui");
+            setStatus(`Opening ${portal.title} from Honeyheart Park.`);
+            window.location.assign(portal.href);
+          });
+          zone.on("pointerover", () => setStatus(`${portal.title}: walk up and click to play from the park.`));
         }
 
         private drawParkGazebo(x: number, y: number) {
@@ -395,6 +483,17 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
                 [920, 338],
                 [1284, 450],
               ];
+
+          if (variant === "park") {
+            positions.push(
+              [1760, 386],
+              [2060, 456],
+              [2380, 494],
+              [2680, 468],
+              [2980, 498],
+              [3220, 432],
+            );
+          }
 
           positions.forEach(([x, y], index) => {
             const lantern = this.add.container(x, y).setDepth(y);
@@ -658,9 +757,10 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private drawButterflies() {
-          const count = variant === "partner" ? 8 : 5;
+          const count = variant === "partner" ? 8 : variant === "park" ? 14 : 5;
+          const maxX = variant === "park" ? GARDEN_WORLD_WIDTH - 180 : 830;
           for (let index = 0; index < count; index += 1) {
-            const x = PhaserModule.Math.Between(130, 830);
+            const x = PhaserModule.Math.Between(130, maxX);
             const y = PhaserModule.Math.Between(160, 408);
             const butterfly = this.add.container(x, y).setDepth(5800);
             butterfly.add(this.add.ellipse(-5, 0, 12, 18, 0xf6cfd2, 0.8));
@@ -1324,7 +1424,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
                 : variant === "partner"
                   ? "Click memories, quests, flowers, and Casper."
                   : variant === "park"
-                    ? "Follow roads, visit the gazebo, swings, and picnic lawn."
+                    ? "Follow roads, visit the gazebo, swings, picnic lawn, and game kiosks."
                     : "Click plots to water them.",
               {
                 color: "#84675F",
@@ -1371,11 +1471,11 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           </p>
           <p className="text-sm font-black text-ink-900">
             {activeEvent
-              ? `${activeEvent.shortName} garden decor active`
-              : variant === "partner"
-                ? "Memory tree, quests, lantern path, and Casper's watch"
-                : variant === "park"
-                  ? "Roads, gazebo, swings, picnic lawn, and friend meetup zones"
+                ? `${activeEvent.shortName} garden decor active`
+                : variant === "partner"
+                  ? "Memory tree, quests, lantern path, and Casper's watch"
+                  : variant === "park"
+                    ? "Roads, gazebo, swings, picnic lawn, fashion stage, and game kiosks"
                 : "Animated plots, water, butterflies, and growth"}
           </p>
         </div>
@@ -1383,6 +1483,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           <span className="rounded-md bg-garden-100 px-2.5 py-1">Click flowers</span>
           <span className="rounded-md bg-sky-100 px-2.5 py-1">Water effects</span>
           <span className="rounded-md bg-honey-100 px-2.5 py-1">Lantern glow</span>
+          {variant === "park" ? <span className="rounded-md bg-blush-100 px-2.5 py-1">Game kiosks</span> : null}
         </div>
       </div>
       <div
@@ -1390,7 +1491,9 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         aria-label={
           variant === "partner"
             ? "Scrollable interactive shared garden canvas with avatar movement, chat bubbles, memory tree, quests, Casper statue, and flowers"
-            : "Scrollable interactive garden canvas with avatar movement, animated plots, water effects, lanterns, and butterflies"
+            : variant === "park"
+              ? "Scrollable interactive park canvas with avatar movement, chat bubbles, roads, picnic areas, a fashion stage, and clickable game kiosks"
+              : "Scrollable interactive garden canvas with avatar movement, animated plots, water effects, lanterns, and butterflies"
         }
         className="min-h-[380px] w-full bg-garden-100 [&_canvas]:!h-auto [&_canvas]:!w-full"
         role="application"
