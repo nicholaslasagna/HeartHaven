@@ -17,7 +17,7 @@ type RoomCanvasLoaderProps = {
   roomName?: string;
   roomTheme?: RoomBlueprint["theme"];
   placements: RoomPlacement[];
-  onAvatarMove?: (position: { x: number; y: number }) => void;
+  onAvatarMove?: (position: { x: number; y: number; facing: "left" | "right" }) => void;
   onRoomEmote?: (emote: RoomEmote) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };

@@ -47,13 +47,36 @@ export type Wallet = {
 
 export type RoomEmote = "heart" | "wave" | "sparkle" | "cozy";
 
+export type FacingDirection = "left" | "right";
+
+/**
+ * RealtimeRoomPlayer is the full presence payload broadcast over Supabase
+ * Realtime. It carries every customization slot so a remote player renders
+ * with their actual keeper outfit + palette and their actual pet species +
+ * fur tone — not a default placeholder. `facing` lets remote sprites mirror
+ * the direction they last moved.
+ *
+ * Customization fields are typed as plain strings (not the client-only
+ * union types from avatar-customization.ts) so this module stays free of the
+ * "use client" boundary; the canvases normalize them on receipt.
+ */
 export type RealtimeRoomPlayer = {
   id: string;
   displayName: string;
+  /** Hex palette color — kept for back-compat and aura tint. */
   color: string;
+  /** Keeper customization. */
+  paletteId: string;
+  outfitId: string;
+  /** Pet customization. */
+  petName: string;
+  petSpeciesId: string;
+  petToneId: string;
+  petAccessory: string;
+  /** Last movement direction, for sprite mirroring. */
+  facing: FacingDirection;
   x: number;
   y: number;
-  petName: string;
   emote?: RoomEmote;
   updatedAt: number;
 };

@@ -25,7 +25,7 @@ type GardenCanvasLoaderProps = {
   remotePlayers?: RealtimeRoomPlayer[];
   variant: "personal" | "partner" | "park";
   plots: GardenPlotState[];
-  onAvatarMove?: (position: { x: number; y: number }) => void;
+  onAvatarMove?: (position: { x: number; y: number; facing: "left" | "right" }) => void;
 };
 
 export function GardenCanvasLoader({ onAvatarMove, remotePlayers, variant, plots }: GardenCanvasLoaderProps) {

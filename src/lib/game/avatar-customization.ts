@@ -1,5 +1,7 @@
 "use client";
 
+import type { RealtimeRoomPlayer } from "@/lib/game/types";
+
 export type KeeperPaletteId = "blush" | "lavender" | "garden" | "honey" | "sky";
 export type KeeperOutfitId = "cardigan" | "overalls" | "cape" | "sweater";
 export type KeeperPose = "idle" | "walk1" | "walk2" | "sit" | "wave" | "heart";
@@ -115,6 +117,28 @@ export function writePetCustomization(customization: PetCustomization) {
   window.dispatchEvent(new CustomEvent(PET_CUSTOMIZATION_EVENT, { detail: customization }));
 }
 
+/**
+ * The customization slice of a multiplayer presence payload, read live from
+ * localStorage. Both the room and garden realtime hooks call this so a
+ * visiting keeper always broadcasts their real palette + outfit and their
+ * real pet species + fur tone + accessory. Pure read — safe to call anytime.
+ */
+export function readPresenceCustomization() {
+  const keeper = readKeeperCustomization();
+  const pet = readPetCustomization();
+  const petName =
+    typeof window === "undefined" ? "Casper" : window.localStorage.getItem("hearthaven:pet-name") ?? "Casper";
+  return {
+    color: getKeeperPalette(keeper.paletteId).color,
+    paletteId: keeper.paletteId,
+    outfitId: keeper.outfitId,
+    petName,
+    petSpeciesId: pet.speciesId,
+    petToneId: pet.toneId,
+    petAccessory: pet.accessory,
+  };
+}
+
 export function getKeeperPalette(id: KeeperPaletteId) {
   return KEEPER_PALETTES.find((palette) => palette.id === id) ?? KEEPER_PALETTES[0];
 }
@@ -122,6 +146,33 @@ export function getKeeperPalette(id: KeeperPaletteId) {
 export function keeperPaletteIdFromColor(color: string): KeeperPaletteId {
   const normalized = color.toLowerCase();
   return KEEPER_PALETTES.find((palette) => palette.color.toLowerCase() === normalized)?.id ?? "lavender";
+}
+
+/**
+ * Coerce a remote player's presence payload (loosely-typed strings) into the
+ * strict customization unions used to pick sprite frames. Old clients that
+ * only sent `color` still resolve to a valid palette + sensible defaults, so
+ * a visiting keeper never renders as a broken frame.
+ */
+export function normalizeRemoteCustomization(player: RealtimeRoomPlayer): {
+  paletteId: KeeperPaletteId;
+  outfitId: KeeperOutfitId;
+  petSpeciesId: PetSpeciesId;
+  petToneId: PetToneId;
+} {
+  const paletteId: KeeperPaletteId = KEEPER_PALETTES.some((palette) => palette.id === player.paletteId)
+    ? (player.paletteId as KeeperPaletteId)
+    : keeperPaletteIdFromColor(player.color);
+  const outfitId: KeeperOutfitId = KEEPER_OUTFITS.some((outfit) => outfit.id === player.outfitId)
+    ? (player.outfitId as KeeperOutfitId)
+    : "cardigan";
+  const petSpeciesId: PetSpeciesId = PET_SPECIES.some((species) => species.id === player.petSpeciesId)
+    ? (player.petSpeciesId as PetSpeciesId)
+    : "fox";
+  const petToneId: PetToneId = PET_TONES.some((tone) => tone.id === player.petToneId)
+    ? (player.petToneId as PetToneId)
+    : "cream";
+  return { paletteId, outfitId, petSpeciesId, petToneId };
 }
 
 export function getKeeperOutfit(id: KeeperOutfitId) {

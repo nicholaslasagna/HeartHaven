@@ -5,7 +5,12 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { moderateChatMessage, type ChatModerationResult, type GardenChatMessage } from "@/lib/game/chat-moderation";
-import type { RealtimeRoomPlayer } from "@/lib/game/types";
+import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
+import {
+  KEEPER_CUSTOMIZATION_EVENT,
+  PET_CUSTOMIZATION_EVENT,
+  readPresenceCustomization,
+} from "@/lib/game/avatar-customization";
 
 type UseGardenRealtimeOptions = {
   gardenId: string;
@@ -14,8 +19,6 @@ type UseGardenRealtimeOptions = {
 };
 
 type ConnectionState = "demo" | "connecting" | "connected" | "offline" | "error";
-
-const colors = ["#D87E8C", "#8E70BD", "#6E9651", "#D9A53E", "#5E94B0"];
 
 function createGuestId() {
   if (typeof window === "undefined") return "guest-server";
@@ -64,10 +67,10 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
         localPlayerRef.current = {
           id: guestId,
           displayName: "Guest Keeper",
-          color: colors[Math.abs(hashCode(guestId)) % colors.length],
+          ...readPresenceCustomization(),
+          facing: "right",
           x: 420,
           y: 430,
-          petName: "Casper",
           updatedAt: Date.now(),
         };
         setConnectionState("demo");
@@ -77,6 +80,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
     }
 
     let cancelled = false;
+    let customizationCleanup: (() => void) | null = null;
 
     async function connect() {
       setConnectionState("connecting");
@@ -89,15 +93,13 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
         } = await supabase.auth.getUser();
         const localId = user?.id ?? createGuestId();
         const displayName = createDisplayName(user?.email);
-        const savedColor = window.localStorage.getItem("hearthaven:keeper-palette");
-        const color = savedColor ?? colors[Math.abs(hashCode(localId)) % colors.length];
         const localPlayer: RealtimeRoomPlayer = {
           id: localId,
           displayName,
-          color,
+          ...readPresenceCustomization(),
+          facing: "right",
           x: 420,
           y: 430,
-          petName: "Casper",
           updatedAt: Date.now(),
         };
 
@@ -151,6 +153,27 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
               setStatus("Realtime garden closed.");
             }
           });
+
+        // Live-update presence when the keeper/pet customization changes so
+        // everyone in the garden sees the new look without a reload.
+        const rebroadcastCustomization = () => {
+          const current = localPlayerRef.current;
+          if (!current) return;
+          const payload: RealtimeRoomPlayer = {
+            ...current,
+            ...readPresenceCustomization(),
+            updatedAt: Date.now(),
+          };
+          localPlayerRef.current = payload;
+          void channel.track(payload);
+          void channel.send({ type: "broadcast", event: "garden_move", payload });
+        };
+        window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, rebroadcastCustomization);
+        window.addEventListener(PET_CUSTOMIZATION_EVENT, rebroadcastCustomization);
+        customizationCleanup = () => {
+          window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, rebroadcastCustomization);
+          window.removeEventListener(PET_CUSTOMIZATION_EVENT, rebroadcastCustomization);
+        };
       } catch (error) {
         setConnectionState("error");
         setStatus(error instanceof Error ? error.message : "Garden Realtime could not start.");
@@ -161,6 +184,8 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
 
     return () => {
       cancelled = true;
+      customizationCleanup?.();
+      customizationCleanup = null;
       const channel = channelRef.current;
       if (channel) {
         void getSupabaseBrowserClient().removeChannel(channel);
@@ -171,7 +196,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
     };
   }, [appendMessage, gardenCode, gardenName, normalizedGardenId]);
 
-  const sendMove = useCallback((position: { x: number; y: number }) => {
+  const sendMove = useCallback((position: { x: number; y: number; facing?: FacingDirection }) => {
     const localPlayer = localPlayerRef.current;
     if (!localPlayer) return;
 
@@ -179,6 +204,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
       ...localPlayer,
       x: Math.round(position.x),
       y: Math.round(position.y),
+      facing: position.facing ?? localPlayer.facing,
       updatedAt: Date.now(),
     };
 
@@ -226,8 +252,4 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
 function upsertPlayer(players: RealtimeRoomPlayer[], next: RealtimeRoomPlayer) {
   const withoutCurrent = players.filter((player) => player.id !== next.id);
   return [...withoutCurrent, next].sort((a, b) => a.displayName.localeCompare(b.displayName));
-}
-
-function hashCode(value: string) {
-  return value.split("").reduce((hash, char) => (hash << 5) - hash + char.charCodeAt(0), 0);
 }

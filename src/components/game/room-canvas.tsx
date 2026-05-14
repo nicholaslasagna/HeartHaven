@@ -5,19 +5,23 @@ import type Phaser from "phaser";
 import {
   getPetTone,
   keeperFrame,
-  keeperPaletteIdFromColor,
   KEEPER_CUSTOMIZATION_EVENT,
+  normalizeRemoteCustomization,
   petFrame,
   PET_CUSTOMIZATION_EVENT,
   readKeeperCustomization,
   readPetCustomization,
   type KeeperCustomization,
+  type KeeperOutfitId,
+  type KeeperPaletteId,
   type KeeperPose,
   type PetCustomization,
   type PetPose,
+  type PetSpeciesId,
+  type PetToneId,
 } from "@/lib/game/avatar-customization";
 import { playCozyCue } from "@/lib/game/cozy-audio";
-import type { RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
+import type { FacingDirection, RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 
 type RoomCanvasProps = {
@@ -25,7 +29,7 @@ type RoomCanvasProps = {
   roomName?: string;
   roomTheme?: RoomBlueprint["theme"];
   placements: RoomPlacement[];
-  onAvatarMove?: (position: { x: number; y: number }) => void;
+  onAvatarMove?: (position: { x: number; y: number; facing: FacingDirection }) => void;
   onRoomEmote?: (emote: RoomEmote) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
@@ -53,6 +57,15 @@ type RemoteAvatarObject = {
   shadow: Phaser.GameObjects.Ellipse;
   sprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
+  /** Remote companion — every visiting keeper brings their own pet. */
+  petContainer: Phaser.GameObjects.Container;
+  petShadow: Phaser.GameObjects.Ellipse;
+  petSprite: Phaser.GameObjects.Sprite;
+  /** Last known customization, so we only rebuild frames when it changes. */
+  paletteId: KeeperPaletteId;
+  outfitId: KeeperOutfitId;
+  petSpeciesId: PetSpeciesId;
+  petToneId: PetToneId;
 };
 
 const ROOM_WIDTH = 960;
@@ -100,6 +113,7 @@ export function RoomCanvas({
         private avatarSprite!: Phaser.GameObjects.Sprite;
         private avatarPose: KeeperPose = "idle";
         private avatarEmoteTimer = 0;
+        private avatarFacing: FacingDirection = "right";
         private keeperCustomization: KeeperCustomization = readKeeperCustomization();
         private pet!: Phaser.GameObjects.Container;
         private petShadow!: Phaser.GameObjects.Ellipse;
@@ -108,6 +122,7 @@ export function RoomCanvas({
         private petEyes: Phaser.GameObjects.Ellipse[] = [];
         private petMood: PetMood = "idle";
         private petMoodTimer = 0;
+        private petFacing: FacingDirection = "right";
         private blinkTimer = 0;
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
         private wasd?: Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown", Phaser.Input.Keyboard.Key>;
@@ -502,14 +517,17 @@ export function RoomCanvas({
         }
 
         private createAvatar() {
+          // Keeper sized as a cozy focal point — tall enough to read clearly,
+          // small enough that the room feels like a space you stand inside
+          // (Webkinz keeps the pet ~1/5 of the room width).
           this.keeperCustomization = readKeeperCustomization();
-          this.avatarShadow = this.add.ellipse(390, 396, 58, 22, 0x3a2a2a, 0.18).setDepth(350);
+          this.avatarShadow = this.add.ellipse(390, 392, 50, 18, 0x3a2a2a, 0.18).setDepth(350);
           this.avatar = this.add.container(390, 374).setDepth(374);
           this.avatarSprite = this.add
-            .sprite(0, -78, "keeper-animation-sheet", keeperFrame(this.keeperCustomization.paletteId, "idle", this.keeperCustomization.outfitId))
-            .setDisplaySize(116, 174);
+            .sprite(0, -66, "keeper-animation-sheet", keeperFrame(this.keeperCustomization.paletteId, "idle", this.keeperCustomization.outfitId))
+            .setDisplaySize(98, 147);
           this.avatar.add(this.avatarSprite);
-          this.avatar.setSize(70, 104);
+          this.avatar.setSize(62, 92);
 
           this.tweens.add({
             targets: this.avatar,
@@ -522,16 +540,18 @@ export function RoomCanvas({
         }
 
         private createPet() {
+          // Companion sits a touch smaller than the keeper, like Casper
+          // trotting at your heel.
           this.petCustomization = readPetCustomization();
-          this.petShadow = this.add.ellipse(456, 410, 52, 18, 0x3a2a2a, 0.15).setDepth(360);
+          this.petShadow = this.add.ellipse(456, 406, 44, 15, 0x3a2a2a, 0.15).setDepth(360);
           this.pet = this.add.container(456, 388).setDepth(388);
           this.petEyes = [];
           this.petSprite = this.add
-            .sprite(0, -48, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
-            .setDisplaySize(114, 128);
+            .sprite(0, -40, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
+            .setDisplaySize(94, 106);
           this.tintPetForTone();
           this.pet.add(this.petSprite);
-          this.pet.setSize(82, 82);
+          this.pet.setSize(70, 70);
 
           this.tweens.add({
             targets: this.pet,
@@ -625,6 +645,15 @@ export function RoomCanvas({
           this.petSprite.setTint(tint);
         }
 
+        private applyRemotePetTone(sprite: Phaser.GameObjects.Sprite, toneId: PetToneId) {
+          if (toneId === "cream") {
+            sprite.clearTint();
+            return;
+          }
+          const tone = getPetTone(toneId);
+          sprite.setTint(PhaserModule.Display.Color.HexStringToColor(tone.color).color);
+        }
+
         private syncRemotePlayers(players: RealtimeRoomPlayer[]) {
           const activeIds = new Set(players.map((player) => player.id));
 
@@ -632,45 +661,81 @@ export function RoomCanvas({
             if (!activeIds.has(id)) {
               avatar.container.destroy(true);
               avatar.shadow.destroy();
+              avatar.petContainer.destroy(true);
+              avatar.petShadow.destroy();
               this.remoteAvatars.delete(id);
             }
           });
 
           players.forEach((player) => {
+            // Every remote keeper renders with their real palette + outfit, and
+            // brings their real pet species + fur tone — normalized so an old
+            // client that only sent `color` still resolves to a valid look.
+            const custom = normalizeRemoteCustomization(player);
+            const facingLeft = player.facing === "left";
+            const walkFrame: KeeperPose = Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2";
+            const petWalkFrame: PetPose = Math.floor(this.time.now / 200) % 2 === 0 ? "walk1" : "walk2";
+            const petX = player.x + (facingLeft ? 54 : -54);
+            const petY = player.y + 14;
+
             const existing = this.remoteAvatars.get(player.id);
             if (existing) {
-              const paletteId = keeperPaletteIdFromColor(player.color);
-              existing.sprite.setFrame(keeperFrame(paletteId, Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2"));
+              const changed =
+                existing.paletteId !== custom.paletteId ||
+                existing.outfitId !== custom.outfitId ||
+                existing.petSpeciesId !== custom.petSpeciesId ||
+                existing.petToneId !== custom.petToneId;
+              if (changed) {
+                existing.paletteId = custom.paletteId;
+                existing.outfitId = custom.outfitId;
+                existing.petSpeciesId = custom.petSpeciesId;
+                existing.petToneId = custom.petToneId;
+                this.applyRemotePetTone(existing.petSprite, custom.petToneId);
+              }
+              existing.sprite.setFrame(keeperFrame(custom.paletteId, walkFrame, custom.outfitId));
+              existing.sprite.setFlipX(facingLeft);
+              existing.petSprite.setFlipX(facingLeft);
+              existing.label.setText(player.displayName);
               this.tweens.add({
                 targets: existing.container,
                 x: player.x,
                 y: player.y,
                 duration: 140,
                 ease: "Sine.out",
-                onComplete: () => existing.sprite.setFrame(keeperFrame(paletteId, "idle")),
+                onComplete: () => {
+                  existing.sprite.setFrame(keeperFrame(custom.paletteId, "idle", custom.outfitId));
+                  existing.container.setDepth(player.y);
+                },
               });
+              this.tweens.add({ targets: existing.shadow, x: player.x, y: player.y + 20, duration: 140, ease: "Sine.out" });
+              existing.petSprite.setFrame(petFrame(custom.petSpeciesId, petWalkFrame));
               this.tweens.add({
-                targets: existing.shadow,
-                x: player.x,
-                y: player.y + 22,
-                duration: 140,
+                targets: existing.petContainer,
+                x: petX,
+                y: petY,
+                duration: 200,
                 ease: "Sine.out",
+                onComplete: () => {
+                  existing.petSprite.setFrame(petFrame(custom.petSpeciesId, "idle"));
+                  existing.petContainer.setDepth(petY - 1);
+                },
               });
-              existing.label.setText(player.displayName);
+              this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: 200, ease: "Sine.out" });
               return;
             }
 
+            // --- new visiting keeper ---
             const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
-            const paletteId = keeperPaletteIdFromColor(player.color);
-            const shadow = this.add.ellipse(player.x, player.y + 22, 54, 20, 0x3a2a2a, 0.14).setDepth(player.y - 1);
+            const shadow = this.add.ellipse(player.x, player.y + 20, 46, 16, 0x3a2a2a, 0.14).setDepth(player.y - 1);
             const container = this.add.container(player.x, player.y).setDepth(player.y);
-            const aura = this.add.circle(0, -94, 15, color, 0.28);
+            const aura = this.add.circle(0, -80, 13, color, 0.28);
             const sprite = this.add
-              .sprite(0, -78, "keeper-animation-sheet", keeperFrame(paletteId, "idle"))
-              .setDisplaySize(108, 162)
-              .setAlpha(0.92);
+              .sprite(0, -66, "keeper-animation-sheet", keeperFrame(custom.paletteId, "idle", custom.outfitId))
+              .setDisplaySize(94, 141)
+              .setAlpha(0.94)
+              .setFlipX(facingLeft);
             const label = this.add
-              .text(0, -114, player.displayName, {
+              .text(0, -100, player.displayName, {
                 align: "center",
                 color: "#3A2A2A",
                 fontFamily: "Nunito, sans-serif",
@@ -681,7 +746,31 @@ export function RoomCanvas({
               })
               .setOrigin(0.5);
             container.add([aura, sprite, label]);
-            this.remoteAvatars.set(player.id, { container, shadow, sprite, label });
+
+            // --- their pet ---
+            const petShadow = this.add.ellipse(petX, petY + 16, 40, 13, 0x3a2a2a, 0.13).setDepth(petY - 2);
+            const petContainer = this.add.container(petX, petY).setDepth(petY - 1);
+            const petSprite = this.add
+              .sprite(0, -36, "pet-animation-sheet", petFrame(custom.petSpeciesId, "idle"))
+              .setDisplaySize(80, 90)
+              .setAlpha(0.94)
+              .setFlipX(facingLeft);
+            this.applyRemotePetTone(petSprite, custom.petToneId);
+            petContainer.add(petSprite);
+
+            this.remoteAvatars.set(player.id, {
+              container,
+              shadow,
+              sprite,
+              label,
+              petContainer,
+              petShadow,
+              petSprite,
+              paletteId: custom.paletteId,
+              outfitId: custom.outfitId,
+              petSpeciesId: custom.petSpeciesId,
+              petToneId: custom.petToneId,
+            });
           });
         }
 
@@ -774,10 +863,13 @@ export function RoomCanvas({
           const keyboard = this.readKeyboard();
           const speed = 0.23 * delta;
           let moving = false;
+          // Horizontal intent this frame — drives the left/right sprite mirror.
+          let moveDx = 0;
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
             this.target = undefined;
             const next = this.constrainToFloor(this.avatar.x + keyboard.x * speed, this.avatar.y + keyboard.y * speed);
+            moveDx = next.x - this.avatar.x;
             this.avatar.setPosition(next.x, next.y);
             moving = true;
           } else if (this.target) {
@@ -790,10 +882,20 @@ export function RoomCanvas({
                 this.avatar.x + Math.cos(angle) * speed,
                 this.avatar.y + Math.sin(angle) * speed,
               );
+              moveDx = next.x - this.avatar.x;
               this.avatar.setPosition(next.x, next.y);
               moving = true;
             }
           }
+
+          // Face the way we're walking. A small deadzone keeps the sprite from
+          // flickering when movement is almost purely vertical.
+          if (moving && Math.abs(moveDx) > 0.05) {
+            this.avatarFacing = moveDx < 0 ? "left" : "right";
+          }
+          // The keeper art is drawn facing the viewer; flipX mirrors it so it
+          // reads as facing left vs right.
+          this.avatarSprite.setFlipX(this.avatarFacing === "left");
 
           if (this.wasd?.rotate && PhaserModule.Input.Keyboard.JustDown(this.wasd.rotate)) {
             this.rotateSelectedFurniture();
@@ -829,7 +931,7 @@ export function RoomCanvas({
           if (hasMoved && this.moveBroadcastTimer > 110) {
             this.moveBroadcastTimer = 0;
             this.lastSentPosition = { x: this.avatar.x, y: this.avatar.y };
-            onAvatarMove?.(this.lastSentPosition);
+            onAvatarMove?.({ ...this.lastSentPosition, facing: this.avatarFacing });
           }
         }
 
@@ -868,6 +970,7 @@ export function RoomCanvas({
           const targetY = this.petMood === "sleep" ? 266 : this.avatar.y + desiredOffset.y;
           const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, targetX, targetY);
           let petMoving = false;
+          const prevPetX = this.pet.x;
 
           if (distance > 10) {
             const followSpeed = this.petMood === "sleep" ? 0.025 : 0.055;
@@ -878,6 +981,16 @@ export function RoomCanvas({
           } else if (this.petMood === "follow") {
             this.petMood = "idle";
           }
+
+          // Pet faces the way it's trotting; when idle it turns to look at the
+          // keeper so the companion always feels attentive.
+          const petDx = this.pet.x - prevPetX;
+          if (petMoving && Math.abs(petDx) > 0.05) {
+            this.petFacing = petDx < 0 ? "left" : "right";
+          } else if (!petMoving && this.petMood !== "sleep") {
+            this.petFacing = this.avatar.x < this.pet.x ? "left" : "right";
+          }
+          this.petSprite.setFlipX(this.petFacing === "left");
 
           const squish = this.petMood === "sit" ? 0.88 : this.petMood === "sleep" ? 0.7 : 1;
           this.pet.setScale(1, squish);
@@ -1252,30 +1365,36 @@ function getFurnitureSpriteFrame(kind: FurnitureKind) {
 }
 
 function getFurnitureSpriteDisplaySize(kind: FurnitureKind) {
+  // Webkinz-cozy proportions: furniture reads as decor inside a roomy space,
+  // not as wall-to-wall giant props. Roughly a 0.7x pass over the old values
+  // so the 960x600 room can hold several pieces with the keeper + pet still
+  // the clear focal point.
   const sizes: Partial<Record<FurnitureKind, { width: number; height: number }>> = {
-    rug: { width: 300, height: 200 },
-    chair: { width: 170, height: 230 },
-    bed: { width: 240, height: 240 },
-    table: { width: 214, height: 206 },
-    window: { width: 210, height: 236 },
-    lantern: { width: 124, height: 220 },
-    shelf: { width: 232, height: 226 },
-    plant: { width: 196, height: 220 },
+    rug: { width: 224, height: 150 },
+    chair: { width: 122, height: 166 },
+    bed: { width: 178, height: 178 },
+    table: { width: 156, height: 150 },
+    window: { width: 152, height: 170 },
+    lantern: { width: 90, height: 160 },
+    shelf: { width: 168, height: 164 },
+    plant: { width: 142, height: 160 },
   };
 
-  return sizes[kind] ?? { width: 140, height: 140 };
+  return sizes[kind] ?? { width: 104, height: 104 };
 }
 
 function getFurnitureSpriteOffsetY(kind: FurnitureKind) {
+  // Offsets scaled to match the smaller sprites so each piece still sits with
+  // its visual base on the placement anchor.
   const offsets: Partial<Record<FurnitureKind, number>> = {
-    rug: -4,
-    chair: -34,
-    bed: -48,
-    table: -34,
-    window: -16,
-    lantern: -34,
-    shelf: -34,
-    plant: -36,
+    rug: -3,
+    chair: -25,
+    bed: -35,
+    table: -25,
+    window: -12,
+    lantern: -25,
+    shelf: -25,
+    plant: -26,
   };
 
   return offsets[kind] ?? 0;
