@@ -18,6 +18,7 @@ const phases = [
       { label: "Dashboard", done: true },
       { label: "Room", done: true },
       { label: "Garden", done: true },
+      { label: "Honeyheart Park", done: true },
       { label: "Shop", done: true },
       { label: "Date-based holiday events", done: true },
     ],
@@ -47,7 +48,8 @@ const phases = [
       { label: "2.5D Phaser room renderer", done: true },
       { label: "Click-to-move and WASD avatar", done: true },
       { label: "Companion behavior states", done: true },
-      { label: "Custom avatar and pet animation sheets", done: true },
+      { label: "Painted wardrobe and pet sprite sheets", done: true },
+      { label: "Blank expandable room wings", done: true },
       { label: "Clickable, draggable, rotatable furniture", done: true },
       { label: "Depth sorting, shadows, hover outlines", done: true },
       { label: "Local save/load placed items", done: true },
@@ -84,6 +86,7 @@ const phases = [
       { label: "Playable shared garden", done: true },
       { label: "Scrollable walkable garden", done: true },
       { label: "Garden decoration drawer", done: true },
+      { label: "Honeyheart Park road district", done: true },
       { label: "Love notes", done: true },
       { label: "Memory book", done: true },
       { label: "Games hub", done: true },
@@ -102,11 +105,11 @@ const phases = [
       { label: "Single-tab games launch hub", done: true },
       { label: "Garden invite links", done: true },
       { label: "Moderated garden chat", done: true },
-      { label: "Presence", done: false },
-      { label: "Online room invites", done: false },
-      { label: "Two avatars", done: false },
-      { label: "Emotes", done: false },
-      { label: "Realtime movement", done: false },
+      { label: "Presence", done: true },
+      { label: "Online room invites", done: true },
+      { label: "Two avatars", done: true },
+      { label: "Emotes", done: true },
+      { label: "Realtime movement", done: true },
     ],
   },
   {
@@ -143,10 +146,11 @@ export default function RoadmapPage() {
           <Badge variant="blush">Implementation plan</Badge>
           <h1 className="mt-4 font-display text-5xl leading-tight text-ink-900">Build HeartHaven in durable phases.</h1>
           <p className="mt-4 text-base font-semibold leading-7 text-ink-700">
-            The app now has a real playable layer: a 2.5D Phaser room, a living garden, a shared memory garden,
-            custom animated keepers and companions, Petal Catch, Memory Match, Moonberry Bowling, Garden Four, Moonstone
-            Rock Paper Scissors, Lantern Relay, Heart Hunt, inviteable game cards, and local wallet rewards. Supabase
-            tables are ready for protected persistence and realtime sessions.
+            The app now has a real playable layer: blank expandable 2.5D rooms, a living garden, Honeyheart Park roads,
+            a shared memory garden, painted wardrobe sprite rows, Casper-style companion variants, Petal Catch, Memory
+            Match, Moonberry Bowling, Garden Four, Moonstone Rock Paper Scissors, Lantern Relay, Heart Hunt, inviteable
+            game cards, moderated garden chat, realtime movement, and local wallet rewards. Supabase tables are ready for
+            protected persistence and session-backed multiplayer.
           </p>
         </section>
         <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">

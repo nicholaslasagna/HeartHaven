@@ -32,7 +32,7 @@ type GardenPlotState = {
 
 type GardenCanvasProps = {
   remotePlayers?: RealtimeRoomPlayer[];
-  variant: "personal" | "partner";
+  variant: "personal" | "partner" | "park";
   plots: GardenPlotState[];
   onAvatarMove?: (position: { x: number; y: number }) => void;
 };
@@ -59,7 +59,7 @@ type GardenPetMood = "idle" | "follow" | "sit" | "happy";
 
 const GARDEN_WIDTH = 960;
 const GARDEN_HEIGHT = 620;
-const GARDEN_WORLD_WIDTH = 1720;
+const GARDEN_WORLD_WIDTH = 2400;
 const GARDEN_WORLD_HEIGHT = 720;
 const GARDEN_STORAGE_PREFIX = "hearthaven:garden-decor:";
 
@@ -77,7 +77,11 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
   const remotePlayersRef = useRef(remotePlayers);
   const { activeEvent } = useSeasonalEvent();
   const [status, setStatus] = useState(
-    variant === "partner" ? "The shared garden is glowing under Casper's watch." : "Walk the garden, water plots, and decorate.",
+    variant === "partner"
+      ? "The shared garden is glowing under Casper's watch."
+      : variant === "park"
+        ? "Walk Honeyheart Park, follow the roads, and meet friends by the swings."
+        : "Walk the garden, water plots, decorate, and follow the road to the park.",
   );
 
   useEffect(() => {
@@ -130,13 +134,13 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         preload() {
           this.load.image("moonberry-garden-bg", "/game-assets/generated/moonberry-garden-bg.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
-          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-animation-sheet.svg", {
-            frameWidth: 128,
-            frameHeight: 128,
+          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-art-sheet.png", {
+            frameWidth: 256,
+            frameHeight: 384,
           });
-          this.load.spritesheet("pet-animation-sheet", "/game-assets/generated/pet-animation-sheet.svg", {
-            frameWidth: 128,
-            frameHeight: 128,
+          this.load.spritesheet("pet-animation-sheet", "/game-assets/generated/pet-art-sheet.png", {
+            frameWidth: 256,
+            frameHeight: 288,
           });
           this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
             frameWidth: 384,
@@ -153,8 +157,10 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.cameras.main.setBounds(0, 0, GARDEN_WORLD_WIDTH, GARDEN_WORLD_HEIGHT);
           this.drawBackdrop();
           this.drawGardenGround();
+          this.drawRoadNetwork();
           this.drawLanternPath();
           this.drawWaterFeature();
+          this.drawParkDistrict();
           this.drawPlots();
           if (variant === "partner") {
             this.drawPartnerHeart();
@@ -248,9 +254,125 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           path.lineTo(variant === "partner" ? 780 : 340, 302);
           path.lineTo(1040, 336);
           path.lineTo(1390, 480);
+          path.lineTo(1760, 386);
+          path.lineTo(2160, 470);
           path.strokePath();
           path.lineStyle(4, 0xffffff, 0.28);
           path.strokePath();
+        }
+
+        private drawRoadNetwork() {
+          const road = this.add.graphics().setDepth(210);
+          road.lineStyle(42, 0xd9b07f, 0.42);
+          road.beginPath();
+          road.moveTo(96, 546);
+          road.lineTo(332, 498);
+          road.lineTo(620, 430);
+          road.lineTo(930, 382);
+          road.lineTo(1260, 426);
+          road.lineTo(1608, 374);
+          road.lineTo(1980, 402);
+          road.lineTo(2304, 522);
+          road.strokePath();
+          road.lineStyle(4, 0xfffcf3, 0.52);
+          road.strokePath();
+
+          [
+            [820, 360, "Garden Road"],
+            [1618, 338, "Friend Road"],
+            [2060, 366, "Honeyheart Park"],
+          ].forEach(([x, y, label]) => {
+            const sign = this.add.container(Number(x), Number(y)).setDepth(Number(y) + 20);
+            sign.add(this.add.rectangle(0, 24, 8, 50, 0x8b5e3c, 0.75));
+            sign.add(this.add.rectangle(0, 0, 138, 34, 0xfffcf3, 0.92).setStrokeStyle(3, 0xc9a998, 0.7));
+            sign.add(this.add.text(0, 0, String(label), {
+              align: "center",
+              color: "#5B3F3F",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "12px",
+              fontStyle: "900",
+            }).setOrigin(0.5));
+          });
+        }
+
+        private drawParkDistrict() {
+          const park = this.add.container(1960, 392).setDepth(392);
+          park.add(this.add.ellipse(0, 92, 620, 158, 0x6e9651, 0.18));
+          park.add(this.add.ellipse(-160, 92, 220, 64, 0xe4efd7, 0.42).setStrokeStyle(3, 0xa9c58a, 0.56));
+          park.add(this.add.ellipse(124, 64, 180, 72, 0xc7e0eb, 0.42).setStrokeStyle(3, 0x5e94b0, 0.46));
+          this.drawParkGazebo(1840, 336);
+          this.drawParkSwing(2072, 458);
+          this.drawParkPicnic(2228, 520);
+          this.drawParkFlowers(1800, 492);
+          this.drawParkFlowers(2128, 334);
+          this.drawParkZone(1840, 336, "The gazebo is ready for friend meetups and date photos.");
+          this.drawParkZone(2072, 458, "The swing set sways softly. Casper approves.");
+          this.drawParkZone(2228, 520, "A picnic blanket is open for party chat and snacks.");
+        }
+
+        private drawParkGazebo(x: number, y: number) {
+          const gazebo = this.add.container(x, y).setDepth(y);
+          gazebo.add(this.add.ellipse(0, 76, 180, 34, 0x3a2a2a, 0.13));
+          gazebo.add(this.add.triangle(0, -64, -100, 0, 100, 0, 0, -94, 0xf6cfd2, 0.92).setStrokeStyle(4, 0xd87e8c, 0.56));
+          gazebo.add(this.add.rectangle(-72, 28, 12, 120, 0x8b5e3c, 0.78));
+          gazebo.add(this.add.rectangle(72, 28, 12, 120, 0x8b5e3c, 0.78));
+          gazebo.add(this.add.rectangle(0, 88, 168, 18, 0xd9b07f, 0.82).setStrokeStyle(3, 0x8b5e3c, 0.45));
+          gazebo.add(this.add.text(0, -106, "Honeyheart Park", {
+            color: "#3A2A2A",
+            fontFamily: "Caprasimo, Georgia, serif",
+            fontSize: "18px",
+          }).setOrigin(0.5));
+        }
+
+        private drawParkSwing(x: number, y: number) {
+          const swing = this.add.container(x, y).setDepth(y);
+          swing.add(this.add.ellipse(0, 58, 184, 32, 0x3a2a2a, 0.13));
+          swing.add(this.add.rectangle(-78, -8, 12, 144, 0x8b5e3c, 0.82).setRotation(0.14));
+          swing.add(this.add.rectangle(78, -8, 12, 144, 0x8b5e3c, 0.82).setRotation(-0.14));
+          swing.add(this.add.rectangle(0, -74, 180, 12, 0x8b5e3c, 0.86));
+          swing.add(this.add.line(0, 0, -42, -68, -34, 22, 0x5b3f3f, 0.55).setLineWidth(3));
+          swing.add(this.add.line(0, 0, 42, -68, 34, 22, 0x5b3f3f, 0.55).setLineWidth(3));
+          const seat = this.add.rectangle(0, 36, 104, 30, 0xf6cfd2, 0.92).setStrokeStyle(3, 0xd87e8c, 0.42);
+          swing.add(seat);
+          this.tweens.add({ targets: seat, rotation: 0.04, duration: 1300, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        }
+
+        private drawParkPicnic(x: number, y: number) {
+          const picnic = this.add.container(x, y).setDepth(y);
+          picnic.add(this.add.ellipse(0, 40, 158, 34, 0x3a2a2a, 0.12));
+          picnic.add(this.add.rectangle(0, 12, 160, 76, 0xf6cfd2, 0.86).setStrokeStyle(3, 0xffffff, 0.5));
+          picnic.add(this.add.rectangle(0, 12, 160, 10, 0xffffff, 0.35));
+          picnic.add(this.add.rectangle(-44, -20, 32, 18, 0xfae3a8, 0.9));
+          picnic.add(this.add.circle(34, -18, 13, 0xe4efd7, 0.92));
+          picnic.add(this.add.circle(58, -12, 10, 0xd87e8c, 0.82));
+        }
+
+        private drawParkFlowers(x: number, y: number) {
+          for (let index = 0; index < 16; index += 1) {
+            const bloom = this.add.circle(
+              x + PhaserModule.Math.Between(-92, 92),
+              y + PhaserModule.Math.Between(-28, 28),
+              PhaserModule.Math.Between(6, 10),
+              index % 3 === 0 ? 0xf6cfd2 : index % 3 === 1 ? 0xddceec : 0xfae3a8,
+              0.78,
+            ).setDepth(y + index);
+            this.tweens.add({
+              targets: bloom,
+              y: bloom.y + PhaserModule.Math.Between(-4, 5),
+              duration: PhaserModule.Math.Between(1200, 2200),
+              yoyo: true,
+              repeat: -1,
+            });
+          }
+        }
+
+        private drawParkZone(x: number, y: number, message: string) {
+          const zone = this.add.zone(x, y, 180, 150).setInteractive({ useHandCursor: true });
+          zone.on("pointerdown", () => {
+            this.target = new PhaserModule.Math.Vector2(x, y + 64);
+            playCozyCue("heart");
+            setStatus(message);
+          });
         }
 
         private drawLanternPath() {
@@ -575,8 +697,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.avatarShadow = this.add.ellipse(420, 452, 58, 22, 0x3a2a2a, 0.18).setDepth(429);
           this.avatar = this.add.container(420, 430).setDepth(430);
           this.avatarSprite = this.add
-            .sprite(0, -50, "keeper-animation-sheet", keeperFrame(this.keeperCustomization.paletteId, "idle"))
-            .setDisplaySize(94, 122);
+            .sprite(0, -78, "keeper-animation-sheet", keeperFrame(this.keeperCustomization.paletteId, "idle", this.keeperCustomization.outfitId))
+            .setDisplaySize(116, 174);
           this.avatar.add(this.avatarSprite);
           this.avatar.setSize(70, 104);
           this.lastSentPosition = { x: this.avatar.x, y: this.avatar.y };
@@ -596,8 +718,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.petShadow = this.add.ellipse(486, 472, 52, 18, 0x3a2a2a, 0.15).setDepth(449);
           this.pet = this.add.container(486, 450).setDepth(450);
           this.petSprite = this.add
-            .sprite(0, -38, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
-            .setDisplaySize(94, 94);
+            .sprite(0, -48, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
+            .setDisplaySize(114, 128);
           this.tintPetForTone();
           this.pet.add(this.petSprite);
           this.pet.setSize(82, 82);
@@ -670,7 +792,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
 
         private setAvatarPose(pose: KeeperPose) {
           this.avatarPose = pose;
-          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose));
+          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose, this.keeperCustomization.outfitId));
         }
 
         private setPetPose(pose: PetPose) {
@@ -681,6 +803,10 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           if (!this.petSprite) return;
           const tone = getPetTone(this.petCustomization.toneId);
           const tint = PhaserModule.Display.Color.HexStringToColor(tone.color).color;
+          if (this.petCustomization.toneId === "cream") {
+            this.petSprite.clearTint();
+            return;
+          }
           this.petSprite.setTint(tint);
         }
 
@@ -823,10 +949,9 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             const container = this.add.container(player.x, player.y).setDepth(player.y);
             const aura = this.add.circle(0, -94, 15, color, 0.28);
             const sprite = this.add
-              .sprite(0, -50, "keeper-animation-sheet", keeperFrame(paletteId, "idle"))
-              .setDisplaySize(86, 112)
+              .sprite(0, -78, "keeper-animation-sheet", keeperFrame(paletteId, "idle"))
+              .setDisplaySize(108, 162)
               .setAlpha(0.92);
-            sprite.setTint(color);
             const label = this.add
               .text(0, -114, player.displayName, {
                 align: "center",
@@ -1183,7 +1308,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
 
         private addTitle() {
           this.add
-            .text(34, 28, variant === "partner" ? "Shared Heart Garden" : "Casper's Moonberry Beds", {
+            .text(34, 28, variant === "partner" ? "Shared Heart Garden" : variant === "park" ? "Honeyheart Park" : "Casper's Moonberry Beds", {
               color: "#3A2A2A",
               fontFamily: "Caprasimo, Georgia, serif",
               fontSize: "23px",
@@ -1198,12 +1323,14 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
                 ? activeEvent.gardenMessage
                 : variant === "partner"
                   ? "Click memories, quests, flowers, and Casper."
-                  : "Click plots to water them.",
+                  : variant === "park"
+                    ? "Follow roads, visit the gazebo, swings, and picnic lawn."
+                    : "Click plots to water them.",
               {
-              color: "#84675F",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "13px",
-              fontStyle: "800",
+                color: "#84675F",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "13px",
+                fontStyle: "800",
               },
             )
             .setScrollFactor(0)
@@ -1240,13 +1367,15 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-garden-300/40 bg-white/68 px-4 py-3">
         <div>
           <p className="text-xs font-extrabold uppercase tracking-normal text-garden-700">
-            {variant === "partner" ? "Shared living garden" : "Living garden"}
+            {variant === "partner" ? "Shared living garden" : variant === "park" ? "Walkable park" : "Living garden"}
           </p>
           <p className="text-sm font-black text-ink-900">
             {activeEvent
               ? `${activeEvent.shortName} garden decor active`
               : variant === "partner"
                 ? "Memory tree, quests, lantern path, and Casper's watch"
+                : variant === "park"
+                  ? "Roads, gazebo, swings, picnic lawn, and friend meetup zones"
                 : "Animated plots, water, butterflies, and growth"}
           </p>
         </div>

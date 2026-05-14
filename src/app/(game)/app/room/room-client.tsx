@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, Move, Radio, RotateCcw, Save, Sparkles, UsersRound } from "lucide-react";
+import Link from "next/link";
+import { Copy, DoorOpen, Move, Plus, Radio, RotateCcw, Save, Sparkles, UsersRound } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
@@ -12,7 +13,7 @@ import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { useRoomRealtime } from "@/lib/game/use-room-realtime";
 import { isItemVisibleForSeason } from "@/lib/seasonal-events";
 
-const ROOM_STORAGE_PREFIX = "hearthaven:room-placements:";
+const ROOM_STORAGE_PREFIX = "hearthaven:room-placements:v2:";
 
 function getRoomStorageKey(roomId: string) {
   return `${ROOM_STORAGE_PREFIX}${roomId}`;
@@ -24,7 +25,7 @@ function readPlacements(roomId: string): RoomPlacement[] {
     const raw = window.localStorage.getItem(getRoomStorageKey(roomId));
     if (!raw) return starterPlacements;
     const parsed = JSON.parse(raw) as RoomPlacement[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : starterPlacements;
+    return Array.isArray(parsed) ? parsed : starterPlacements;
   } catch {
     return starterPlacements;
   }
@@ -36,7 +37,7 @@ export function RoomClient() {
   const activeRoom = roomBlueprints.find((room) => room.id === roomId) ?? roomBlueprints[0];
   const [placements, setPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [draftPlacements, setDraftPlacements] = useState<RoomPlacement[]>(starterPlacements);
-  const [saveStatus, setSaveStatus] = useState("Loaded starter layout");
+  const [saveStatus, setSaveStatus] = useState("Blank room ready");
   const [inviteStatus, setInviteStatus] = useState("Invite link ready");
   const placementCounter = useRef(0);
   const realtime = useRoomRealtime({ roomId: activeRoom.id, roomName: activeRoom.name });
@@ -51,7 +52,7 @@ export function RoomClient() {
       const saved = readPlacements(activeRoom.id);
       setPlacements(saved);
       setDraftPlacements(saved);
-      setSaveStatus(saved === starterPlacements ? "Loaded starter layout" : "Loaded saved layout");
+      setSaveStatus(saved.length === 0 ? "Blank room ready" : "Loaded saved layout");
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [activeRoom.id]);
@@ -72,7 +73,7 @@ export function RoomClient() {
     window.localStorage.removeItem(getRoomStorageKey(activeRoom.id));
     setDraftPlacements(starterPlacements);
     setPlacements(starterPlacements);
-    setSaveStatus("Starter layout restored");
+    setSaveStatus("Room cleared to a blank canvas");
   }
 
   function addRoomItem(item: CatalogItem) {
@@ -141,6 +142,33 @@ export function RoomClient() {
           </Button>
         </div>
         <p className="md:col-span-2 rounded-md bg-white/65 px-3 py-2 text-xs font-bold text-ink-700">{inviteStatus}</p>
+      </section>
+      <section className="rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-normal text-lavender-500">Room wings</p>
+            <p className="text-sm font-bold text-ink-700">Every room opens blank. Add furniture from the drawer, save the layout, then expand into another wing.</p>
+          </div>
+          <Button asChild variant="secondary">
+            <Link href="/app/shop"><Plus /> Buy rooms</Link>
+          </Button>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {roomBlueprints.map((room) => (
+            <Link
+              className={`min-w-[188px] rounded-lg border px-3 py-2 shadow-sm transition hover:-translate-y-0.5 ${
+                room.id === activeRoom.id
+                  ? "border-blush-300 bg-blush-100 text-ink-900"
+                  : "border-cream-300 bg-cream-50 text-ink-700 hover:border-lavender-300 hover:bg-lavender-100/60"
+              }`}
+              href={room.href}
+              key={room.id}
+            >
+              <span className="flex items-center gap-2 text-sm font-black"><DoorOpen className="size-4" /> {room.name}</span>
+              <span className="mt-1 block text-xs font-bold">{room.capacity} friends | blank shell</span>
+            </Link>
+          ))}
+        </div>
       </section>
       <section className="rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

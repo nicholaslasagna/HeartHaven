@@ -136,13 +136,13 @@ export function RoomCanvas({
           this.load.image("cozy-room-bg", "/game-assets/generated/cozy-room-bg.png");
           this.load.image("keeper-sprite", "/game-assets/generated/keeper-sprite.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
-          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-animation-sheet.svg", {
-            frameWidth: 128,
-            frameHeight: 128,
+          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-art-sheet.png", {
+            frameWidth: 256,
+            frameHeight: 384,
           });
-          this.load.spritesheet("pet-animation-sheet", "/game-assets/generated/pet-animation-sheet.svg", {
-            frameWidth: 128,
-            frameHeight: 128,
+          this.load.spritesheet("pet-animation-sheet", "/game-assets/generated/pet-art-sheet.png", {
+            frameWidth: 256,
+            frameHeight: 288,
           });
           this.load.spritesheet("cozy-furniture-sprites", "/game-assets/generated/cozy-furniture-sprites.png", {
             frameWidth: 384,
@@ -156,6 +156,7 @@ export function RoomCanvas({
           this.drawAmbientMagic();
           this.drawSeasonalRoomDecor();
           this.createFurniture(normalizedPlacements);
+          this.drawBlankRoomHint(normalizedPlacements.length === 0);
           this.createAvatar();
           this.createPet();
           this.createInput();
@@ -228,6 +229,30 @@ export function RoomCanvas({
             sparkle.setData("phase", PhaserModule.Math.FloatBetween(0, Math.PI * 2));
             this.sparkleLayer.add(sparkle);
           }
+        }
+
+        private drawBlankRoomHint(isBlank: boolean) {
+          if (!isBlank) return;
+          const hint = this.add.container(480, 322).setDepth(90);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.72);
+          bg.fillRoundedRect(-150, -34, 300, 68, 20);
+          bg.lineStyle(2, 0xf6cfd2, 0.55);
+          bg.strokeRoundedRect(-150, -34, 300, 68, 20);
+          hint.add(bg);
+          hint.add(this.add.text(0, -8, "Blank room ready", {
+            align: "center",
+            color: "#3A2A2A",
+            fontFamily: "Caprasimo, Georgia, serif",
+            fontSize: "18px",
+          }).setOrigin(0.5));
+          hint.add(this.add.text(0, 15, "Add furniture from the drawer, then drag it on the floor.", {
+            align: "center",
+            color: "#84675F",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "12px",
+            fontStyle: "900",
+          }).setOrigin(0.5));
         }
 
         private drawSeasonalRoomDecor() {
@@ -481,8 +506,8 @@ export function RoomCanvas({
           this.avatarShadow = this.add.ellipse(390, 396, 58, 22, 0x3a2a2a, 0.18).setDepth(350);
           this.avatar = this.add.container(390, 374).setDepth(374);
           this.avatarSprite = this.add
-            .sprite(0, -50, "keeper-animation-sheet", keeperFrame(this.keeperCustomization.paletteId, "idle"))
-            .setDisplaySize(94, 122);
+            .sprite(0, -78, "keeper-animation-sheet", keeperFrame(this.keeperCustomization.paletteId, "idle", this.keeperCustomization.outfitId))
+            .setDisplaySize(116, 174);
           this.avatar.add(this.avatarSprite);
           this.avatar.setSize(70, 104);
 
@@ -502,8 +527,8 @@ export function RoomCanvas({
           this.pet = this.add.container(456, 388).setDepth(388);
           this.petEyes = [];
           this.petSprite = this.add
-            .sprite(0, -38, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
-            .setDisplaySize(94, 94);
+            .sprite(0, -48, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
+            .setDisplaySize(114, 128);
           this.tintPetForTone();
           this.pet.add(this.petSprite);
           this.pet.setSize(82, 82);
@@ -582,7 +607,7 @@ export function RoomCanvas({
 
         private setAvatarPose(pose: KeeperPose) {
           this.avatarPose = pose;
-          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose));
+          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose, this.keeperCustomization.outfitId));
         }
 
         private setPetPose(pose: PetPose) {
@@ -593,6 +618,10 @@ export function RoomCanvas({
           if (!this.petSprite) return;
           const tone = getPetTone(this.petCustomization.toneId);
           const tint = PhaserModule.Display.Color.HexStringToColor(tone.color).color;
+          if (this.petCustomization.toneId === "cream") {
+            this.petSprite.clearTint();
+            return;
+          }
           this.petSprite.setTint(tint);
         }
 
@@ -637,10 +666,9 @@ export function RoomCanvas({
             const container = this.add.container(player.x, player.y).setDepth(player.y);
             const aura = this.add.circle(0, -94, 15, color, 0.28);
             const sprite = this.add
-              .sprite(0, -50, "keeper-animation-sheet", keeperFrame(paletteId, "idle"))
-              .setDisplaySize(86, 112)
+              .sprite(0, -78, "keeper-animation-sheet", keeperFrame(paletteId, "idle"))
+              .setDisplaySize(108, 162)
               .setAlpha(0.92);
-            sprite.setTint(color);
             const label = this.add
               .text(0, -114, player.displayName, {
                 align: "center",

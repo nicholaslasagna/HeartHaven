@@ -36,10 +36,10 @@ export const KEEPER_OUTFITS: Array<{ id: KeeperOutfitId; label: string }> = [
 
 export const PET_SPECIES: Array<{ id: PetSpeciesId; label: string; frameRow: number }> = [
   { id: "fox", label: "Cloud Fox", frameRow: 0 },
-  { id: "bunny", label: "Moon Bunny", frameRow: 1 },
-  { id: "bear", label: "Honey Bear", frameRow: 2 },
-  { id: "duck", label: "Star Duck", frameRow: 3 },
-  { id: "kitten", label: "Garden Kitten", frameRow: 4 },
+  { id: "bunny", label: "Moonberry Fox", frameRow: 1 },
+  { id: "bear", label: "Honey Fox", frameRow: 2 },
+  { id: "duck", label: "Sky Fox", frameRow: 3 },
+  { id: "kitten", label: "Garden Fox", frameRow: 4 },
 ];
 
 export const PET_TONES: Array<{ id: PetToneId; label: string; color: string }> = [
@@ -72,8 +72,10 @@ const petPoseColumns: Record<PetPose, number> = {
 export const KEEPER_CUSTOMIZATION_EVENT = "hearthaven:avatar-customization-changed";
 export const PET_CUSTOMIZATION_EVENT = "hearthaven:pet-customization-changed";
 
-export function keeperFrame(paletteId: KeeperPaletteId, pose: KeeperPose) {
-  const row = KEEPER_PALETTES.find((palette) => palette.id === paletteId)?.frameRow ?? 0;
+export function keeperFrame(paletteId: KeeperPaletteId, pose: KeeperPose, outfitId: KeeperOutfitId = "cardigan") {
+  const paletteRow = KEEPER_PALETTES.find((palette) => palette.id === paletteId)?.frameRow ?? 0;
+  const outfitRow = Math.max(0, KEEPER_OUTFITS.findIndex((outfit) => outfit.id === outfitId));
+  const row = paletteRow * KEEPER_OUTFITS.length + outfitRow;
   return row * 6 + keeperPoseColumns[pose];
 }
 

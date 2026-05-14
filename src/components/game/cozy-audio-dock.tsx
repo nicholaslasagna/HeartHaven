@@ -9,6 +9,7 @@ const AUDIO_STORAGE_KEY = "hearthaven:audio-enabled";
 
 export function CozyAudioDock() {
   const [enabled, setEnabled] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [readyLabel, setReadyLabel] = useState("Sound off");
 
   useEffect(() => {
@@ -18,6 +19,7 @@ export function CozyAudioDock() {
       const shouldResume = window.localStorage.getItem(AUDIO_STORAGE_KEY) === "true";
       setEnabled(isCozyAudioEnabled());
       setReadyLabel(shouldResume ? "Tap to resume" : "Sound off");
+      setMounted(true);
     });
 
     function onReward() {
@@ -56,7 +58,7 @@ export function CozyAudioDock() {
       variant={enabled ? "warm" : "secondary"}
     >
       {enabled ? <Volume2 /> : <VolumeX />}
-      <span className="hidden sm:inline">{enabled ? "Music on" : readyLabel}</span>
+      <span className="hidden sm:inline">{enabled ? "Music on" : mounted ? readyLabel : "Sound off"}</span>
       <Music2 className="hidden size-3.5 sm:block" />
     </Button>
   );

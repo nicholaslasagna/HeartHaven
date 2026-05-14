@@ -23,7 +23,7 @@ const GardenCanvas = dynamic(() => import("@/components/game/garden-canvas").the
 
 type GardenCanvasLoaderProps = {
   remotePlayers?: RealtimeRoomPlayer[];
-  variant: "personal" | "partner";
+  variant: "personal" | "partner" | "park";
   plots: GardenPlotState[];
   onAvatarMove?: (position: { x: number; y: number }) => void;
 };

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { Cookie, HandHeart, Heart, Sparkles } from "lucide-react";
-import { PetIllustration } from "@/components/brand/illustrations";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import {
@@ -35,6 +35,7 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
   const [accessory, setAccessory] = useState("Moonberry bow");
   const selectedSpecies = getPetSpecies(petType);
   const selectedTone = getPetTone(petTone);
+  const previewSrc = `/game-assets/generated/pet-art-preview-${petType}.png`;
 
   useEffect(() => {
     let active = true;
@@ -79,8 +80,23 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
   return (
     <CozyCard className="p-5">
       <div className="grid grid-cols-[112px_1fr] items-center gap-4">
-        <motion.div animate={{ y: mood === "Playful" ? [0, -8, 0] : 0 }} transition={{ duration: 0.45 }}>
-          <PetIllustration type={petType} tone={petTone} />
+        <motion.div
+          animate={{ y: mood === "Playful" ? [0, -8, 0] : 0 }}
+          className="relative grid h-28 place-items-center rounded-lg border border-cream-300 bg-cream-50"
+          transition={{ duration: 0.45 }}
+        >
+          <div className="absolute bottom-3 h-4 w-16 rounded-full bg-ink-900/15 blur-[1px]" />
+          <Image
+            alt="Painted companion pet preview"
+            className="relative h-28 w-auto object-contain drop-shadow-[0_10px_16px_rgba(91,63,63,0.2)]"
+            height={288}
+            src={previewSrc}
+            width={256}
+          />
+          <span
+            className="absolute right-3 top-3 size-4 rounded-full border-2 border-white shadow-sm"
+            style={{ backgroundColor: selectedTone.color }}
+          />
         </motion.div>
         <div>
           <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-blush-500">

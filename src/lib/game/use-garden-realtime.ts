@@ -10,7 +10,7 @@ import type { RealtimeRoomPlayer } from "@/lib/game/types";
 type UseGardenRealtimeOptions = {
   gardenId: string;
   gardenName: string;
-  invitePath?: "/app/garden" | "/app/partner-garden";
+  invitePath?: "/app/garden" | "/app/partner-garden" | "/app/park";
 };
 
 type ConnectionState = "demo" | "connecting" | "connected" | "offline" | "error";
