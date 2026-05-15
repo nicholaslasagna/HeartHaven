@@ -25,9 +25,18 @@ type GardenCanvasLoaderProps = {
   remotePlayers?: RealtimeRoomPlayer[];
   variant: "personal" | "partner" | "park";
   plots: GardenPlotState[];
+  canEditGarden?: boolean;
   onAvatarMove?: (position: { x: number; y: number; facing: "left" | "right" }) => void;
 };
 
-export function GardenCanvasLoader({ onAvatarMove, remotePlayers, variant, plots }: GardenCanvasLoaderProps) {
-  return <GardenCanvas onAvatarMove={onAvatarMove} plots={plots} remotePlayers={remotePlayers} variant={variant} />;
+export function GardenCanvasLoader({ canEditGarden, onAvatarMove, remotePlayers, variant, plots }: GardenCanvasLoaderProps) {
+  return (
+    <GardenCanvas
+      canEditGarden={canEditGarden}
+      onAvatarMove={onAvatarMove}
+      plots={plots}
+      remotePlayers={remotePlayers}
+      variant={variant}
+    />
+  );
 }

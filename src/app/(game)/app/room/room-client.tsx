@@ -12,6 +12,7 @@ import { marketCatalog, roomBlueprints, starterPlacements } from "@/lib/catalog"
 import type { CatalogItem, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { useRoomRealtime } from "@/lib/game/use-room-realtime";
+import { lookupFriendCode } from "@/lib/game/social";
 import { isItemVisibleForSeason } from "@/lib/seasonal-events";
 
 const ROOM_STORAGE_PREFIX = "hearthaven:room-placements:v2:";
@@ -35,13 +36,23 @@ function readPlacements(roomId: string): RoomPlacement[] {
 export function RoomClient() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("room") ?? "moonlit-loft";
+  // If a `?visit=<friendCode>` is present in the URL the keeper is a GUEST in
+  // someone else's room — they can walk + emote + chat but never drag furniture.
+  // Only the host edits.
+  const visitTarget = searchParams.get("visit");
+  const canEditRoom = !visitTarget;
   const activeRoom = roomBlueprints.find((room) => room.id === roomId) ?? roomBlueprints[0];
+  const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
+  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
   const [placements, setPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [draftPlacements, setDraftPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [saveStatus, setSaveStatus] = useState("Blank room ready");
   const [inviteStatus, setInviteStatus] = useState("Invite link ready");
   const placementCounter = useRef(0);
-  const realtime = useRoomRealtime({ roomId: activeRoom.id, roomName: activeRoom.name });
+  const realtime = useRoomRealtime({
+    roomId: isVisitAllowed ? activeRoom.id : "friend-only-gate",
+    roomName: isVisitAllowed ? activeRoom.name : "Friend-only room",
+  });
   const { activeEvent } = useSeasonalEvent();
   const roomDrawerItems = marketCatalog
     .filter((item) => isItemVisibleForSeason(item, activeEvent))
@@ -106,6 +117,24 @@ export function RoomClient() {
     } catch {
       setInviteStatus(realtime.inviteUrl);
     }
+  }
+
+  if (!isVisitAllowed) {
+    return (
+      <div className="grid gap-5">
+        <section className="rounded-lg border border-blush-300/40 bg-blush-100/65 p-6 shadow-sm">
+          <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Friend-only room</p>
+          <h1 className="mt-2 font-display text-4xl text-ink-900">Accept an invite first.</h1>
+          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
+            HeartHaven rooms only open for friends or keepers you have already played with. Ask the host to send a
+            friend invite from the Friends page, then come back through the room link.
+          </p>
+          <Button asChild className="mt-4" variant="warm">
+            <Link href="/app/friends">Open Friends</Link>
+          </Button>
+        </section>
+      </div>
+    );
   }
 
   return (
@@ -199,6 +228,7 @@ export function RoomClient() {
         </div>
       </section>
       <RoomCanvasLoader
+        canEditRoom={canEditRoom}
         onAvatarMove={realtime.sendMove}
         onPlacementsChange={handlePlacementsChange}
         onRoomEmote={realtime.sendEmote}
@@ -207,6 +237,11 @@ export function RoomClient() {
         roomName={activeRoom.name}
         roomTheme={activeRoom.theme}
       />
+      {!canEditRoom && (
+        <p className="rounded-md border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-xs font-extrabold text-honey-700">
+          You&apos;re a guest in this room. Walk around, send emotes, and chat — only the host can move furniture.
+        </p>
+      )}
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-lavender-500" />
         Avatar movement and emotes now broadcast through Supabase Realtime when env vars are present. Furniture edits

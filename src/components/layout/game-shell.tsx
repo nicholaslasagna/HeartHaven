@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, PawPrint, ShieldCheck, ShoppingBag, UserRound } from "lucide-react";
+import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, PawPrint, ShieldCheck, ShoppingBag, UserRound, Users } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
+import { RewardToastHost } from "@/components/game/reward-toast-host";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { SeasonalEventPill } from "@/components/seasonal/seasonal-event-pill";
 import { ThemeModeDock } from "@/components/theme/theme-mode-dock";
@@ -15,6 +16,7 @@ const navItems = [
   { href: "/app/garden", label: "Garden", icon: Leaf },
   { href: "/app/park", label: "Park", icon: Leaf },
   { href: "/app/partner-garden", label: "Partner", icon: HeartHandshake },
+  { href: "/app/friends", label: "Friends", icon: Users },
   { href: "/app/games", label: "Games", icon: Gamepad2 },
   { href: "/app/shop", label: "Shop", icon: ShoppingBag },
   { href: "/app/inventory", label: "Inventory", icon: Package },
@@ -68,6 +70,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
         </aside>
         <main className="min-w-0">{children}</main>
       </div>
+      <RewardToastHost />
     </div>
   );
 }

@@ -17,6 +17,7 @@ type RoomCanvasLoaderProps = {
   roomName?: string;
   roomTheme?: RoomBlueprint["theme"];
   placements: RoomPlacement[];
+  canEditRoom?: boolean;
   onAvatarMove?: (position: { x: number; y: number; facing: "left" | "right" }) => void;
   onRoomEmote?: (emote: RoomEmote) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
@@ -27,12 +28,14 @@ export function RoomCanvasLoader({
   roomName,
   roomTheme,
   placements,
+  canEditRoom,
   onAvatarMove,
   onRoomEmote,
   onPlacementsChange,
 }: RoomCanvasLoaderProps) {
   return (
     <RoomCanvas
+      canEditRoom={canEditRoom}
       onAvatarMove={onAvatarMove}
       onPlacementsChange={onPlacementsChange}
       onRoomEmote={onRoomEmote}

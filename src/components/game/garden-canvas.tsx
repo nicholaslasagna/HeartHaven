@@ -26,6 +26,7 @@ import {
 } from "@/lib/game/avatar-customization";
 import { recordActivity } from "@/lib/game/activity";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import { PET_VITALS_EVENT, getPetMood, getPetVitals, type PetMood } from "@/lib/game/pet-state";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
@@ -43,6 +44,7 @@ type GardenCanvasProps = {
   remotePlayers?: RealtimeRoomPlayer[];
   variant: "personal" | "partner" | "park";
   plots: GardenPlotState[];
+  canEditGarden?: boolean;
   onAvatarMove?: (position: { x: number; y: number; facing: FacingDirection }) => void;
 };
 
@@ -186,7 +188,21 @@ const decorInteractionCopy: Record<GardenDecorKind, string> = {
   flowerStand: "The flower stand releases fresh petals across the walkway.",
 };
 
-export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots }: GardenCanvasProps) {
+/**
+ * True if the user is currently typing into a text input — used to suspend
+ * canvas keyboard movement so WASD doesn't fire while writing chat.
+ */
+function isTextInputFocused(): boolean {
+  if (typeof document === "undefined") return false;
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (el.isContentEditable) return true;
+  return false;
+}
+
+export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers = [], variant, plots }: GardenCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotePlayersRef = useRef(remotePlayers);
   const timeOfDayRef = useRef<GardenTimeOfDay>("noon");
@@ -220,8 +236,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
       if (!mountRef.current || destroyed) return;
 
       class HeartHavenGardenScene extends PhaserModule.Scene {
-        private butterflies: Phaser.GameObjects.Container[] = [];
-        private fireflies: Phaser.GameObjects.Arc[] = [];
+        private butterflies: Phaser.GameObjects.Sprite[] = [];
+        private fireflies: Phaser.GameObjects.Sprite[] = [];
         private avatar!: Phaser.GameObjects.Container;
         private avatarShadow!: Phaser.GameObjects.Ellipse;
         private avatarSprite!: Phaser.GameObjects.Sprite;
@@ -236,6 +252,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         private petMood: GardenPetMood = "idle";
         private petMoodTimer = 0;
         private petFacing: FacingDirection = "right";
+        private companionMood: PetMood = getPetMood(getPetVitals());
+        private companionMoodHandler?: (event: Event) => void;
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
         private wasd?: Record<"up" | "left" | "down" | "right" | "rotate", Phaser.Input.Keyboard.Key>;
         private target?: Phaser.Math.Vector2;
@@ -285,6 +303,10 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.load.spritesheet("world-object-sprites", "/game-assets/generated/world-object-sprites.png", {
             frameWidth: 384,
             frameHeight: 384,
+          });
+          this.load.spritesheet("ambient-critter-sprites", "/game-assets/generated/ambient-critter-sprites.png", {
+            frameWidth: 512,
+            frameHeight: 512,
           });
         }
 
@@ -357,6 +379,38 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
 
         private drawRoadNetwork() {
           const segments = variant === "park" ? parkWalkSegments : sharedWalkSegments;
+          const circles = variant === "park" ? parkWalkCircles : sharedWalkCircles;
+
+          // 1. Visible walkable corridor — a soft cream "road" laid down on top
+          //    of the background art so the painted ground and the corridor the
+          //    avatar can actually walk along always match. Drawn at a low
+          //    depth so all entities still render on top.
+          const corridor = this.add.graphics().setDepth(-3);
+          // Outer halo first (wider, fainter) for a gently glowing edge.
+          segments.forEach((segment) => {
+            corridor.lineStyle(segment.radius * 2 + 24, 0xfae3a8, 0.18);
+            corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+          });
+          circles.forEach((circle) => {
+            corridor.fillStyle(0xfae3a8, 0.18);
+            corridor.fillCircle(circle.x, circle.y, circle.radius + 12);
+          });
+          // Main road body — clearly visible cream with a soft warm wash.
+          segments.forEach((segment) => {
+            corridor.lineStyle(segment.radius * 1.55, 0xfffcf3, 0.62);
+            corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+          });
+          circles.forEach((circle) => {
+            corridor.fillStyle(0xfffcf3, 0.55);
+            corridor.fillCircle(circle.x, circle.y, circle.radius * 0.82);
+          });
+          // Painted edge line so the path reads clearly even on light backgrounds.
+          segments.forEach((segment) => {
+            corridor.lineStyle(3, 0xd9a53e, 0.28);
+            corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+          });
+
+          // 2. Ambient star glints — the original cozy magic — kept on top.
           segments.forEach((segment, segmentIndex) => {
             const steps = Math.max(4, Math.floor(PhaserModule.Math.Distance.Between(segment.x1, segment.y1, segment.x2, segment.y2) / 180));
             for (let index = 0; index <= steps; index += 1) {
@@ -773,15 +827,17 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           for (let index = 0; index < count; index += 1) {
             const x = PhaserModule.Math.Between(130, maxX);
             const y = PhaserModule.Math.Between(160, 408);
-            const butterfly = this.add.container(x, y).setDepth(5800);
-            butterfly.add(this.add.ellipse(-5, 0, 12, 18, 0xf6cfd2, 0.8));
-            butterfly.add(this.add.ellipse(5, 0, 12, 18, 0xddceec, 0.8));
-            butterfly.add(this.add.rectangle(0, 2, 3, 16, 0x5b3f3f, 0.65));
+            const butterfly = this.add
+              .sprite(x, y, "ambient-critter-sprites", index % 5)
+              .setDisplaySize(42 + (index % 3) * 10, 42 + (index % 3) * 10)
+              .setAlpha(0.9)
+              .setDepth(5800);
             this.butterflies.push(butterfly);
             this.tweens.add({
               targets: butterfly,
               x: x + PhaserModule.Math.Between(-80, 80),
               y: y + PhaserModule.Math.Between(-36, 36),
+              rotation: PhaserModule.Math.FloatBetween(-0.08, 0.08),
               duration: PhaserModule.Math.Between(2400, 4200),
               yoyo: true,
               repeat: -1,
@@ -792,13 +848,16 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
 
         private drawFireflies() {
           for (let index = 0; index < 28; index += 1) {
-            const firefly = this.add.circle(
-              PhaserModule.Math.Between(92, GARDEN_WORLD_WIDTH - 92),
-              PhaserModule.Math.Between(268, 540),
-              PhaserModule.Math.Between(2, 4),
-              0xfaebc2,
-              0.3,
-            ).setDepth(5900);
+            const firefly = this.add
+              .sprite(
+                PhaserModule.Math.Between(92, GARDEN_WORLD_WIDTH - 92),
+                PhaserModule.Math.Between(268, 540),
+                "ambient-critter-sprites",
+                5,
+              )
+              .setDisplaySize(30 + (index % 4) * 5, 30 + (index % 4) * 5)
+              .setAlpha(0.3)
+              .setDepth(5900);
             this.fireflies.push(firefly);
           }
         }
@@ -880,7 +939,12 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           };
           this.addDecorHandler = (event: Event) => {
             const kind = (event as CustomEvent<{ kind?: GardenDecorKind }>).detail?.kind;
-            if (kind) this.addDecorFromDrawer(kind);
+            if (!kind) return;
+            if (!canEditGarden) {
+              setStatus("Only the host or trusted decorators can place garden items in this visit.");
+              return;
+            }
+            this.addDecorFromDrawer(kind);
           };
           this.timeOfDayHandler = (event: Event) => {
             const nextTime = (event as CustomEvent<{ timeOfDay?: GardenTimeOfDay }>).detail?.timeOfDay;
@@ -896,12 +960,18 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             this.tintPetForTone();
             this.updatePetAccessory(this.petAccessorySprite, this.petCustomization.accessory);
           };
+          // Vitals-derived companion mood keeps the resting pose in sync with how
+          // well-tended the pet has been — the soul of the loop, on the canvas.
+          this.companionMoodHandler = () => {
+            this.companionMood = getPetMood(getPetVitals());
+          };
           window.addEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
           window.addEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
           window.addEventListener("hearthaven:garden-time", this.timeOfDayHandler);
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
           window.addEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
+          window.addEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
           const cleanup = () => {
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
             if (this.chatBubbleHandler) window.removeEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
@@ -909,6 +979,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             if (this.timeOfDayHandler) window.removeEventListener("hearthaven:garden-time", this.timeOfDayHandler);
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
             if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
+            if (this.companionMoodHandler) window.removeEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
@@ -995,7 +1066,13 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             }
           }
 
-          if (this.wasd?.rotate && PhaserModule.Input.Keyboard.JustDown(this.wasd.rotate)) {
+          // Don't fire the rotate keybind while the player is typing into chat.
+          if (
+            canEditGarden
+            && !isTextInputFocused()
+            && this.wasd?.rotate
+            && PhaserModule.Input.Keyboard.JustDown(this.wasd.rotate)
+          ) {
             this.rotateSelectedDecor();
           }
 
@@ -1063,13 +1140,21 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.petSprite.setFlipX(this.petFacing === "left");
           this.petAccessorySprite?.setFlipX(this.petFacing === "left");
 
+          // Idle pose echoes the vitals-derived companion mood — a happy pet
+          // bounces, a lonely one curls into a sit. Local-state moods still win.
+          const idleMoodPose: PetPose =
+            this.companionMood === "blissful" || this.companionMood === "happy"
+              ? "happy"
+              : this.companionMood === "restless" || this.companionMood === "lonely"
+                ? "sit"
+                : "idle";
           const pose: PetPose = this.petMood === "sit"
             ? "sit"
             : this.petMood === "happy"
               ? "happy"
               : petMoving
                 ? Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2"
-                : "idle";
+                : idleMoodPose;
           this.setPetPose(pose);
           this.pet.setScale(1, this.petMood === "sit" ? 0.9 : 1);
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
@@ -1077,6 +1162,11 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private readKeyboard() {
+          // When the player is typing into the chat input (or any text field),
+          // WASD / arrow keys must NOT move the avatar — they're letters in a
+          // message, not movement intent.
+          if (isTextInputFocused()) return { x: 0, y: 0 };
+
           const left = Boolean(this.cursors?.left.isDown || this.wasd?.left.isDown);
           const right = Boolean(this.cursors?.right.isDown || this.wasd?.right.isDown);
           const up = Boolean(this.cursors?.up.isDown || this.wasd?.up.isDown);
@@ -1325,6 +1415,10 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private addDecorFromDrawer(kind: GardenDecorKind) {
+          if (!canEditGarden) {
+            setStatus("Only the host or trusted decorators can place garden items in this visit.");
+            return;
+          }
           const item = gardenDecorItems.find((entry) => entry.kind === kind);
           if (!item) return;
           const center = this.constrainToWorldBounds(this.cameras.main.scrollX + GARDEN_WIDTH / 2, this.cameras.main.scrollY + GARDEN_HEIGHT / 2 + 80);
@@ -1348,8 +1442,8 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           const container = this.add.container(decoration.x, decoration.y).setDepth(decoration.y);
           container.setRotation((decoration.rotation * Math.PI) / 180);
           container.setSize(spriteConfig.width, spriteConfig.height);
-          container.setInteractive({ draggable: true, useHandCursor: true });
-          this.input.setDraggable(container);
+          container.setInteractive({ draggable: canEditGarden, useHandCursor: true });
+          if (canEditGarden) this.input.setDraggable(container);
 
           const glow = this.add.graphics();
           glow.lineStyle(4, 0xffffff, 0.9);
@@ -1368,12 +1462,17 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           });
           container.on("pointerover", () => {
             glow.setVisible(true);
-            setStatus(`${decoration.label}: drag to move, R rotates${decoration.href ? ", click while nearby to play" : ""}.`);
+            setStatus(
+              canEditGarden
+                ? `${decoration.label}: drag to move, R rotates${decoration.href ? ", click while nearby to play" : ""}.`
+                : `${decoration.label}: click while nearby to interact${decoration.href ? " or play" : ""}.`,
+            );
           });
           container.on("pointerout", () => {
             if (this.selectedDecor?.id !== decoration.id) glow.setVisible(false);
           });
           container.on("drag", (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+            if (!canEditGarden) return;
             this.decorDragging = true;
             const next = this.constrainToWorldBounds(dragX, dragY);
             container.setPosition(next.x, next.y);
@@ -1381,6 +1480,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             decoration.y = Math.round(next.y);
           });
           container.on("dragend", () => {
+            if (!canEditGarden) return;
             this.persistDecorations();
             setStatus(`${decoration.label} moved to x ${decoration.x}, y ${decoration.y}.`);
             this.time.delayedCall(140, () => {
@@ -1539,11 +1639,19 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
           this.selectedDecor = this.decorObjects.get(id)?.getData("placement") as GardenDecorPlacement | undefined;
           if (this.selectedDecor) {
             playCozyCue("ui");
-            setStatus(`${this.selectedDecor.label} selected. Drag to move, R rotates.`);
+            setStatus(
+              canEditGarden
+                ? `${this.selectedDecor.label} selected. Drag to move, R rotates.`
+                : `${this.selectedDecor.label} selected. Ask the host for decorator permission to move it.`,
+            );
           }
         }
 
         private rotateSelectedDecor() {
+          if (!canEditGarden) {
+            setStatus("Only the host or trusted decorators can rotate garden items in this visit.");
+            return;
+          }
           if (!this.selectedDecor) return;
           const container = this.decorObjects.get(this.selectedDecor.id);
           if (!container) return;
@@ -1766,7 +1874,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
       destroyed = true;
       game?.destroy(true);
     };
-  }, [activeEvent, onAvatarMove, plots, timeOfDayRef, variant]);
+  }, [activeEvent, canEditGarden, onAvatarMove, plots, timeOfDayRef, variant]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-garden-300/50 bg-garden-100 shadow-[0_24px_70px_rgba(76,110,54,0.14)]">
@@ -1826,12 +1934,21 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
       <div className="border-t border-garden-300/40 bg-white/78 px-4 py-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-extrabold uppercase tracking-normal text-garden-700">Garden decor drawer</span>
-          <span className="text-xs font-bold text-ink-600">Place here, then drag inside the garden. R rotates selected decor.</span>
+          <span className="text-xs font-bold text-ink-600">
+            {canEditGarden
+              ? "Place here, then drag inside the garden. R rotates selected decor."
+              : "Decorator permissions are off for this visit."}
+          </span>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
           {gardenDecorItems.map((item) => (
             <button
-              className="min-w-[132px] rounded-lg border border-cream-300 bg-cream-50 px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-garden-300 hover:bg-garden-100"
+              className={`min-w-[132px] rounded-lg border border-cream-300 px-3 py-2 text-left shadow-sm transition ${
+                canEditGarden
+                  ? "bg-cream-50 hover:-translate-y-0.5 hover:border-garden-300 hover:bg-garden-100"
+                  : "cursor-not-allowed bg-stone-100/80 opacity-60"
+              }`}
+              disabled={!canEditGarden}
               key={item.kind}
               onClick={() => window.dispatchEvent(new CustomEvent("hearthaven:garden-add-decor", { detail: { kind: item.kind } }))}
               type="button"

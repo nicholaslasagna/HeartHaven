@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { ArrowRight, Leaf, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
@@ -8,6 +9,7 @@ import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Button } from "@/components/ui/button";
+import { lookupFriendCode } from "@/lib/game/social";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import type { gardenPlots, miniGames } from "@/lib/mock-data";
 
@@ -19,7 +21,36 @@ type GardenClientProps = {
 export function GardenClient({ games, plots }: GardenClientProps) {
   const searchParams = useSearchParams();
   const gardenId = searchParams.get("garden") ?? "caspers-moonberry-beds";
-  const realtime = useGardenRealtime({ gardenId, gardenName: "Casper's Moonberry Beds" });
+  const visitTarget = searchParams.get("visit");
+  const isGuestVisit = Boolean(visitTarget);
+  const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
+  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
+  const visitorHasDecoratorPass = searchParams.get("decorator") === "1";
+  const [guestPlacementEnabled, setGuestPlacementEnabled] = useState(false);
+  const realtime = useGardenRealtime({
+    gardenId: isVisitAllowed ? gardenId : "friend-only-gate",
+    gardenName: isVisitAllowed ? "Casper's Moonberry Beds" : "Friend-only garden",
+  });
+  const shownPlacementEnabled = isGuestVisit ? visitorHasDecoratorPass : guestPlacementEnabled;
+  const canEditGarden = !isGuestVisit || shownPlacementEnabled;
+
+  if (!isVisitAllowed) {
+    return (
+      <div className="grid gap-5">
+        <section className="rounded-lg border border-blush-300/40 bg-blush-100/65 p-6 shadow-sm">
+          <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Friend-only garden</p>
+          <h1 className="mt-2 font-display text-4xl text-ink-900">Accept an invite first.</h1>
+          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
+            Garden visits only open for friends or keepers you have already played with. Ask the host to send a friend
+            invite from the Friends page, then come back through the garden link.
+          </p>
+          <Button asChild className="mt-4" variant="warm">
+            <Link href="/app/friends">Open Friends</Link>
+          </Button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-5">
@@ -41,15 +72,19 @@ export function GardenClient({ games, plots }: GardenClientProps) {
       </section>
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <GardenCanvasLoader
+          canEditGarden={canEditGarden}
           onAvatarMove={realtime.sendMove}
           plots={plots}
           remotePlayers={realtime.players}
           variant="personal"
         />
         <GardenSocialPanel
+          canManagePlacement={!isGuestVisit}
           connectionState={realtime.connectionState}
+          guestPlacementEnabled={shownPlacementEnabled}
           inviteUrl={realtime.inviteUrl}
           messages={realtime.messages}
+          onGuestPlacementChange={setGuestPlacementEnabled}
           players={realtime.players}
           roomCode={realtime.gardenCode}
           sendChat={realtime.sendChat}

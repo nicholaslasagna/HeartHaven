@@ -11,6 +11,13 @@ import {
   PET_CUSTOMIZATION_EVENT,
   readPresenceCustomization,
 } from "@/lib/game/avatar-customization";
+import { getSocialState, recordPlayedWith } from "@/lib/game/social";
+import {
+  isBlocked,
+  isLocallyQuarantined,
+  readSafetyState,
+  submitReport,
+} from "@/lib/game/safety";
 
 type UseGardenRealtimeOptions = {
   gardenId: string;
@@ -51,6 +58,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
     if (typeof window === "undefined") return `${invitePath}?garden=${normalizedGardenId}`;
     const url = new URL(invitePath, window.location.origin);
     url.searchParams.set("garden", normalizedGardenId);
+    url.searchParams.set("visit", getSocialState().selfCode);
     return url.toString();
   }, [invitePath, normalizedGardenId]);
 
@@ -64,9 +72,11 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
     if (!isSupabaseConfigured()) {
       queueMicrotask(() => {
         const guestId = createGuestId();
+        const social = getSocialState();
         localPlayerRef.current = {
           id: guestId,
           displayName: "Guest Keeper",
+          friendCode: social.selfCode,
           ...readPresenceCustomization(),
           facing: "right",
           x: 420,
@@ -93,9 +103,11 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
         } = await supabase.auth.getUser();
         const localId = user?.id ?? createGuestId();
         const displayName = createDisplayName(user?.email);
+        const social = getSocialState();
         const localPlayer: RealtimeRoomPlayer = {
           id: localId,
           displayName,
+          friendCode: social.selfCode,
           ...readPresenceCustomization(),
           facing: "right",
           x: 420,
@@ -119,8 +131,13 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
           const remotePlayers = Object.values(state)
             .flat()
             .filter((player) => player.id !== localId)
+            .filter((player) => !player.friendCode || !isBlocked(player.friendCode))
             .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
+          remotePlayers.forEach((player) => {
+            if (!player.friendCode) return;
+            recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: gardenName });
+          });
           setPlayers(remotePlayers);
         }
 
@@ -131,11 +148,16 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
           .on("broadcast", { event: "garden_move" }, ({ payload }) => {
             const player = payload as RealtimeRoomPlayer;
             if (!player?.id || player.id === localId) return;
+            if (player.friendCode && isBlocked(player.friendCode)) return;
+            if (player.friendCode) {
+              recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: gardenName });
+            }
             setPlayers((current) => upsertPlayer(current, player));
           })
           .on("broadcast", { event: "garden_chat" }, ({ payload }) => {
             const message = payload as GardenChatMessage;
             if (!message?.id || message.playerId === localId) return;
+            if (message.friendCode && isBlocked(message.friendCode)) return;
             appendMessage(message);
             window.dispatchEvent(new CustomEvent("hearthaven:garden-chat-bubble", { detail: message }));
           })
@@ -161,6 +183,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
           if (!current) return;
           const payload: RealtimeRoomPlayer = {
             ...current,
+            friendCode: getSocialState().selfCode,
             ...readPresenceCustomization(),
             updatedAt: Date.now(),
           };
@@ -216,14 +239,40 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
   }, []);
 
   const sendChat = useCallback((input: string): ChatModerationResult => {
+    const safety = readSafetyState();
+    if (isLocallyQuarantined(safety)) {
+      return {
+        ok: false,
+        severity: "hard-block",
+        reason: "Your garden chat is paused while recent activity is reviewed.",
+      };
+    }
+
     const moderation = moderateChatMessage(input);
-    if (!moderation.ok) return moderation;
+    if (!moderation.ok) {
+      if (moderation.severity === "hard-block") {
+        const social = getSocialState();
+        submitReport({
+          reporterCode: social.selfCode,
+          offenderCode: social.selfCode,
+          offenderDisplayName: social.selfDisplayName,
+          reason: "explicit-content",
+          details: moderation.reason,
+          chatExcerpt: input.slice(0, 240),
+          scene: invitePath,
+          autoFlagged: true,
+        });
+      }
+      return moderation;
+    }
 
     const localPlayer = localPlayerRef.current;
+    const social = getSocialState();
     const message: GardenChatMessage = {
       id: crypto.randomUUID(),
       playerId: localPlayer?.id ?? createGuestId(),
       displayName: localPlayer?.displayName ?? "Guest Keeper",
+      friendCode: social.selfCode,
       text: moderation.text,
       createdAt: Date.now(),
     };
@@ -235,7 +284,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
     if (channel) void channel.send({ type: "broadcast", event: "garden_chat", payload: message });
 
     return moderation;
-  }, [appendMessage]);
+  }, [appendMessage, invitePath]);
 
   return {
     connectionState,

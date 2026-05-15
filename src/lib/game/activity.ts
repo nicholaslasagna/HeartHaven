@@ -13,7 +13,7 @@
  * never import each other — `activity.ts` is the only place they meet.
  */
 
-import { applyActivityToDailyTasks } from "@/lib/game/daily-loop";
+import { applyActivityToDailyTasks, type DailyTask } from "@/lib/game/daily-loop";
 import { applyActivityToDailyWish, type DailyWish } from "@/lib/game/daily-wish";
 import { applyActivityToAchievements, type AchievementDef } from "@/lib/game/achievements";
 
@@ -41,7 +41,9 @@ export type ActivityDetail = {
   meta?: Record<string, unknown>;
   /** Achievement badges that unlocked as a direct result of this activity. */
   unlockedAchievements: AchievementDef[];
-  /** Number of daily tasks that completed as a direct result of this activity. */
+  /** Full snapshots of any daily tasks that completed (so a toast can name them). */
+  completedTasks: DailyTask[];
+  /** Quick count — equivalent to `completedTasks.length`. */
   completedTaskCount: number;
   /** Casper's daily wish if this activity completed it. */
   completedWish: DailyWish | null;
@@ -56,8 +58,8 @@ export function recordActivity(
   value = 1,
   meta?: Record<string, unknown>,
 ): ActivityDetail {
-  // 1. Daily tasks — returns ids of tasks that just completed.
-  const completedTaskIds = applyActivityToDailyTasks(type, value);
+  // 1. Daily tasks — returns snapshots of tasks that just completed.
+  const completedTasks = applyActivityToDailyTasks(type, value);
 
   // 1b. Casper's daily wish — a pet-flavored single daily nudge.
   const completedWish = applyActivityToDailyWish(type, value);
@@ -66,8 +68,8 @@ export function recordActivity(
   const unlocked = applyActivityToAchievements(type, value);
 
   // 3. Each freshly-completed daily task is itself a "tasks-completed" tick.
-  if (completedTaskIds.length > 0) {
-    unlocked.push(...applyActivityToAchievements("task-completed", completedTaskIds.length));
+  if (completedTasks.length > 0) {
+    unlocked.push(...applyActivityToAchievements("task-completed", completedTasks.length));
   }
 
   const detail: ActivityDetail = {
@@ -75,7 +77,8 @@ export function recordActivity(
     value,
     meta,
     unlockedAchievements: unlocked,
-    completedTaskCount: completedTaskIds.length,
+    completedTasks,
+    completedTaskCount: completedTasks.length,
     completedWish,
   };
 

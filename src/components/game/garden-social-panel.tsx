@@ -9,9 +9,12 @@ import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
 
 type GardenSocialPanelProps = {
+  canManagePlacement?: boolean;
   connectionState: string;
+  guestPlacementEnabled: boolean;
   inviteUrl: string;
   messages: GardenChatMessage[];
+  onGuestPlacementChange?: (enabled: boolean) => void;
   players: RealtimeRoomPlayer[];
   roomCode: string;
   sendChat: (input: string) => { ok: true; text: string } | { ok: false; reason: string };
@@ -19,9 +22,12 @@ type GardenSocialPanelProps = {
 };
 
 export function GardenSocialPanel({
+  canManagePlacement = true,
   connectionState,
+  guestPlacementEnabled,
   inviteUrl,
   messages,
+  onGuestPlacementChange,
   players,
   roomCode,
   sendChat,
@@ -29,12 +35,13 @@ export function GardenSocialPanel({
 }: GardenSocialPanelProps) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState("Chat is moderated: no links, phone numbers, email addresses, or harmful messages.");
-  const [guestPlacementEnabled, setGuestPlacementEnabled] = useState(false);
 
   async function copyInvite() {
     try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setNotice("Garden invite copied.");
+      const url = new URL(inviteUrl, window.location.origin);
+      if (guestPlacementEnabled) url.searchParams.set("decorator", "1");
+      await navigator.clipboard.writeText(url.toString());
+      setNotice(guestPlacementEnabled ? "Decorator invite copied." : "Garden invite copied.");
     } catch {
       setNotice(inviteUrl);
     }
@@ -51,15 +58,17 @@ export function GardenSocialPanel({
   }
 
   function toggleGuestPlacement() {
-    setGuestPlacementEnabled((current) => {
-      const next = !current;
-      setNotice(
-        next
-          ? "Guest placement enabled. Only grant this to trusted visitors because they can move, rotate, and place host-approved objects."
-          : "Guest placement disabled. Only the host can place or move world objects.",
-      );
-      return next;
-    });
+    if (!canManagePlacement) {
+      setNotice("Only the host can change garden placement permissions.");
+      return;
+    }
+    const next = !guestPlacementEnabled;
+    onGuestPlacementChange?.(next);
+    setNotice(
+      next
+        ? "Guest placement enabled. Only grant this to trusted visitors because they can move, rotate, and place host-approved objects."
+        : "Guest placement disabled. Only the host can place or move world objects.",
+    );
   }
 
   return (
@@ -81,7 +90,12 @@ export function GardenSocialPanel({
         <CozyButton onClick={copyInvite} size="sm" variant="warm">
           <Copy /> Invite
         </CozyButton>
-        <CozyButton onClick={toggleGuestPlacement} size="sm" variant={guestPlacementEnabled ? "default" : "secondary"}>
+        <CozyButton
+          disabled={!canManagePlacement}
+          onClick={toggleGuestPlacement}
+          size="sm"
+          variant={guestPlacementEnabled ? "default" : "secondary"}
+        >
           <Wrench /> {guestPlacementEnabled ? "Guests can place" : "Host places"}
         </CozyButton>
         <Badge variant="garden">{players.length} visiting</Badge>

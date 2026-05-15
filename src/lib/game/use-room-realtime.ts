@@ -10,6 +10,8 @@ import {
   PET_CUSTOMIZATION_EVENT,
   readPresenceCustomization,
 } from "@/lib/game/avatar-customization";
+import { getSocialState, recordPlayedWith } from "@/lib/game/social";
+import { isBlocked } from "@/lib/game/safety";
 
 type UseRoomRealtimeOptions = {
   roomId: string;
@@ -48,6 +50,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
     if (typeof window === "undefined") return `/app/room?room=${normalizedRoomId}`;
     const url = new URL("/app/room", window.location.origin);
     url.searchParams.set("room", normalizedRoomId);
+    url.searchParams.set("visit", getSocialState().selfCode);
     return url.toString();
   }, [normalizedRoomId]);
 
@@ -76,12 +79,14 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
         } = await supabase.auth.getUser();
         const localId = user?.id ?? createGuestId();
         const displayName = createDisplayName(user?.email);
+        const social = getSocialState();
 
         // Full customization snapshot — keeper palette + outfit, pet species +
         // fur tone + accessory — so remote keepers see the real avatar/pet.
         const localPlayer: RealtimeRoomPlayer = {
           id: localId,
           displayName,
+          friendCode: social.selfCode,
           ...readPresenceCustomization(),
           facing: "right",
           x: 390,
@@ -105,8 +110,13 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
           const remotePlayers = Object.values(state)
             .flat()
             .filter((player) => player.id !== localId)
+            .filter((player) => !player.friendCode || !isBlocked(player.friendCode))
             .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
+          remotePlayers.forEach((player) => {
+            if (!player.friendCode) return;
+            recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
+          });
           setPlayers(remotePlayers);
         }
 
@@ -117,11 +127,19 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
           .on("broadcast", { event: "avatar_move" }, ({ payload }) => {
             const player = payload as RealtimeRoomPlayer;
             if (!player?.id || player.id === localId) return;
+            if (player.friendCode && isBlocked(player.friendCode)) return;
+            if (player.friendCode) {
+              recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
+            }
             setPlayers((current) => upsertPlayer(current, player));
           })
           .on("broadcast", { event: "room_emote" }, ({ payload }) => {
             const player = payload as RealtimeRoomPlayer;
             if (!player?.id || player.id === localId) return;
+            if (player.friendCode && isBlocked(player.friendCode)) return;
+            if (player.friendCode) {
+              recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
+            }
             setPlayers((current) => upsertPlayer(current, player));
             window.dispatchEvent(new CustomEvent("hearthaven:remote-emote", { detail: player }));
           })
@@ -148,6 +166,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
           if (!current) return;
           const payload: RealtimeRoomPlayer = {
             ...current,
+            friendCode: getSocialState().selfCode,
             ...readPresenceCustomization(),
             updatedAt: Date.now(),
           };

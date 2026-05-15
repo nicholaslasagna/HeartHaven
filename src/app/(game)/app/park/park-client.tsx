@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { ArrowLeft, Gamepad2, Map, Sparkles } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { Button } from "@/components/ui/button";
+import { lookupFriendCode } from "@/lib/game/social";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import { parkGames } from "@/lib/mock-data";
 
@@ -15,11 +18,38 @@ const parkPlots = [
 ];
 
 export function ParkClient() {
+  const searchParams = useSearchParams();
+  const visitTarget = searchParams.get("visit");
+  const isGuestVisit = Boolean(visitTarget);
+  const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
+  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
+  const visitorHasDecoratorPass = searchParams.get("decorator") === "1";
+  const [guestPlacementEnabled, setGuestPlacementEnabled] = useState(false);
   const realtime = useGardenRealtime({
-    gardenId: "honeyheart-park",
-    gardenName: "Honeyheart Park",
+    gardenId: isVisitAllowed ? "honeyheart-park" : "friend-only-park-gate",
+    gardenName: isVisitAllowed ? "Honeyheart Park" : "Friend-only park",
     invitePath: "/app/park",
   });
+  const shownPlacementEnabled = isGuestVisit ? visitorHasDecoratorPass : guestPlacementEnabled;
+  const canEditGarden = !isGuestVisit || shownPlacementEnabled;
+
+  if (!isVisitAllowed) {
+    return (
+      <div className="grid gap-5">
+        <section className="rounded-lg border border-blush-300/40 bg-blush-100/65 p-6 shadow-sm">
+          <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Friend-only park visit</p>
+          <h1 className="mt-2 font-display text-4xl text-ink-900">Accept an invite first.</h1>
+          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
+            Park lobbies only open for friends or keepers you have already played with. Add the host first, then return
+            through the park invite.
+          </p>
+          <Button asChild className="mt-4" variant="warm">
+            <Link href="/app/friends">Open Friends</Link>
+          </Button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-5">
@@ -72,15 +102,19 @@ export function ParkClient() {
       </section>
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <GardenCanvasLoader
+          canEditGarden={canEditGarden}
           onAvatarMove={realtime.sendMove}
           plots={parkPlots}
           remotePlayers={realtime.players}
           variant="park"
         />
         <GardenSocialPanel
+          canManagePlacement={!isGuestVisit}
           connectionState={realtime.connectionState}
+          guestPlacementEnabled={shownPlacementEnabled}
           inviteUrl={realtime.inviteUrl}
           messages={realtime.messages}
+          onGuestPlacementChange={setGuestPlacementEnabled}
           players={realtime.players}
           roomCode={realtime.gardenCode}
           sendChat={realtime.sendChat}

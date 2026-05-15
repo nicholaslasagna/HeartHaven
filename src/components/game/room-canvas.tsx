@@ -25,6 +25,7 @@ import {
   type PetToneId,
 } from "@/lib/game/avatar-customization";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import { PET_VITALS_EVENT, getPetMood, getPetVitals, type PetMood as CompanionMood } from "@/lib/game/pet-state";
 import type { FacingDirection, RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 
@@ -33,6 +34,9 @@ type RoomCanvasProps = {
   roomName?: string;
   roomTheme?: RoomBlueprint["theme"];
   placements: RoomPlacement[];
+  /** When false, the keeper is a VISITOR — they can walk + emote but can't
+   *  drag, rotate, or re-layer furniture. Defaults to true (own room). */
+  canEditRoom?: boolean;
   onAvatarMove?: (position: { x: number; y: number; facing: FacingDirection }) => void;
   onRoomEmote?: (emote: RoomEmote) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
@@ -84,11 +88,26 @@ const roomEmotes: { emote: RoomEmote; label: string }[] = [
   { emote: "cozy", label: "Cozy" },
 ];
 
+/**
+ * True if the user is currently typing into a text input — suspends canvas
+ * keyboard handling so WASD doesn't fire while typing in chat.
+ */
+function isTextInputFocused(): boolean {
+  if (typeof document === "undefined") return false;
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (el.isContentEditable) return true;
+  return false;
+}
+
 export function RoomCanvas({
   remotePlayers = [],
   roomName = "Moonlit Loft",
   roomTheme = "loft",
   placements,
+  canEditRoom = true,
   onAvatarMove,
   onRoomEmote,
   onPlacementsChange,
@@ -131,6 +150,8 @@ export function RoomCanvas({
         private petMood: PetMood = "idle";
         private petMoodTimer = 0;
         private petFacing: FacingDirection = "right";
+        private companionMood: CompanionMood = getPetMood(getPetVitals());
+        private companionMoodHandler?: (event: Event) => void;
         private blinkTimer = 0;
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
         private wasd?: Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown", Phaser.Input.Keyboard.Key>;
@@ -470,8 +491,11 @@ export function RoomCanvas({
           container.add(glow);
 
           drawFurnitureShape(this, container, placement);
-          container.setInteractive({ draggable: placement.floorLocked, useHandCursor: true });
-          if (placement.floorLocked) {
+          // Only the room's host can rearrange furniture. Visitors keep hover
+          // affordances (they can click to interact) but cannot drag.
+          const canDrag = Boolean(canEditRoom && placement.floorLocked);
+          container.setInteractive({ draggable: canDrag, useHandCursor: true });
+          if (canDrag) {
             this.input.setDraggable(container);
           }
 
@@ -628,17 +652,25 @@ export function RoomCanvas({
             this.tintPetForTone();
             this.updatePetAccessory(this.petAccessorySprite, this.petCustomization.accessory);
           };
+          // Companion mood is the vitals-derived "blissful/happy/content/restless/lonely"
+          // reading. We keep it cached so the pet's resting pose subtly reflects how
+          // well-tended they've been — Webkinz-soul, on the canvas.
+          this.companionMoodHandler = () => {
+            this.companionMood = getPetMood(getPetVitals());
+          };
           window.addEventListener("hearthaven:room-emote", this.roomEmoteHandler);
           window.addEventListener("hearthaven:remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
           window.addEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
+          window.addEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
           const cleanup = () => {
             if (this.roomEmoteHandler) window.removeEventListener("hearthaven:room-emote", this.roomEmoteHandler);
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:remote-players", this.remotePlayersHandler);
             if (this.remoteEmoteHandler) window.removeEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
             if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
+            if (this.companionMoodHandler) window.removeEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
@@ -943,14 +975,18 @@ export function RoomCanvas({
           // reads as facing left vs right.
           this.avatarSprite.setFlipX(this.avatarFacing === "left");
 
-          if (this.wasd?.rotate && PhaserModule.Input.Keyboard.JustDown(this.wasd.rotate)) {
-            this.rotateSelectedFurniture();
-          }
-          if (this.wasd?.layerUp && PhaserModule.Input.Keyboard.JustDown(this.wasd.layerUp)) {
-            this.changeSelectedLayer(1);
-          }
-          if (this.wasd?.layerDown && PhaserModule.Input.Keyboard.JustDown(this.wasd.layerDown)) {
-            this.changeSelectedLayer(-1);
+          // Same guard for R / Q / E — never fire while a text input is focused.
+          // Also gated by `canEditRoom`: visitors can't rotate or re-layer host furniture.
+          if (canEditRoom && !isTextInputFocused()) {
+            if (this.wasd?.rotate && PhaserModule.Input.Keyboard.JustDown(this.wasd.rotate)) {
+              this.rotateSelectedFurniture();
+            }
+            if (this.wasd?.layerUp && PhaserModule.Input.Keyboard.JustDown(this.wasd.layerUp)) {
+              this.changeSelectedLayer(1);
+            }
+            if (this.wasd?.layerDown && PhaserModule.Input.Keyboard.JustDown(this.wasd.layerDown)) {
+              this.changeSelectedLayer(-1);
+            }
           }
 
           this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
@@ -982,6 +1018,10 @@ export function RoomCanvas({
         }
 
         private readKeyboard() {
+          // Suspend movement keys while the player is typing — WASD letters
+          // belong in their chat / message field, not the floor.
+          if (isTextInputFocused()) return { x: 0, y: 0 };
+
           const left = Boolean(this.cursors?.left.isDown || this.wasd?.left.isDown);
           const right = Boolean(this.cursors?.right.isDown || this.wasd?.right.isDown);
           const up = Boolean(this.cursors?.up.isDown || this.wasd?.up.isDown);
@@ -1042,6 +1082,15 @@ export function RoomCanvas({
           const squish = this.petMood === "sit" ? 0.88 : this.petMood === "sleep" ? 0.7 : 1;
           this.pet.setScale(1, squish);
           this.petEyes.forEach((eye) => eye.setScale(1, this.petMood === "sleep" ? 0.1 : 1));
+          // Idle pose reflects the vitals-derived companion mood: blissful pets
+          // hop happily, lonely ones curl up small. Anything that's already in a
+          // specific local-state mood (sleep/sit/react) keeps its pose.
+          const idleMoodPose: PetPose =
+            this.companionMood === "blissful" || this.companionMood === "happy"
+              ? "happy"
+              : this.companionMood === "restless" || this.companionMood === "lonely"
+                ? "sit"
+                : "idle";
           const pose: PetPose = this.petMood === "sleep"
             ? "sleep"
             : this.petMood === "sit"
@@ -1050,7 +1099,7 @@ export function RoomCanvas({
                 ? "happy"
                 : petMoving
                   ? Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2"
-                  : "idle";
+                  : idleMoodPose;
           this.setPetPose(pose);
 
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
@@ -1162,6 +1211,11 @@ export function RoomCanvas({
 
         private rotateSelectedFurniture() {
           if (!this.selectedFurniture) return;
+          // Visitors can't edit the host's room.
+          if (!canEditRoom) {
+            setStatus("Only the room host can move furniture here.");
+            return;
+          }
           const placement = this.selectedFurniture.placement;
           placement.rotation = (placement.rotation + 45) % 360;
           this.selectedFurniture.container.setRotation((placement.rotation * Math.PI) / 180);
@@ -1173,6 +1227,10 @@ export function RoomCanvas({
 
         private changeSelectedLayer(delta: number) {
           if (!this.selectedFurniture) return;
+          if (!canEditRoom) {
+            setStatus("Only the room host can change depth here.");
+            return;
+          }
           const placement = this.selectedFurniture.placement;
           placement.zIndex = PhaserModule.Math.Clamp(placement.zIndex + delta, -6, 12);
           playCozyCue("place");
@@ -1269,7 +1327,7 @@ export function RoomCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, [activeEvent, onAvatarMove, onPlacementsChange, onRoomEmote, placements, roomName, roomTheme]);
+  }, [activeEvent, canEditRoom, onAvatarMove, onPlacementsChange, onRoomEmote, placements, roomName, roomTheme]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">

@@ -18,6 +18,8 @@
  */
 
 import { creditWallet } from "@/lib/game/wallet-store";
+import { awardDailyDrop } from "@/lib/game/inventory-store";
+import type { CatalogItem } from "@/lib/game/types";
 import type { ActivityType } from "@/lib/game/activity";
 
 export const DAILY_LOOP_KEY = "hearthaven:daily-loop";
@@ -61,6 +63,8 @@ export type DailyGiftResult = {
   streak: number;
   /** True when this claim extended a streak rather than starting fresh. */
   continued: boolean;
+  /** A random catalog item dropped into inventory as part of the gift. */
+  item: CatalogItem | null;
 };
 
 type TaskTemplate = Omit<DailyTask, "id" | "progress" | "complete">;
@@ -211,17 +215,22 @@ export function claimDailyGift(): DailyGiftResult | null {
     coins: reward.coins,
     hearts: reward.hearts,
   });
-  return { ...reward, streak, continued };
+  // Every daily gift includes a surprise — a single catalog item drops into
+  // the keeper's inventory. Streaks bias toward rarer items via the inventory
+  // store's weighting.
+  const item = awardDailyDrop();
+  return { ...reward, streak, continued, item };
 }
 
 /**
- * Advance any daily task whose type is fed by this activity. Returns the ids of
- * tasks that JUST completed (so the activity bus can also tick the
- * "tasks-completed" achievement metric). Completed tasks auto-pay their reward.
+ * Advance any daily task whose type is fed by this activity. Returns SNAPSHOTS
+ * of the tasks that JUST completed (so the activity bus can tick the
+ * "tasks-completed" achievement metric AND a toast layer can name the win).
+ * Completed tasks auto-pay their reward into the wallet.
  */
-export function applyActivityToDailyTasks(type: ActivityType, value = 1): string[] {
+export function applyActivityToDailyTasks(type: ActivityType, value = 1): DailyTask[] {
   const state = getDailyState();
-  const justCompleted: string[] = [];
+  const justCompleted: DailyTask[] = [];
   let changed = false;
 
   const tasks = state.tasks.map((task) => {
@@ -232,8 +241,9 @@ export function applyActivityToDailyTasks(type: ActivityType, value = 1): string
     changed = true;
     const progress = Math.min(task.goal, task.progress + value);
     const complete = progress >= task.goal;
+    const nextTask = { ...task, progress, complete };
     if (complete) {
-      justCompleted.push(task.id);
+      justCompleted.push(nextTask);
       creditWallet({
         gameId: "daily-task",
         label: `Daily task · ${task.label}`,
@@ -242,7 +252,7 @@ export function applyActivityToDailyTasks(type: ActivityType, value = 1): string
         hearts: task.rewardHearts,
       });
     }
-    return { ...task, progress, complete };
+    return nextTask;
   });
 
   if (changed) rawWrite({ ...state, tasks });
