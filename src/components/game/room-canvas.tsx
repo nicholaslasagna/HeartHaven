@@ -5,11 +5,14 @@ import type Phaser from "phaser";
 import {
   getPetAccessory,
   getPetTone,
+  gaitPhase,
+  keeperGaitPose,
   keeperFrame,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
   petAccessoryFrame,
   petFrame,
+  petGaitPose,
   PET_CUSTOMIZATION_EVENT,
   readKeeperCustomization,
   readPetCustomization,
@@ -77,6 +80,8 @@ type RemoteAvatarObject = {
   petSpeciesId: PetSpeciesId;
   petToneId: PetToneId;
   petAccessoryId: PetAccessoryId;
+  facing: FacingDirection;
+  movingUntil: number;
 };
 
 const ROOM_WIDTH = 960;
@@ -238,6 +243,7 @@ export function RoomCanvas({
         update(_time: number, delta: number) {
           this.updateAvatar(delta);
           this.updatePet(delta);
+          this.updateRemoteAvatarAnimation();
           this.updateSparkles(delta);
           this.sortDepths();
         }
@@ -685,6 +691,75 @@ export function RoomCanvas({
           this.petSprite?.setFrame(petFrame(this.petCustomization.speciesId, pose));
         }
 
+        private applyKeeperLocomotion(moving: boolean) {
+          if (!this.avatarSprite) return;
+          if (!moving) {
+            this.setAvatarPose("idle");
+            this.avatarSprite.setY(-66).setRotation(0);
+            this.avatarShadow?.setScale(1, 1);
+            return;
+          }
+
+          const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
+          const tilt = wave * 0.018 * (this.avatarFacing === "left" ? -1 : 1);
+          this.setAvatarPose(keeperGaitPose(this.time.now));
+          this.avatarSprite.setY(-66 - Math.abs(wave) * 3).setRotation(tilt);
+          this.avatarShadow?.setScale(1 + Math.abs(wave) * 0.08, 1);
+        }
+
+        private applyPetLocomotion(moving: boolean, idlePose: PetPose) {
+          if (!this.petSprite) return;
+          if (!moving) {
+            this.setPetPose(idlePose);
+            this.petSprite.setY(-40).setRotation(0);
+            this.petShadow?.setScale(1, 1);
+            return;
+          }
+
+          const wave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+          const tilt = wave * 0.03 * (this.petFacing === "left" ? -1 : 1);
+          this.setPetPose(petGaitPose(this.time.now + 90));
+          this.petSprite.setY(-40 - Math.abs(wave) * 2.5).setRotation(tilt);
+          this.petShadow?.setScale(1 + Math.abs(wave) * 0.08, 1);
+        }
+
+        private updateRemoteAvatarAnimation() {
+          this.remoteAvatars.forEach((remote) => {
+            const moving = this.time.now < remote.movingUntil;
+            const facingLeft = remote.facing === "left";
+            remote.sprite.setFlipX(facingLeft);
+            remote.petSprite.setFlipX(facingLeft);
+            remote.petAccessorySprite.setFlipX(facingLeft);
+
+            if (!moving) {
+              remote.sprite
+                .setFrame(keeperFrame(remote.paletteId, "idle", remote.outfitId, remote.bodyId))
+                .setY(-66)
+                .setRotation(0);
+              remote.petSprite
+                .setFrame(petFrame(remote.petSpeciesId, "idle"))
+                .setY(-36)
+                .setRotation(0);
+              remote.shadow.setScale(1, 1);
+              remote.petShadow.setScale(1, 1);
+              return;
+            }
+
+            const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
+            const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+            remote.sprite
+              .setFrame(keeperFrame(remote.paletteId, keeperGaitPose(this.time.now), remote.outfitId, remote.bodyId))
+              .setY(-66 - Math.abs(wave) * 3)
+              .setRotation(wave * 0.018 * (facingLeft ? -1 : 1));
+            remote.petSprite
+              .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
+              .setY(-36 - Math.abs(petWave) * 2.2)
+              .setRotation(petWave * 0.03 * (facingLeft ? -1 : 1));
+            remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
+            remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
+          });
+        }
+
         private tintPetForTone() {
           if (!this.petSprite) return;
           const tone = getPetTone(this.petCustomization.toneId);
@@ -740,14 +815,17 @@ export function RoomCanvas({
             // brings their real pet species + fur tone — normalized so an old
             // client that only sent `color` still resolves to a valid look.
             const custom = normalizeRemoteCustomization(player);
-            const facingLeft = player.facing === "left";
-            const walkFrame: KeeperPose = Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2";
-            const petWalkFrame: PetPose = Math.floor(this.time.now / 200) % 2 === 0 ? "walk1" : "walk2";
-            const petX = player.x + (facingLeft ? 54 : -54);
-            const petY = player.y + 14;
+            let facingLeft = player.facing === "left";
 
             const existing = this.remoteAvatars.get(player.id);
             if (existing) {
+              const distance = PhaserModule.Math.Distance.Between(existing.container.x, existing.container.y, player.x, player.y);
+              const dx = player.x - existing.container.x;
+              if (Math.abs(dx) > 2) facingLeft = dx < 0;
+              existing.facing = facingLeft ? "left" : "right";
+              existing.movingUntil = distance > 2 ? this.time.now + 280 : this.time.now;
+              const petX = player.x + (facingLeft ? 54 : -54);
+              const petY = player.y + 14;
               const changed =
                 existing.bodyId !== custom.bodyId ||
                 existing.paletteId !== custom.paletteId ||
@@ -765,38 +843,31 @@ export function RoomCanvas({
                 this.applyRemotePetTone(existing.petSprite, custom.petToneId);
                 this.updatePetAccessory(existing.petAccessorySprite, custom.petAccessoryId);
               }
-              existing.sprite.setFrame(keeperFrame(custom.paletteId, walkFrame, custom.outfitId, custom.bodyId));
-              existing.sprite.setFlipX(facingLeft);
-              existing.petSprite.setFlipX(facingLeft);
-              existing.petAccessorySprite.setFlipX(facingLeft);
               existing.label.setText(player.displayName);
+              this.tweens.killTweensOf([existing.container, existing.shadow, existing.petContainer, existing.petShadow]);
               this.tweens.add({
                 targets: existing.container,
                 x: player.x,
                 y: player.y,
-                duration: 140,
+                duration: distance > 2 ? 190 : 80,
                 ease: "Sine.out",
-                onComplete: () => {
-                  existing.sprite.setFrame(keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId));
-                  existing.container.setDepth(player.y);
-                },
+                onComplete: () => existing.container.setDepth(player.y),
               });
-              this.tweens.add({ targets: existing.shadow, x: player.x, y: player.y + 20, duration: 140, ease: "Sine.out" });
-              existing.petSprite.setFrame(petFrame(custom.petSpeciesId, petWalkFrame));
+              this.tweens.add({ targets: existing.shadow, x: player.x, y: player.y + 20, duration: distance > 2 ? 190 : 80, ease: "Sine.out" });
               this.tweens.add({
                 targets: existing.petContainer,
                 x: petX,
                 y: petY,
-                duration: 200,
+                duration: distance > 2 ? 230 : 100,
                 ease: "Sine.out",
-                onComplete: () => {
-                  existing.petSprite.setFrame(petFrame(custom.petSpeciesId, "idle"));
-                  existing.petContainer.setDepth(petY - 1);
-                },
+                onComplete: () => existing.petContainer.setDepth(petY - 1),
               });
-              this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: 200, ease: "Sine.out" });
+              this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: distance > 2 ? 230 : 100, ease: "Sine.out" });
               return;
             }
+
+            const petX = player.x + (facingLeft ? 54 : -54);
+            const petY = player.y + 14;
 
             // --- new visiting keeper ---
             const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
@@ -848,6 +919,8 @@ export function RoomCanvas({
               petSpeciesId: custom.petSpeciesId,
               petToneId: custom.petToneId,
               petAccessoryId: custom.petAccessoryId,
+              facing: facingLeft ? "left" : "right",
+              movingUntil: 0,
             });
           });
         }
@@ -993,7 +1066,7 @@ export function RoomCanvas({
           this.avatarShadow.setDepth(this.avatar.y - 1);
           this.avatarEmoteTimer = Math.max(0, this.avatarEmoteTimer - delta);
           if (this.avatarEmoteTimer === 0) {
-            this.setAvatarPose(moving ? (Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2") : "idle");
+            this.applyKeeperLocomotion(moving);
           }
 
           this.moveBroadcastTimer += delta;
@@ -1097,10 +1170,8 @@ export function RoomCanvas({
               ? "sit"
               : this.petMood === "react"
                 ? "happy"
-                : petMoving
-                  ? Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2"
-                  : idleMoodPose;
-          this.setPetPose(pose);
+                : idleMoodPose;
+          this.applyPetLocomotion(petMoving, pose);
 
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
           this.petShadow.setDepth(this.pet.y - 1);

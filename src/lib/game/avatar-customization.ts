@@ -122,6 +122,26 @@ const petPoseColumns: Record<PetPose, number> = {
   happy: 5,
 };
 
+const GAIT_FRAME_MS = 105;
+
+export function gaitPhase(timeMs: number) {
+  return (timeMs % (GAIT_FRAME_MS * 4)) / (GAIT_FRAME_MS * 4);
+}
+
+export function keeperGaitPose(timeMs: number): KeeperPose {
+  const phase = Math.floor(timeMs / GAIT_FRAME_MS) % 4;
+  if (phase === 0) return "walk1";
+  if (phase === 2) return "walk2";
+  return "idle";
+}
+
+export function petGaitPose(timeMs: number): PetPose {
+  const phase = Math.floor(timeMs / GAIT_FRAME_MS) % 4;
+  if (phase === 0) return "walk1";
+  if (phase === 2) return "walk2";
+  return "idle";
+}
+
 export const KEEPER_CUSTOMIZATION_EVENT = "hearthaven:avatar-customization-changed";
 export const PET_CUSTOMIZATION_EVENT = "hearthaven:pet-customization-changed";
 

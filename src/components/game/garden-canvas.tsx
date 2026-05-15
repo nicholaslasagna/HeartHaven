@@ -5,11 +5,14 @@ import type Phaser from "phaser";
 import {
   getPetAccessory,
   getPetTone,
+  gaitPhase,
+  keeperGaitPose,
   keeperFrame,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
   petAccessoryFrame,
   petFrame,
+  petGaitPose,
   PET_CUSTOMIZATION_EVENT,
   readKeeperCustomization,
   readPetCustomization,
@@ -89,6 +92,8 @@ type RemoteGardenAvatarObject = {
   petSpeciesId: PetSpeciesId;
   petToneId: PetToneId;
   petAccessoryId: PetAccessoryId;
+  facing: FacingDirection;
+  movingUntil: number;
 };
 
 type GardenPetMood = "idle" | "follow" | "sit" | "happy";
@@ -345,6 +350,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         update(_time: number, delta: number) {
           this.updateAvatar(delta);
           this.updatePet(delta);
+          this.updateRemoteAvatarAnimation();
           this.butterflies.forEach((butterfly, index) => {
             butterfly.x += Math.sin((this.time.now + index * 400) * 0.0012) * 0.34;
             butterfly.y += Math.cos((this.time.now + index * 300) * 0.001) * 0.18;
@@ -1010,6 +1016,77 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.petSprite?.setFrame(petFrame(this.petCustomization.speciesId, pose));
         }
 
+        private applyKeeperLocomotion(moving: boolean) {
+          if (!this.avatarSprite) return;
+          if (!moving) {
+            this.setAvatarPose("idle");
+            this.avatarSprite.setY(-66).setRotation(0);
+            this.avatarShadow?.setScale(1, 1);
+            return;
+          }
+
+          const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
+          this.setAvatarPose(keeperGaitPose(this.time.now));
+          this.avatarSprite
+            .setY(-66 - Math.abs(wave) * 3)
+            .setRotation(wave * 0.018 * (this.avatarFacing === "left" ? -1 : 1));
+          this.avatarShadow?.setScale(1 + Math.abs(wave) * 0.08, 1);
+        }
+
+        private applyPetLocomotion(moving: boolean, idlePose: PetPose) {
+          if (!this.petSprite) return;
+          if (!moving) {
+            this.setPetPose(idlePose);
+            this.petSprite.setY(-40).setRotation(0);
+            this.petShadow?.setScale(1, 1);
+            return;
+          }
+
+          const wave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+          this.setPetPose(petGaitPose(this.time.now + 90));
+          this.petSprite
+            .setY(-40 - Math.abs(wave) * 2.5)
+            .setRotation(wave * 0.03 * (this.petFacing === "left" ? -1 : 1));
+          this.petShadow?.setScale(1 + Math.abs(wave) * 0.08, 1);
+        }
+
+        private updateRemoteAvatarAnimation() {
+          this.remoteAvatars.forEach((remote) => {
+            const moving = this.time.now < remote.movingUntil;
+            const facingLeft = remote.facing === "left";
+            remote.sprite.setFlipX(facingLeft);
+            remote.petSprite.setFlipX(facingLeft);
+            remote.petAccessorySprite.setFlipX(facingLeft);
+
+            if (!moving) {
+              remote.sprite
+                .setFrame(keeperFrame(remote.paletteId, "idle", remote.outfitId, remote.bodyId))
+                .setY(-66)
+                .setRotation(0);
+              remote.petSprite
+                .setFrame(petFrame(remote.petSpeciesId, "idle"))
+                .setY(-38)
+                .setRotation(0);
+              remote.shadow.setScale(1, 1);
+              remote.petShadow.setScale(1, 1);
+              return;
+            }
+
+            const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
+            const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+            remote.sprite
+              .setFrame(keeperFrame(remote.paletteId, keeperGaitPose(this.time.now), remote.outfitId, remote.bodyId))
+              .setY(-66 - Math.abs(wave) * 3)
+              .setRotation(wave * 0.018 * (facingLeft ? -1 : 1));
+            remote.petSprite
+              .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
+              .setY(-38 - Math.abs(petWave) * 2.3)
+              .setRotation(petWave * 0.03 * (facingLeft ? -1 : 1));
+            remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
+            remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
+          });
+        }
+
         private tintPetForTone() {
           if (!this.petSprite) return;
           const tone = getPetTone(this.petCustomization.toneId);
@@ -1084,7 +1161,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
           this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
           this.avatarShadow.setDepth(this.avatar.y - 1);
-          this.setAvatarPose(moving ? (Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2") : "idle");
+          this.applyKeeperLocomotion(moving);
 
           this.moveBroadcastTimer += delta;
           this.footstepTimer += delta;
@@ -1152,10 +1229,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             ? "sit"
             : this.petMood === "happy"
               ? "happy"
-              : petMoving
-                ? Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2"
-                : idleMoodPose;
-          this.setPetPose(pose);
+              : idleMoodPose;
+          this.applyPetLocomotion(petMoving, pose);
           this.pet.setScale(1, this.petMood === "sit" ? 0.9 : 1);
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
           this.petShadow.setDepth(this.pet.y - 1);
@@ -1260,14 +1335,17 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             // Render every visiting keeper with their real palette + outfit and
             // their real pet species + fur tone, mirrored to their facing.
             const custom = normalizeRemoteCustomization(player);
-            const facingLeft = player.facing === "left";
-            const walkFrame: KeeperPose = Math.floor(this.time.now / 180) % 2 === 0 ? "walk1" : "walk2";
-            const petWalkFrame: PetPose = Math.floor(this.time.now / 200) % 2 === 0 ? "walk1" : "walk2";
-            const petX = player.x + (facingLeft ? 58 : -58);
-            const petY = player.y + 18;
+            let facingLeft = player.facing === "left";
 
             const existing = this.remoteAvatars.get(player.id);
             if (existing) {
+              const distance = PhaserModule.Math.Distance.Between(existing.container.x, existing.container.y, player.x, player.y);
+              const dx = player.x - existing.container.x;
+              if (Math.abs(dx) > 2) facingLeft = dx < 0;
+              existing.facing = facingLeft ? "left" : "right";
+              existing.movingUntil = distance > 2 ? this.time.now + 280 : this.time.now;
+              const petX = player.x + (facingLeft ? 58 : -58);
+              const petY = player.y + 18;
               const changed =
                 existing.bodyId !== custom.bodyId ||
                 existing.paletteId !== custom.paletteId ||
@@ -1285,36 +1363,31 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
                 this.applyRemotePetTone(existing.petSprite, custom.petToneId);
                 this.updatePetAccessory(existing.petAccessorySprite, custom.petAccessoryId);
               }
-              existing.sprite.setFrame(keeperFrame(custom.paletteId, walkFrame, custom.outfitId, custom.bodyId));
-              existing.sprite.setFlipX(facingLeft);
-              existing.petSprite.setFlipX(facingLeft);
-              existing.petAccessorySprite.setFlipX(facingLeft);
-              existing.petSprite.setFrame(petFrame(custom.petSpeciesId, petWalkFrame));
               existing.label.setText(player.displayName);
+              this.tweens.killTweensOf([existing.container, existing.shadow, existing.petContainer, existing.petShadow]);
               this.tweens.add({
                 targets: existing.container,
                 x: player.x,
                 y: player.y,
-                duration: 140,
+                duration: distance > 2 ? 190 : 80,
                 ease: "Sine.out",
                 onComplete: () => existing.container.setDepth(player.y),
               });
-              this.tweens.add({ targets: existing.shadow, x: player.x, y: player.y + 22, duration: 140, ease: "Sine.out" });
+              this.tweens.add({ targets: existing.shadow, x: player.x, y: player.y + 22, duration: distance > 2 ? 190 : 80, ease: "Sine.out" });
               this.tweens.add({
                 targets: existing.petContainer,
                 x: petX,
                 y: petY,
-                duration: 200,
+                duration: distance > 2 ? 230 : 100,
                 ease: "Sine.out",
                 onComplete: () => existing.petContainer.setDepth(petY - 1),
               });
-              this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: 200, ease: "Sine.out" });
-              this.time.delayedCall(180, () => {
-                existing.sprite.setFrame(keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId));
-                existing.petSprite.setFrame(petFrame(custom.petSpeciesId, "idle"));
-              });
+              this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: distance > 2 ? 230 : 100, ease: "Sine.out" });
               return;
             }
+
+            const petX = player.x + (facingLeft ? 58 : -58);
+            const petY = player.y + 18;
 
             // --- new visiting keeper ---
             const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
@@ -1366,6 +1439,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               petSpeciesId: custom.petSpeciesId,
               petToneId: custom.petToneId,
               petAccessoryId: custom.petAccessoryId,
+              facing: facingLeft ? "left" : "right",
+              movingUntil: 0,
             });
           });
         }
