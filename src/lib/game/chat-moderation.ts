@@ -32,6 +32,15 @@ export type ChatModerationResult =
   | { ok: false; severity: ChatSeverity; reason: string };
 
 const MAX_CHAT_LENGTH = 240;
+const CHAT_RATE_KEY = "hearthaven:chat-rate-window";
+const CHAT_WINDOW_MS = 10_000;
+const CHAT_MAX_PER_WINDOW = 5;
+const CHAT_REPEAT_WINDOW_MS = 6_000;
+
+type ChatRateEntry = {
+  text: string;
+  at: number;
+};
 
 /** Soft-blocks: rejected with a reason, no penalty. */
 const softPatterns: Array<{ pattern: RegExp; reason: string }> = [
@@ -68,6 +77,34 @@ const hardPatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\b(?:doxx?|leak\s+your?\s+address|i\s+know\s+where\s+you\s+live)\b/i, reason: "Doxxing isn't allowed." },
 ];
 
+function checkChatRateLimit(cleaned: string): string | null {
+  if (typeof window === "undefined") return null;
+  const now = Date.now();
+  let entries: ChatRateEntry[] = [];
+  try {
+    const raw = window.localStorage.getItem(CHAT_RATE_KEY);
+    entries = raw ? JSON.parse(raw) as ChatRateEntry[] : [];
+  } catch {
+    entries = [];
+  }
+
+  const recent = entries.filter((entry) => now - entry.at <= CHAT_WINDOW_MS);
+  if (recent.length >= CHAT_MAX_PER_WINDOW) {
+    window.localStorage.setItem(CHAT_RATE_KEY, JSON.stringify(recent));
+    return "Slow down a little so everyone can keep up.";
+  }
+
+  const normalized = cleaned.toLowerCase();
+  const repeated = recent.some((entry) => entry.text.toLowerCase() === normalized && now - entry.at <= CHAT_REPEAT_WINDOW_MS);
+  if (repeated) {
+    window.localStorage.setItem(CHAT_RATE_KEY, JSON.stringify(recent));
+    return "Try not to repeat the same message.";
+  }
+
+  window.localStorage.setItem(CHAT_RATE_KEY, JSON.stringify([...recent, { text: cleaned, at: now }]));
+  return null;
+}
+
 export function moderateChatMessage(input: string): ChatModerationResult {
   const cleaned = input.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 
@@ -89,6 +126,9 @@ export function moderateChatMessage(input: string): ChatModerationResult {
 
   const soft = softPatterns.find(({ pattern }) => pattern.test(cleaned));
   if (soft) return { ok: false, severity: "soft-block", reason: soft.reason };
+
+  const rateLimit = checkChatRateLimit(cleaned);
+  if (rateLimit) return { ok: false, severity: "soft-block", reason: rateLimit };
 
   return { ok: true, text: cleaned };
 }

@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Copy, DoorOpen, Move, Plus, Radio, RotateCcw, Save, Sparkles, UserCheck, UsersRound } from "lucide-react";
+import { DoorOpen, Move, PackagePlus, Plus, RotateCcw, Save, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
+import { RoomSocialPanel } from "@/components/game/room-social-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Button } from "@/components/ui/button";
 import { recordActivity } from "@/lib/game/activity";
@@ -44,7 +46,6 @@ export function RoomClient() {
   const [placements, setPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [draftPlacements, setDraftPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [saveStatus, setSaveStatus] = useState("Blank room ready");
-  const [inviteStatus, setInviteStatus] = useState("Invite link ready");
   const placementCounter = useRef(0);
   const realtime = useRoomRealtime({
     roomId: isVisitAllowed ? activeRoom.id : "friend-only-gate",
@@ -55,7 +56,7 @@ export function RoomClient() {
   const roomDrawerItems = marketCatalog
     .filter((item) => isItemVisibleForSeason(item, activeEvent))
     .filter((item) => item.placementType === "floor" || item.placementType === "wall")
-    .slice(0, 12);
+    .slice(0, 18);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -120,15 +121,6 @@ export function RoomClient() {
     setSaveStatus(`${item.name} added. Drag it in the room, then save layout.`);
   }
 
-  async function copyInvite() {
-    try {
-      await navigator.clipboard.writeText(realtime.inviteUrl);
-      setInviteStatus("Invite link copied");
-    } catch {
-      setInviteStatus(realtime.inviteUrl);
-    }
-  }
-
   if (!isVisitAllowed) {
     return (
       <div className="grid gap-5">
@@ -150,13 +142,14 @@ export function RoomClient() {
   return (
     <div className="grid gap-5">
       <SeasonalEventBanner compact />
+      <WorldZoneDock active="room" />
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-cream-300 bg-white/64 p-5 shadow-sm md:flex-row md:items-center">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Playable room</p>
           <h1 className="mt-1 font-display text-4xl text-ink-900">{activeRoom.name}</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
             {activeRoom.description} Walk with click-to-move or WASD, drag furniture, choose left/right facing, layer
-            objects on the 2.5D depth axis, and invite friends into the same room.
+            objects on the 2.5D depth axis, and invite friends into the same hosted world.
           </p>
           <p className="mt-2 text-xs font-extrabold uppercase tracking-normal text-garden-700">{saveStatus}</p>
         </div>
@@ -165,58 +158,6 @@ export function RoomClient() {
           <Button disabled={!canEditRoom} onClick={saveRoom}><Save /> Save layout</Button>
           <Button disabled={!canEditRoom} onClick={resetRoom} variant="secondary"><RotateCcw /> Reset</Button>
         </div>
-      </section>
-      <section className="grid gap-3 rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 md:grid-cols-[1fr_auto] md:items-center">
-        <div>
-          <p className="flex items-center gap-2 text-sm font-black text-ink-900">
-            <Radio className="size-4 text-lavender-500" /> Multiplayer room {realtime.roomCode}
-          </p>
-          <p className="mt-1 text-xs font-extrabold uppercase tracking-normal text-ink-500">{realtime.status}</p>
-          <p className="mt-2 text-sm font-bold text-ink-700">
-            {realtime.players.length === 0
-              ? "Invite someone to see their avatar move live in this room."
-              : `${realtime.players.length} friend${realtime.players.length === 1 ? "" : "s"} visiting now.`}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="rounded-full border border-white/70 bg-white/75 px-3 py-2 text-xs font-black uppercase tracking-normal text-ink-700">
-            <UsersRound className="mr-1 inline size-3.5" /> {realtime.connectionState}
-          </div>
-          <Button onClick={copyInvite} variant="warm">
-            <Copy /> Copy invite
-          </Button>
-        </div>
-        <p className="md:col-span-2 rounded-md bg-white/65 px-3 py-2 text-xs font-bold text-ink-700">{inviteStatus}</p>
-        {isHostRoom && (
-          <div className="md:col-span-2 rounded-lg border border-lavender-300/40 bg-white/55 p-3">
-            <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-lavender-600">
-              <UserCheck className="size-3.5" /> Approved decorators
-            </p>
-            {realtime.players.length === 0 ? (
-              <p className="mt-2 text-xs font-bold text-ink-600">
-                Invite a friend first, then approve only the visitors who can decorate this room.
-              </p>
-            ) : (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {realtime.players
-                  .filter((player) => Boolean(player.friendCode))
-                  .map((player) => {
-                    const approved = Boolean(player.friendCode && realtime.approvedDecoratorCodes.includes(player.friendCode));
-                    return (
-                      <Button
-                        key={`${player.id}-${player.friendCode}`}
-                        onClick={() => player.friendCode && realtime.toggleDecoratorPermission(player.friendCode)}
-                        size="sm"
-                        variant={approved ? "default" : "secondary"}
-                      >
-                        @{player.displayName}: {approved ? "Remove" : "Allow"}
-                      </Button>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-        )}
       </section>
       <section className="rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -245,45 +186,67 @@ export function RoomClient() {
           ))}
         </div>
       </section>
-      <section className="rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-extrabold uppercase tracking-normal text-blush-500">Room decor drawer</p>
-            <p className="text-sm font-bold text-ink-700">Add items here, then drag and face them left or right directly in the room viewport.</p>
-          </div>
-          <span className="rounded-full bg-cream-100 px-3 py-1 text-xs font-black text-ink-700">{roomDrawerItems.length} ready</span>
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {roomDrawerItems.map((item) => (
-            <button
-              className="min-w-[154px] rounded-lg border border-cream-300 bg-cream-50 px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/70"
-              disabled={!canEditRoom}
-              key={item.id}
-              onClick={() => addRoomItem(item)}
-              type="button"
-            >
-              <span className="block text-sm font-black text-ink-900">{item.name}</span>
-              <span className="mt-0.5 block text-xs font-bold text-ink-600">{item.category} | {item.placementType}</span>
-            </button>
-          ))}
+      <section className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="grid content-start gap-4 xl:sticky xl:top-4">
+          <section className="rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div>
+                <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-blush-500">
+                  <PackagePlus className="size-3.5" /> Room dock
+                </p>
+                <p className="mt-1 text-sm font-bold leading-5 text-ink-700">
+                  Add furniture from here, then drag it inside the room. This stays in the game viewport.
+                </p>
+              </div>
+              <span className="rounded-full bg-cream-100 px-2.5 py-1 text-xs font-black text-ink-700">{roomDrawerItems.length}</span>
+            </div>
+            <div className="grid max-h-[460px] gap-2 overflow-y-auto pr-1">
+              {roomDrawerItems.map((item) => (
+                <button
+                  className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/70 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!canEditRoom}
+                  key={item.id}
+                  onClick={() => addRoomItem(item)}
+                  type="button"
+                >
+                  <span className="block text-sm font-black text-ink-900">{item.name}</span>
+                  <span className="mt-0.5 block text-xs font-bold text-ink-600">{item.category} | {item.placementType}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+          <RoomSocialPanel
+            approvedDecoratorCodes={realtime.approvedDecoratorCodes}
+            canManagePlacement={isHostRoom}
+            connectionState={realtime.connectionState}
+            inviteUrl={realtime.inviteUrl}
+            messages={realtime.messages}
+            onToggleDecorator={realtime.toggleDecoratorPermission}
+            players={realtime.players}
+            roomCode={realtime.roomCode}
+            sendChat={realtime.sendChat}
+            status={realtime.status}
+          />
+        </aside>
+        <div className="grid content-start gap-3">
+          <RoomCanvasLoader
+            canEditRoom={canEditRoom}
+            onAvatarMove={realtime.sendMove}
+            onPlacementsChange={handlePlacementsChange}
+            onRoomEmote={realtime.sendEmote}
+            placements={placements}
+            remotePlayers={realtime.players}
+            roomName={activeRoom.name}
+            roomTheme={activeRoom.theme}
+          />
+          {!canEditRoom && (
+            <p className="rounded-md border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-xs font-extrabold text-honey-700">
+              You&apos;re a guest in this room. Walk around, send emotes, and chat. The host can approve your username for
+              decorator access if they want you to move furniture.
+            </p>
+          )}
         </div>
       </section>
-      <RoomCanvasLoader
-        canEditRoom={canEditRoom}
-        onAvatarMove={realtime.sendMove}
-        onPlacementsChange={handlePlacementsChange}
-        onRoomEmote={realtime.sendEmote}
-        placements={placements}
-        remotePlayers={realtime.players}
-        roomName={activeRoom.name}
-        roomTheme={activeRoom.theme}
-      />
-      {!canEditRoom && (
-        <p className="rounded-md border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-xs font-extrabold text-honey-700">
-          You&apos;re a guest in this room. Walk around, send emotes, and chat. The host can approve your username for
-          decorator access if they want you to move furniture.
-        </p>
-      )}
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-lavender-500" />
         Avatar movement and emotes now broadcast through Supabase Realtime when env vars are present. Furniture edits

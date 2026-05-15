@@ -1,6 +1,7 @@
 "use client";
 
 import { Heart, Sparkles } from "lucide-react";
+import { CompanionRosterPanel } from "@/components/cozy/companion-roster-panel";
 import { PetCarePanel } from "@/components/cozy/pet-care-panel";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { AchievementsPanel } from "@/components/game/achievements-panel";
@@ -28,6 +29,7 @@ export function PetClient() {
       <section className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
         <PetCarePanel />
         <div className="grid gap-5">
+          <CompanionRosterPanel />
           <CasperWishPanel compact />
           <CozyCard className="p-5">
             <div className="flex items-center gap-2">

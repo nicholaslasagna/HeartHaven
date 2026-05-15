@@ -74,10 +74,10 @@ export const KEEPER_OUTFITS: Array<{ id: KeeperOutfitId; label: string }> = [
 
 export const PET_SPECIES: Array<{ id: PetSpeciesId; label: string; frameRow: number }> = [
   { id: "fox", label: "Cloud Fox", frameRow: 0 },
-  { id: "bunny", label: "Moonberry Fox", frameRow: 1 },
-  { id: "bear", label: "Honey Fox", frameRow: 2 },
-  { id: "duck", label: "Sky Fox", frameRow: 3 },
-  { id: "kitten", label: "Garden Fox", frameRow: 4 },
+  { id: "bunny", label: "Moonberry Bunny", frameRow: 1 },
+  { id: "bear", label: "Honey Bear", frameRow: 2 },
+  { id: "duck", label: "Sky Duck", frameRow: 3 },
+  { id: "kitten", label: "Garden Kitten", frameRow: 4 },
 ];
 
 export const PET_TONES: Array<{ id: PetToneId; label: string; color: string }> = [
@@ -322,15 +322,15 @@ function normalizeKeeperOutfit(value: string | null): KeeperOutfitId {
   return KEEPER_OUTFITS.some((outfit) => outfit.id === value) ? (value as KeeperOutfitId) : "cardigan";
 }
 
-function normalizePetSpecies(value: string | null): PetSpeciesId {
+export function normalizePetSpecies(value: string | null | undefined): PetSpeciesId {
   return PET_SPECIES.some((species) => species.id === value) ? (value as PetSpeciesId) : "fox";
 }
 
-function normalizePetTone(value: string | null): PetToneId {
+export function normalizePetTone(value: string | null | undefined): PetToneId {
   return PET_TONES.some((tone) => tone.id === value) ? (value as PetToneId) : "cream";
 }
 
-function normalizePetAccessory(value: string | null | undefined): PetAccessoryId {
+export function normalizePetAccessory(value: string | null | undefined): PetAccessoryId {
   if (PET_ACCESSORIES.some((accessory) => accessory.id === value)) return value as PetAccessoryId;
   const fromLabel = PET_ACCESSORIES.find((accessory) => accessory.label.toLowerCase() === value?.toLowerCase());
   return fromLabel?.id ?? "moonberry-bow";

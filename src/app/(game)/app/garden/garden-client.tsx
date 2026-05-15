@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Button } from "@/components/ui/button";
 import { lookupFriendCode } from "@/lib/game/social";
@@ -51,6 +52,7 @@ export function GardenClient({ games, plots }: GardenClientProps) {
   return (
     <div className="grid gap-5">
       <SeasonalEventBanner compact />
+      <WorldZoneDock active="garden" />
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-garden-300/50 bg-garden-100/65 p-5 shadow-sm md:flex-row md:items-center">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-normal text-garden-700">My garden</p>

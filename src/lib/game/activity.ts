@@ -16,6 +16,7 @@
 import { applyActivityToDailyTasks, type DailyTask } from "@/lib/game/daily-loop";
 import { applyActivityToDailyWish, type DailyWish } from "@/lib/game/daily-wish";
 import { applyActivityToAchievements, type AchievementDef } from "@/lib/game/achievements";
+import { creditPlayerPoints } from "@/lib/game/progression-store";
 
 export type ActivityType =
   | "game-played"
@@ -29,11 +30,29 @@ export type ActivityType =
   | "pet-rested"
   | "garden-watered"
   | "room-visited"
+  | "friend-time"
   | "note-written"
   | "task-completed"
   | "daily-streak";
 
 export const ACTIVITY_EVENT = "hearthaven:activity";
+
+const POINTS_FOR_ACTIVITY: Partial<Record<ActivityType, (value: number) => number>> = {
+  "game-played": () => 24,
+  "game-won": () => 42,
+  "coins-earned": (value) => Math.min(90, Math.max(4, Math.floor(value / 6))),
+  "hearts-earned": (value) => Math.max(10, value * 12),
+  "pet-fed": () => 14,
+  "pet-played": () => 16,
+  "pet-pampered": () => 14,
+  "pet-rested": () => 14,
+  "garden-watered": () => 12,
+  "room-visited": () => 16,
+  "friend-time": () => 34,
+  "note-written": () => 16,
+  "task-completed": () => 28,
+  "daily-streak": (value) => Math.max(20, value * 8),
+};
 
 export type ActivityDetail = {
   type: ActivityType;
@@ -66,6 +85,11 @@ export function recordActivity(
 
   // 2. Achievement metrics for the activity itself.
   const unlocked = applyActivityToAchievements(type, value);
+
+  const pointsForActivity = POINTS_FOR_ACTIVITY[type]?.(value) ?? 0;
+  if (pointsForActivity > 0) {
+    creditPlayerPoints(pointsForActivity, type);
+  }
 
   // 3. Each freshly-completed daily task is itself a "tasks-completed" tick.
   if (completedTasks.length > 0) {

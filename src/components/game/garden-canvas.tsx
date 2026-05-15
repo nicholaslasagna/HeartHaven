@@ -919,8 +919,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.pet.setSize(70, 70);
           this.tweens.add({
             targets: this.pet,
-            y: this.pet.y - 3,
-            duration: 980,
+            y: this.pet.y - 1.2,
+            duration: 2300,
             yoyo: true,
             repeat: -1,
             ease: "Sine.inOut",

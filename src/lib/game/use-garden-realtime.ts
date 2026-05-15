@@ -12,6 +12,7 @@ import {
   readPresenceCustomization,
 } from "@/lib/game/avatar-customization";
 import { getSocialState, recordPlayedWith } from "@/lib/game/social";
+import { recordActivity } from "@/lib/game/activity";
 import {
   isBlocked,
   isLocallyQuarantined,
@@ -56,6 +57,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
   const [status, setStatus] = useState("Garden chat demo mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const localPlayerRef = useRef<RealtimeRoomPlayer | null>(null);
+  const lastFriendPointAtRef = useRef(0);
   const normalizedGardenId = useMemo(() => normalizeGardenId(gardenId), [gardenId]);
 
   const inviteUrl = useMemo(() => {
@@ -145,6 +147,10 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
             if (!player.friendCode) return;
             recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: gardenName });
           });
+          if (remotePlayers.length > 0 && Date.now() - lastFriendPointAtRef.current > 5 * 60_000) {
+            lastFriendPointAtRef.current = Date.now();
+            recordActivity("friend-time", 1, { context: gardenName });
+          }
           setPlayers(remotePlayers);
         }
 

@@ -28,6 +28,7 @@ import {
   type PetToneId,
 } from "@/lib/game/avatar-customization";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import { PET_VITALS_EVENT, getPetMood, getPetVitals, type PetMood as CompanionMood } from "@/lib/game/pet-state";
 import type { FacingDirection, RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
@@ -180,6 +181,7 @@ export function RoomCanvas({
         private sparkleLayer!: Phaser.GameObjects.Container;
         private remoteAvatars = new Map<string, RemoteAvatarObject>();
         private roomEmoteHandler?: (event: Event) => void;
+        private roomChatBubbleHandler?: (event: Event) => void;
         private remotePlayersHandler?: (event: Event) => void;
         private remoteEmoteHandler?: (event: Event) => void;
         private keeperCustomizationHandler?: (event: Event) => void;
@@ -614,8 +616,8 @@ export function RoomCanvas({
 
           this.tweens.add({
             targets: this.pet,
-            y: this.pet.y - 3,
-            duration: 950,
+            y: this.pet.y - 1.2,
+            duration: 2300,
             yoyo: true,
             repeat: -1,
             ease: "Sine.inOut",
@@ -651,6 +653,10 @@ export function RoomCanvas({
             if (!emote) return;
             this.playRoomEmote(emote);
           };
+          this.roomChatBubbleHandler = (event: Event) => {
+            const message = (event as CustomEvent<GardenChatMessage>).detail;
+            if (message?.text) this.showChatBubble(message);
+          };
           this.remotePlayersHandler = (event: Event) => {
             const players = (event as CustomEvent<{ players?: RealtimeRoomPlayer[] }>).detail?.players;
             this.syncRemotePlayers(players ?? []);
@@ -680,6 +686,7 @@ export function RoomCanvas({
             this.textInputFocused = Boolean((event as CustomEvent<boolean>).detail);
           };
           window.addEventListener("hearthaven:room-emote", this.roomEmoteHandler);
+          window.addEventListener("hearthaven:room-chat-bubble", this.roomChatBubbleHandler);
           window.addEventListener("hearthaven:remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
@@ -688,6 +695,7 @@ export function RoomCanvas({
           window.addEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
           const cleanup = () => {
             if (this.roomEmoteHandler) window.removeEventListener("hearthaven:room-emote", this.roomEmoteHandler);
+            if (this.roomChatBubbleHandler) window.removeEventListener("hearthaven:room-chat-bubble", this.roomChatBubbleHandler);
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:remote-players", this.remotePlayersHandler);
             if (this.remoteEmoteHandler) window.removeEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
@@ -774,6 +782,34 @@ export function RoomCanvas({
               .setRotation(petWave * 0.03 * (facingLeft ? -1 : 1));
             remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
             remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
+          });
+        }
+
+        private showChatBubble(message: GardenChatMessage) {
+          const remote = this.remoteAvatars.get(message.playerId);
+          const target = remote?.container ?? this.avatar;
+          const bubble = this.add.container(target.x, target.y - 126).setDepth(7200);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.96);
+          bg.fillRoundedRect(-120, -34, 240, 68, 18);
+          bg.lineStyle(2, 0xf6cfd2, 0.85);
+          bg.strokeRoundedRect(-120, -34, 240, 68, 18);
+          bubble.add(bg);
+          bubble.add(this.add.text(0, -9, message.text, {
+            align: "center",
+            color: "#3A2A2A",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "13px",
+            fontStyle: "900",
+            wordWrap: { width: 206 },
+          }).setOrigin(0.5));
+          this.tweens.add({
+            targets: bubble,
+            y: bubble.y - 34,
+            alpha: 0,
+            duration: 2600,
+            ease: "Sine.out",
+            onComplete: () => bubble.destroy(true),
           });
         }
 

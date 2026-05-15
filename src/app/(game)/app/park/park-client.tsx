@@ -5,6 +5,7 @@ import { ArrowLeft, Gamepad2, Map, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Button } from "@/components/ui/button";
 import { lookupFriendCode } from "@/lib/game/social";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
@@ -49,6 +50,7 @@ export function ParkClient() {
 
   return (
     <div className="grid gap-5">
+      <WorldZoneDock active="park" />
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-garden-300/50 bg-garden-100/65 p-5 shadow-sm md:flex-row md:items-center">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-normal text-garden-700">World zone</p>
