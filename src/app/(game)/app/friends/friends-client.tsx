@@ -27,6 +27,7 @@ import { useSafety } from "@/lib/game/use-safety";
 import { useInventory } from "@/lib/game/use-inventory";
 import { isFriendCodeShape, normalizeFriendCode } from "@/lib/game/social";
 import type { FriendCode } from "@/lib/game/social";
+import { getCachedPublicUsername } from "@/lib/game/public-identity";
 import { cn } from "@/lib/utils";
 
 /**
@@ -100,7 +101,7 @@ export function FriendsClient() {
       setLookupMessage({ kind: "ok", message: `${target.displayName} is already a friend.` });
       return;
     }
-    const result = social.sendInvite(code, `${social.selfDisplayName} wants to be friends.`);
+    const result = social.sendInvite(code, `${getCachedPublicUsername()} wants to be friends.`);
     if (result.ok) {
       setLookupMessage({ kind: "ok", message: `Invite sent to ${target.displayName}.` });
       setLookupInput("");
@@ -367,7 +368,7 @@ export function FriendsClient() {
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   <CozyButton size="sm" onClick={() => {
-                    const result = social.sendInvite(entry.code, `${social.selfDisplayName} wants to be friends.`);
+                    const result = social.sendInvite(entry.code, `${getCachedPublicUsername()} wants to be friends.`);
                     if (!result.ok && result.reason === "already-friends") {
                       // Surface clearly even though button shouldn't be visible.
                     }

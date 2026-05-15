@@ -17,6 +17,7 @@ import {
   type FriendCode,
   type SocialState,
 } from "@/lib/game/social";
+import { getCachedPublicUsername } from "@/lib/game/public-identity";
 
 /**
  * useSocial — React view of the friend graph. Auto-syncs across tabs via
@@ -38,6 +39,11 @@ export function useSocial() {
 
   const lookup = useCallback((code: FriendCode) => lookupFriendCode(code), []);
   const canLookup = useCallback((code: FriendCode) => canLookupCode(code), []);
+  const sendInvite = useCallback((code: FriendCode, message?: string) => {
+    const username = getCachedPublicUsername();
+    setSelfDisplayName(username);
+    return sendFriendInvite(code, message);
+  }, []);
 
   return useMemo(
     () => ({
@@ -48,10 +54,10 @@ export function useSocial() {
       outgoing: state?.outgoing ?? [],
       playedWith: state?.playedWith ?? [],
       selfCode: state?.selfCode ?? "",
-      selfDisplayName: state?.selfDisplayName ?? "Keeper",
+      selfDisplayName: getCachedPublicUsername(),
       lookup,
       canLookup,
-      sendInvite: sendFriendInvite,
+      sendInvite,
       cancelInvite: cancelOutgoingInvite,
       acceptInvite: acceptFriendInvite,
       declineInvite: declineFriendInvite,
@@ -60,6 +66,6 @@ export function useSocial() {
       recordPlayedWith,
       setSelfDisplayName,
     }),
-    [state, lookup, canLookup],
+    [state, lookup, canLookup, sendInvite],
   );
 }

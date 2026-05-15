@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { ArrowRight, Leaf, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
@@ -25,14 +24,11 @@ export function GardenClient({ games, plots }: GardenClientProps) {
   const isGuestVisit = Boolean(visitTarget);
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
   const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
-  const visitorHasDecoratorPass = searchParams.get("decorator") === "1";
-  const [guestPlacementEnabled, setGuestPlacementEnabled] = useState(false);
   const realtime = useGardenRealtime({
     gardenId: isVisitAllowed ? gardenId : "friend-only-gate",
     gardenName: isVisitAllowed ? "Casper's Moonberry Beds" : "Friend-only garden",
   });
-  const shownPlacementEnabled = isGuestVisit ? visitorHasDecoratorPass : guestPlacementEnabled;
-  const canEditGarden = !isGuestVisit || shownPlacementEnabled;
+  const canEditGarden = !isGuestVisit || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
 
   if (!isVisitAllowed) {
     return (
@@ -80,11 +76,11 @@ export function GardenClient({ games, plots }: GardenClientProps) {
         />
         <GardenSocialPanel
           canManagePlacement={!isGuestVisit}
+          approvedDecoratorCodes={realtime.approvedDecoratorCodes}
           connectionState={realtime.connectionState}
-          guestPlacementEnabled={shownPlacementEnabled}
           inviteUrl={realtime.inviteUrl}
           messages={realtime.messages}
-          onGuestPlacementChange={setGuestPlacementEnabled}
+          onToggleDecorator={realtime.toggleDecoratorPermission}
           players={realtime.players}
           roomCode={realtime.gardenCode}
           sendChat={realtime.sendChat}

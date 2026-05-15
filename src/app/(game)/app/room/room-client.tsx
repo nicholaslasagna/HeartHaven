@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Copy, DoorOpen, Move, Plus, Radio, RotateCcw, Save, Sparkles, UsersRound } from "lucide-react";
+import { Copy, DoorOpen, Move, Plus, Radio, RotateCcw, Save, Sparkles, UserCheck, UsersRound } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
@@ -36,11 +36,8 @@ function readPlacements(roomId: string): RoomPlacement[] {
 export function RoomClient() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("room") ?? "moonlit-loft";
-  // If a `?visit=<friendCode>` is present in the URL the keeper is a GUEST in
-  // someone else's room — they can walk + emote + chat but never drag furniture.
-  // Only the host edits.
   const visitTarget = searchParams.get("visit");
-  const canEditRoom = !visitTarget;
+  const isHostRoom = !visitTarget;
   const activeRoom = roomBlueprints.find((room) => room.id === roomId) ?? roomBlueprints[0];
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
   const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
@@ -53,6 +50,7 @@ export function RoomClient() {
     roomId: isVisitAllowed ? activeRoom.id : "friend-only-gate",
     roomName: isVisitAllowed ? activeRoom.name : "Friend-only room",
   });
+  const canEditRoom = isHostRoom || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
   const { activeEvent } = useSeasonalEvent();
   const roomDrawerItems = marketCatalog
     .filter((item) => isItemVisibleForSeason(item, activeEvent))
@@ -80,6 +78,10 @@ export function RoomClient() {
   }, []);
 
   function saveRoom() {
+    if (!canEditRoom) {
+      setSaveStatus("Ask the host for decorator access before saving room changes.");
+      return;
+    }
     window.localStorage.setItem(getRoomStorageKey(activeRoom.id), JSON.stringify(draftPlacements));
     setPlacements(draftPlacements);
     setSaveStatus("Room layout saved locally");
@@ -87,6 +89,10 @@ export function RoomClient() {
   }
 
   function resetRoom() {
+    if (!canEditRoom) {
+      setSaveStatus("Ask the host for decorator access before clearing room items.");
+      return;
+    }
     window.localStorage.removeItem(getRoomStorageKey(activeRoom.id));
     setDraftPlacements(starterPlacements);
     setPlacements(starterPlacements);
@@ -94,6 +100,10 @@ export function RoomClient() {
   }
 
   function addRoomItem(item: CatalogItem) {
+    if (!canEditRoom) {
+      setSaveStatus("Ask the host for decorator access before adding furniture.");
+      return;
+    }
     placementCounter.current += 1;
     const nextPlacement: RoomPlacement = {
       id: `placement-${item.id}-${draftPlacements.length}-${placementCounter.current}`,
@@ -145,15 +155,15 @@ export function RoomClient() {
           <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Playable room</p>
           <h1 className="mt-1 font-display text-4xl text-ink-900">{activeRoom.name}</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            {activeRoom.description} Walk with click-to-move or WASD, drag furniture, rotate, layer objects on the
-            2.5D depth axis, and invite friends into the same room.
+            {activeRoom.description} Walk with click-to-move or WASD, drag furniture, choose left/right facing, layer
+            objects on the 2.5D depth axis, and invite friends into the same room.
           </p>
           <p className="mt-2 text-xs font-extrabold uppercase tracking-normal text-garden-700">{saveStatus}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="warm"><Move /> Design</Button>
-          <Button onClick={saveRoom}><Save /> Save layout</Button>
-          <Button onClick={resetRoom} variant="secondary"><RotateCcw /> Reset</Button>
+          <Button disabled={!canEditRoom} onClick={saveRoom}><Save /> Save layout</Button>
+          <Button disabled={!canEditRoom} onClick={resetRoom} variant="secondary"><RotateCcw /> Reset</Button>
         </div>
       </section>
       <section className="grid gap-3 rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 md:grid-cols-[1fr_auto] md:items-center">
@@ -177,6 +187,36 @@ export function RoomClient() {
           </Button>
         </div>
         <p className="md:col-span-2 rounded-md bg-white/65 px-3 py-2 text-xs font-bold text-ink-700">{inviteStatus}</p>
+        {isHostRoom && (
+          <div className="md:col-span-2 rounded-lg border border-lavender-300/40 bg-white/55 p-3">
+            <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-lavender-600">
+              <UserCheck className="size-3.5" /> Approved decorators
+            </p>
+            {realtime.players.length === 0 ? (
+              <p className="mt-2 text-xs font-bold text-ink-600">
+                Invite a friend first, then approve only the visitors who can decorate this room.
+              </p>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {realtime.players
+                  .filter((player) => Boolean(player.friendCode))
+                  .map((player) => {
+                    const approved = Boolean(player.friendCode && realtime.approvedDecoratorCodes.includes(player.friendCode));
+                    return (
+                      <Button
+                        key={`${player.id}-${player.friendCode}`}
+                        onClick={() => player.friendCode && realtime.toggleDecoratorPermission(player.friendCode)}
+                        size="sm"
+                        variant={approved ? "default" : "secondary"}
+                      >
+                        @{player.displayName}: {approved ? "Remove" : "Allow"}
+                      </Button>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
       </section>
       <section className="rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -209,7 +249,7 @@ export function RoomClient() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-normal text-blush-500">Room decor drawer</p>
-            <p className="text-sm font-bold text-ink-700">Add items here, then drag and rotate them directly in the room viewport.</p>
+            <p className="text-sm font-bold text-ink-700">Add items here, then drag and face them left or right directly in the room viewport.</p>
           </div>
           <span className="rounded-full bg-cream-100 px-3 py-1 text-xs font-black text-ink-700">{roomDrawerItems.length} ready</span>
         </div>
@@ -217,6 +257,7 @@ export function RoomClient() {
           {roomDrawerItems.map((item) => (
             <button
               className="min-w-[154px] rounded-lg border border-cream-300 bg-cream-50 px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/70"
+              disabled={!canEditRoom}
               key={item.id}
               onClick={() => addRoomItem(item)}
               type="button"
@@ -239,7 +280,8 @@ export function RoomClient() {
       />
       {!canEditRoom && (
         <p className="rounded-md border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-xs font-extrabold text-honey-700">
-          You&apos;re a guest in this room. Walk around, send emotes, and chat — only the host can move furniture.
+          You&apos;re a guest in this room. Walk around, send emotes, and chat. The host can approve your username for
+          decorator access if they want you to move furniture.
         </p>
       )}
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">

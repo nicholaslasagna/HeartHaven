@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { ArrowLeft, Gamepad2, Map, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
@@ -23,15 +22,12 @@ export function ParkClient() {
   const isGuestVisit = Boolean(visitTarget);
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
   const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
-  const visitorHasDecoratorPass = searchParams.get("decorator") === "1";
-  const [guestPlacementEnabled, setGuestPlacementEnabled] = useState(false);
   const realtime = useGardenRealtime({
     gardenId: isVisitAllowed ? "honeyheart-park" : "friend-only-park-gate",
     gardenName: isVisitAllowed ? "Honeyheart Park" : "Friend-only park",
     invitePath: "/app/park",
   });
-  const shownPlacementEnabled = isGuestVisit ? visitorHasDecoratorPass : guestPlacementEnabled;
-  const canEditGarden = !isGuestVisit || shownPlacementEnabled;
+  const canEditGarden = !isGuestVisit || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
 
   if (!isVisitAllowed) {
     return (
@@ -110,11 +106,11 @@ export function ParkClient() {
         />
         <GardenSocialPanel
           canManagePlacement={!isGuestVisit}
+          approvedDecoratorCodes={realtime.approvedDecoratorCodes}
           connectionState={realtime.connectionState}
-          guestPlacementEnabled={shownPlacementEnabled}
           inviteUrl={realtime.inviteUrl}
           messages={realtime.messages}
-          onGuestPlacementChange={setGuestPlacementEnabled}
+          onToggleDecorator={realtime.toggleDecoratorPermission}
           players={realtime.players}
           roomCode={realtime.gardenCode}
           sendChat={realtime.sendChat}

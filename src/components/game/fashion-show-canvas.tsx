@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
   getPetTone,
+  keeperGaitPose,
   keeperFrame,
   petFrame,
   readKeeperCustomization,
@@ -442,7 +443,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
             duration: 980,
             ease: "Sine.inOut",
             onUpdate: () => {
-              const pose = Math.floor(this.time.now / 160) % 2 === 0 ? "walk1" : "walk2";
+              const pose = keeperGaitPose(this.time.now);
               this.keeperSprite.setFrame(keeperFrame(choice.paletteId, pose, choice.outfitId, this.keeperBodyId));
             },
             onComplete: () => {

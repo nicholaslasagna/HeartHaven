@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, PawPrint, ShieldCheck, ShoppingBag, UserRound, Users } from "lucide-react";
+import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Leaf, Package, PawPrint, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
 import { RewardToastHost } from "@/components/game/reward-toast-host";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { KeeperAccountButton } from "@/components/layout/keeper-account-button";
 import { SeasonalEventPill } from "@/components/seasonal/seasonal-event-pill";
 import { ThemeModeDock } from "@/components/theme/theme-mode-dock";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -36,11 +36,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
             <ThemeModeDock />
             <CozyAudioDock />
             <RewardWalletPanel compact />
-            <Button asChild variant="warm" size="sm">
-              <Link href="/app/account">
-                <UserRound /> Keeper
-              </Link>
-            </Button>
+            <KeeperAccountButton />
           </div>
           <div className="xl:hidden">
             <div className="flex items-center gap-2">

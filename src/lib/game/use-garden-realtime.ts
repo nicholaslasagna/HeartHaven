@@ -18,6 +18,7 @@ import {
   readSafetyState,
   submitReport,
 } from "@/lib/game/safety";
+import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 
 type UseGardenRealtimeOptions = {
   gardenId: string;
@@ -36,18 +37,21 @@ function createGuestId() {
   return next;
 }
 
-function createDisplayName(email?: string | null) {
-  if (!email) return "Guest Keeper";
-  return email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
 function normalizeGardenId(gardenId: string) {
   return gardenId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "caspers-moonberry-beds";
+}
+
+function normalizeFriendCode(code: string) {
+  return code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
 }
 
 export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/garden" }: UseGardenRealtimeOptions) {
   const [players, setPlayers] = useState<RealtimeRoomPlayer[]>([]);
   const [messages, setMessages] = useState<GardenChatMessage[]>([]);
+  const [approvedDecoratorCodes, setApprovedDecoratorCodes] = useState<string[]>([]);
+  const [localFriendCode, setLocalFriendCode] = useState(() =>
+    typeof window === "undefined" ? "" : getSocialState().selfCode,
+  );
   const [connectionState, setConnectionState] = useState<ConnectionState>("demo");
   const [status, setStatus] = useState("Garden chat demo mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -73,9 +77,11 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
       queueMicrotask(() => {
         const guestId = createGuestId();
         const social = getSocialState();
+        const username = getCachedPublicUsername();
+        setLocalFriendCode(social.selfCode);
         localPlayerRef.current = {
           id: guestId,
-          displayName: "Guest Keeper",
+          displayName: username,
           friendCode: social.selfCode,
           ...readPresenceCustomization(),
           facing: "right",
@@ -102,8 +108,9 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
           data: { user },
         } = await supabase.auth.getUser();
         const localId = user?.id ?? createGuestId();
-        const displayName = createDisplayName(user?.email);
+        const displayName = await resolvePublicUsername(user);
         const social = getSocialState();
+        setLocalFriendCode(social.selfCode);
         const localPlayer: RealtimeRoomPlayer = {
           id: localId,
           displayName,
@@ -161,6 +168,14 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
             appendMessage(message);
             window.dispatchEvent(new CustomEvent("hearthaven:garden-chat-bubble", { detail: message }));
           })
+          .on("broadcast", { event: "garden_decorator_permissions" }, ({ payload }) => {
+            const approvedCodes: string[] = Array.isArray(payload?.approvedCodes)
+              ? (payload.approvedCodes as unknown[])
+                .map((code: unknown) => normalizeFriendCode(String(code)))
+                .filter((code): code is string => Boolean(code))
+              : [];
+            setApprovedDecoratorCodes([...new Set(approvedCodes)]);
+          })
           .subscribe(async (state) => {
             if (cancelled) return;
             if (state === "SUBSCRIBED") {
@@ -183,6 +198,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
           if (!current) return;
           const payload: RealtimeRoomPlayer = {
             ...current,
+            displayName: getCachedPublicUsername(),
             friendCode: getSocialState().selfCode,
             ...readPresenceCustomization(),
             updatedAt: Date.now(),
@@ -255,7 +271,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
         submitReport({
           reporterCode: social.selfCode,
           offenderCode: social.selfCode,
-          offenderDisplayName: social.selfDisplayName,
+          offenderDisplayName: getCachedPublicUsername(),
           reason: "explicit-content",
           details: moderation.reason,
           chatExcerpt: input.slice(0, 240),
@@ -271,7 +287,7 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
     const message: GardenChatMessage = {
       id: crypto.randomUUID(),
       playerId: localPlayer?.id ?? createGuestId(),
-      displayName: localPlayer?.displayName ?? "Guest Keeper",
+      displayName: localPlayer?.displayName ?? getCachedPublicUsername(),
       friendCode: social.selfCode,
       text: moderation.text,
       createdAt: Date.now(),
@@ -286,15 +302,44 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
     return moderation;
   }, [appendMessage, invitePath]);
 
+  const toggleDecoratorPermission = useCallback((friendCode: string) => {
+    const normalized = normalizeFriendCode(friendCode);
+    if (!normalized) return;
+
+    setApprovedDecoratorCodes((current) => {
+      const next = current.includes(normalized)
+        ? current.filter((code) => code !== normalized)
+        : [...current, normalized];
+
+      const channel = channelRef.current;
+      if (channel) {
+        void channel.send({
+          type: "broadcast",
+          event: "garden_decorator_permissions",
+          payload: {
+            approvedCodes: next,
+            hostCode: getSocialState().selfCode,
+            updatedAt: Date.now(),
+          },
+        });
+      }
+
+      return next;
+    });
+  }, []);
+
   return {
+    approvedDecoratorCodes,
     connectionState,
     gardenCode,
     inviteUrl,
+    localFriendCode,
     messages,
     players,
     sendChat,
     sendMove,
     status,
+    toggleDecoratorPermission,
   };
 }
 

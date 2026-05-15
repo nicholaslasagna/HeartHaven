@@ -7,6 +7,7 @@ import { CozyButton } from "@/components/cozy/cozy-button";
 import { useInventory } from "@/lib/game/use-inventory";
 import { useSocial } from "@/lib/game/use-social";
 import type { FriendCode } from "@/lib/game/social";
+import { getCachedPublicUsername } from "@/lib/game/public-identity";
 import { cn } from "@/lib/utils";
 
 type GiftDialogProps = {
@@ -33,12 +34,13 @@ export function GiftDialog({ open, onClose, recipient }: GiftDialogProps) {
 
   function send() {
     if (!selectedEntryId) return;
+    const publicUsername = getCachedPublicUsername();
     const result = inventory.giftItem({
       entryId: selectedEntryId,
       toCode: recipient.code,
       toDisplayName: recipient.displayName,
       selfCode: social.selfCode,
-      selfDisplayName: social.selfDisplayName,
+      selfDisplayName: publicUsername,
     });
     if (result.ok) {
       setStatus({ kind: "ok", message: `Sent to ${recipient.displayName}.` });

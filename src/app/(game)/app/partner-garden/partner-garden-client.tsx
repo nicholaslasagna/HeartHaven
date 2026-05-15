@@ -25,17 +25,14 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
   const isGuestVisit = Boolean(visitTarget);
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
   const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
-  const visitorHasDecoratorPass = searchParams.get("decorator") === "1";
   const [sunshine, setSunshine] = useState(3);
   const [message, setMessage] = useState("Casper is watching the shared gate.");
-  const [guestPlacementEnabled, setGuestPlacementEnabled] = useState(false);
   const realtime = useGardenRealtime({
     gardenId: isVisitAllowed ? "shared-heart-garden" : "friend-only-partner-gate",
     gardenName: isVisitAllowed ? "Shared Heart Garden" : "Friend-only shared garden",
     invitePath: "/app/partner-garden",
   });
-  const shownPlacementEnabled = isGuestVisit ? visitorHasDecoratorPass : guestPlacementEnabled;
-  const canEditGarden = !isGuestVisit || shownPlacementEnabled;
+  const canEditGarden = !isGuestVisit || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
 
   if (!isVisitAllowed) {
     return (
@@ -93,11 +90,11 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
         />
         <GardenSocialPanel
           canManagePlacement={!isGuestVisit}
+          approvedDecoratorCodes={realtime.approvedDecoratorCodes}
           connectionState={realtime.connectionState}
-          guestPlacementEnabled={shownPlacementEnabled}
           inviteUrl={realtime.inviteUrl}
           messages={realtime.messages}
-          onGuestPlacementChange={setGuestPlacementEnabled}
+          onToggleDecorator={realtime.toggleDecoratorPermission}
           players={realtime.players}
           roomCode={realtime.gardenCode}
           sendChat={realtime.sendChat}

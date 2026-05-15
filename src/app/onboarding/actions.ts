@@ -10,6 +10,15 @@ function cleanText(value: FormDataEntryValue | null, fallback: string) {
   return text.length > 0 ? text : fallback;
 }
 
+function cleanUsername(value: FormDataEntryValue | null, fallback: string) {
+  return String(value ?? fallback)
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24) || fallback;
+}
+
 function toSlug(value: string) {
   return value
     .toLowerCase()
@@ -38,7 +47,8 @@ export async function createProfileAction(formData: FormData) {
 
   const { supabase, user } = await requireUser();
   const emailName = user.email?.split("@")[0] ?? "Keeper";
-  const displayName = cleanText(formData.get("displayName"), emailName);
+  const username = cleanUsername(formData.get("username"), emailName);
+  const displayName = cleanText(formData.get("displayName"), username);
   const havenName = cleanText(formData.get("havenName"), `${displayName}'s Haven`);
   const bio = cleanText(formData.get("bio"), "A cozy keeper building a little world.");
   const worldSlug = toSlug(havenName);
@@ -46,6 +56,7 @@ export async function createProfileAction(formData: FormData) {
   const { error: profileError } = await supabase.from("profiles").upsert(
     {
       id: user.id,
+      username,
       display_name: displayName,
       bio,
     },

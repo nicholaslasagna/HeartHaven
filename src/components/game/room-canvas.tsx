@@ -38,7 +38,7 @@ type RoomCanvasProps = {
   roomTheme?: RoomBlueprint["theme"];
   placements: RoomPlacement[];
   /** When false, the keeper is a VISITOR — they can walk + emote but can't
-   *  drag, rotate, or re-layer furniture. Defaults to true (own room). */
+   *  drag, face, or re-layer furniture. Defaults to true (own room). */
   canEditRoom?: boolean;
   onAvatarMove?: (position: { x: number; y: number; facing: FacingDirection }) => void;
   onRoomEmote?: (emote: RoomEmote) => void;
@@ -92,6 +92,15 @@ const roomEmotes: { emote: RoomEmote; label: string }[] = [
   { emote: "sparkle", label: "Sparkle" },
   { emote: "cozy", label: "Cozy" },
 ];
+
+function isFacingLeft(rotation: number) {
+  const normalized = ((Math.round(rotation) % 360) + 360) % 360;
+  return normalized >= 90 && normalized < 270;
+}
+
+function facingRotation(facing: FacingDirection) {
+  return facing === "left" ? 180 : 0;
+}
 
 /**
  * True if the user is currently typing into a text input — suspends canvas
@@ -157,6 +166,8 @@ export function RoomCanvas({
         private petFacing: FacingDirection = "right";
         private companionMood: CompanionMood = getPetMood(getPetVitals());
         private companionMoodHandler?: (event: Event) => void;
+        private textInputFocused = false;
+        private textInputFocusHandler?: (event: Event) => void;
         private blinkTimer = 0;
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
         private wasd?: Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown", Phaser.Input.Keyboard.Key>;
@@ -227,7 +238,7 @@ export function RoomCanvas({
             .setDepth(5000);
 
           this.add
-            .text(34, 58, "Click or WASD to move. Drag furniture. R rotates. Q/E adjusts 2.5D depth.", {
+            .text(34, 58, "Click or WASD to move. Drag furniture. R flips left/right. Q/E adjusts 2.5D depth.", {
               color: "#84675F",
               fontFamily: "Nunito, sans-serif",
               fontSize: "13px",
@@ -235,9 +246,9 @@ export function RoomCanvas({
             })
             .setDepth(5000);
 
-          setStatus(activeEvent?.roomMessage ?? "Click the floor to move. Hover, drag, click, and rotate furniture.");
+          setStatus(activeEvent?.roomMessage ?? "Click the floor to move. Hover, drag, click, and face furniture left/right.");
           // TODO: Persist furniture edits through Supabase Realtime room sessions for collaborative decorating.
-          // TODO: Save mutable placement state to Supabase placed_items after drag/rotate interactions.
+          // TODO: Save mutable placement state to Supabase placed_items after drag/facing interactions.
         }
 
         update(_time: number, delta: number) {
@@ -484,8 +495,8 @@ export function RoomCanvas({
         private createFurnitureObject(placement: PlayablePlacement): FurnitureObject {
           const container = this.add.container(placement.x, placement.y).setDepth(placement.y);
           container.setSize(placement.width, placement.height);
-          container.setRotation((placement.rotation * Math.PI) / 180);
-          container.setScale(placement.scale);
+          container.setRotation(0);
+          container.setScale(isFacingLeft(placement.rotation) ? -placement.scale : placement.scale, placement.scale);
 
           const shadow = this.add.ellipse(0, placement.height * 0.32, placement.width * 0.8, 24, 0x3a2a2a, 0.14);
           container.add(shadow);
@@ -612,6 +623,7 @@ export function RoomCanvas({
         }
 
         private createInput() {
+          this.input.keyboard?.disableGlobalCapture();
           this.cursors = this.input.keyboard?.createCursorKeys();
           this.wasd = this.input.keyboard?.addKeys({
             up: PhaserModule.Input.Keyboard.KeyCodes.W,
@@ -664,12 +676,16 @@ export function RoomCanvas({
           this.companionMoodHandler = () => {
             this.companionMood = getPetMood(getPetVitals());
           };
+          this.textInputFocusHandler = (event: Event) => {
+            this.textInputFocused = Boolean((event as CustomEvent<boolean>).detail);
+          };
           window.addEventListener("hearthaven:room-emote", this.roomEmoteHandler);
           window.addEventListener("hearthaven:remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
           window.addEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
           window.addEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
+          window.addEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
           const cleanup = () => {
             if (this.roomEmoteHandler) window.removeEventListener("hearthaven:room-emote", this.roomEmoteHandler);
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:remote-players", this.remotePlayersHandler);
@@ -677,6 +693,7 @@ export function RoomCanvas({
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
             if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
             if (this.companionMoodHandler) window.removeEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
+            if (this.textInputFocusHandler) window.removeEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
@@ -1049,10 +1066,10 @@ export function RoomCanvas({
           this.avatarSprite.setFlipX(this.avatarFacing === "left");
 
           // Same guard for R / Q / E — never fire while a text input is focused.
-          // Also gated by `canEditRoom`: visitors can't rotate or re-layer host furniture.
-          if (canEditRoom && !isTextInputFocused()) {
+          // Also gated by `canEditRoom`: visitors can't change facing or re-layer host furniture.
+          if (canEditRoom && !this.textInputFocused && !isTextInputFocused()) {
             if (this.wasd?.rotate && PhaserModule.Input.Keyboard.JustDown(this.wasd.rotate)) {
-              this.rotateSelectedFurniture();
+              this.toggleSelectedFurnitureFacing();
             }
             if (this.wasd?.layerUp && PhaserModule.Input.Keyboard.JustDown(this.wasd.layerUp)) {
               this.changeSelectedLayer(1);
@@ -1093,7 +1110,7 @@ export function RoomCanvas({
         private readKeyboard() {
           // Suspend movement keys while the player is typing — WASD letters
           // belong in their chat / message field, not the floor.
-          if (isTextInputFocused()) return { x: 0, y: 0 };
+          if (this.textInputFocused || isTextInputFocused()) return { x: 0, y: 0 };
 
           const left = Boolean(this.cursors?.left.isDown || this.wasd?.left.isDown);
           const right = Boolean(this.cursors?.right.isDown || this.wasd?.right.isDown);
@@ -1182,7 +1199,7 @@ export function RoomCanvas({
           this.selectedFurniture = furniture;
           furniture.glow.setVisible(true);
           setSelected(furniture.placement.label);
-          setStatus(`${furniture.placement.label}: drag to place, press R to rotate, Q/E to adjust depth.`);
+          setStatus(`${furniture.placement.label}: drag to place, press R to face left/right, Q/E to adjust depth.`);
 
           if (furniture.placement.kind === "bed") {
             this.petMood = "sleep";
@@ -1207,9 +1224,9 @@ export function RoomCanvas({
           const bubble = this.add.container(furniture.container.x, furniture.container.y - furniture.placement.height * 0.72).setDepth(6000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.95);
-          bg.fillRoundedRect(-124, -34, 248, 68, 18);
+          bg.fillRoundedRect(-146, -34, 292, 68, 18);
           bg.lineStyle(2, 0xf6cfd2, 0.9);
-          bg.strokeRoundedRect(-124, -34, 248, 68, 18);
+          bg.strokeRoundedRect(-146, -34, 292, 68, 18);
 
           const label = this.add
             .text(0, -18, furniture.placement.label, {
@@ -1220,24 +1237,40 @@ export function RoomCanvas({
             })
             .setOrigin(0.5);
 
-          const rotateButton = this.add
-            .text(0, 12, "Rotate", {
+          const leftButton = this.add
+            .text(-42, 12, "Face L", {
               color: "#8E70BD",
               fontFamily: "Nunito, sans-serif",
               fontSize: "12px",
               fontStyle: "900",
               backgroundColor: "#EFE6F7",
-              padding: { x: 12, y: 5 },
+              padding: { x: 9, y: 5 },
             })
             .setOrigin(0.5)
             .setInteractive({ useHandCursor: true });
-          rotateButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          leftButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             pointer.event.stopPropagation();
-            this.rotateSelectedFurniture();
+            this.setSelectedFurnitureFacing("left");
+          });
+
+          const rightButton = this.add
+            .text(42, 12, "Face R", {
+              color: "#8E70BD",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "12px",
+              fontStyle: "900",
+              backgroundColor: "#EFE6F7",
+              padding: { x: 9, y: 5 },
+            })
+            .setOrigin(0.5)
+            .setInteractive({ useHandCursor: true });
+          rightButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            pointer.event.stopPropagation();
+            this.setSelectedFurnitureFacing("right");
           });
 
           const downButton = this.add
-            .text(-72, 12, "Depth -", {
+            .text(-110, 12, "Depth -", {
               color: "#5B3F3F",
               fontFamily: "Nunito, sans-serif",
               fontSize: "12px",
@@ -1253,7 +1286,7 @@ export function RoomCanvas({
           });
 
           const upButton = this.add
-            .text(74, 12, "Depth +", {
+            .text(110, 12, "Depth +", {
               color: "#5B3F3F",
               fontFamily: "Nunito, sans-serif",
               fontSize: "12px",
@@ -1268,7 +1301,7 @@ export function RoomCanvas({
             this.changeSelectedLayer(1);
           });
 
-          bubble.add([bg, label, downButton, rotateButton, upButton]);
+          bubble.add([bg, label, downButton, leftButton, rightButton, upButton]);
           this.interactionBubble = bubble;
         }
 
@@ -1280,19 +1313,28 @@ export function RoomCanvas({
           );
         }
 
-        private rotateSelectedFurniture() {
+        private toggleSelectedFurnitureFacing() {
+          if (!this.selectedFurniture) return;
+          this.setSelectedFurnitureFacing(isFacingLeft(this.selectedFurniture.placement.rotation) ? "right" : "left");
+        }
+
+        private setSelectedFurnitureFacing(facing: FacingDirection) {
           if (!this.selectedFurniture) return;
           // Visitors can't edit the host's room.
           if (!canEditRoom) {
-            setStatus("Only the room host can move furniture here.");
+            setStatus("Only the room host or an approved decorator can change furniture facing here.");
             return;
           }
           const placement = this.selectedFurniture.placement;
-          placement.rotation = (placement.rotation + 45) % 360;
-          this.selectedFurniture.container.setRotation((placement.rotation * Math.PI) / 180);
+          placement.rotation = facingRotation(facing);
+          this.selectedFurniture.container.setRotation(0);
+          this.selectedFurniture.container.setScale(
+            facing === "left" ? -placement.scale : placement.scale,
+            placement.scale,
+          );
           playCozyCue("rotate");
           this.playInteractionSparkles(this.selectedFurniture.container.x, this.selectedFurniture.container.y);
-          setStatus(`${placement.label} rotated to ${placement.rotation} degrees.`);
+          setStatus(`${placement.label} now faces ${facing}.`);
           onPlacementsChange?.(this.exportPlacements());
         }
 
@@ -1414,7 +1456,7 @@ export function RoomCanvas({
           <span className="rounded-md bg-cream-200 px-2.5 py-1">WASD</span>
           <span className="rounded-md bg-blush-100 px-2.5 py-1">Click to move</span>
           <span className="rounded-md bg-lavender-100 px-2.5 py-1">Drag furniture</span>
-          <span className="rounded-md bg-honey-100 px-2.5 py-1">R rotates</span>
+          <span className="rounded-md bg-honey-100 px-2.5 py-1">R flips facing</span>
           <span className="rounded-md bg-garden-100 px-2.5 py-1">Q/E depth</span>
         </div>
       </div>

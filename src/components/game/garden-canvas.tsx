@@ -207,6 +207,15 @@ function isTextInputFocused(): boolean {
   return false;
 }
 
+function isFacingLeft(rotation: number) {
+  const normalized = ((Math.round(rotation) % 360) + 360) % 360;
+  return normalized >= 90 && normalized < 270;
+}
+
+function facingRotation(facing: FacingDirection) {
+  return facing === "left" ? 180 : 0;
+}
+
 export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers = [], variant, plots }: GardenCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotePlayersRef = useRef(remotePlayers);
@@ -266,6 +275,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private footstepTimer = 0;
         private lastSentPosition = { x: 420, y: 430 };
         private selectedDecor?: GardenDecorPlacement;
+        private decorBubble?: Phaser.GameObjects.Container;
         private decorObjects = new Map<string, Phaser.GameObjects.Container>();
         private remoteAvatars = new Map<string, RemoteGardenAvatarObject>();
         private remotePlayersHandler?: (event: Event) => void;
@@ -274,6 +284,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private keeperCustomizationHandler?: (event: Event) => void;
         private petCustomizationHandler?: (event: Event) => void;
         private timeOfDayHandler?: (event: Event) => void;
+        private textInputFocused = false;
+        private textInputFocusHandler?: (event: Event) => void;
         private timeOverlay?: Phaser.GameObjects.Rectangle;
         private decorDragging = false;
 
@@ -446,7 +458,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private drawParkDistrict() {
-          // Large park pieces are generated sprites in the decor system so hosts can move, rotate, and save them.
+          // Large park pieces are generated sprites in the decor system so hosts can move, face, and save them.
         }
 
         private drawLanternPath() {
@@ -916,6 +928,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private createInput() {
+          this.input.keyboard?.disableGlobalCapture();
           this.cursors = this.input.keyboard?.createCursorKeys();
           this.wasd = this.input.keyboard?.addKeys({
             up: PhaserModule.Input.Keyboard.KeyCodes.W,
@@ -971,6 +984,9 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.companionMoodHandler = () => {
             this.companionMood = getPetMood(getPetVitals());
           };
+          this.textInputFocusHandler = (event: Event) => {
+            this.textInputFocused = Boolean((event as CustomEvent<boolean>).detail);
+          };
           window.addEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
           window.addEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
@@ -978,6 +994,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
           window.addEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
           window.addEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
+          window.addEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
           const cleanup = () => {
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
             if (this.chatBubbleHandler) window.removeEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
@@ -986,6 +1003,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
             if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
             if (this.companionMoodHandler) window.removeEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
+            if (this.textInputFocusHandler) window.removeEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
@@ -1143,14 +1161,15 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             }
           }
 
-          // Don't fire the rotate keybind while the player is typing into chat.
+          // Don't fire the facing keybind while the player is typing into chat.
           if (
             canEditGarden
+            && !this.textInputFocused
             && !isTextInputFocused()
             && this.wasd?.rotate
             && PhaserModule.Input.Keyboard.JustDown(this.wasd.rotate)
           ) {
-            this.rotateSelectedDecor();
+            this.toggleSelectedDecorFacing();
           }
 
           // Mirror the keeper sprite to face the direction of travel.
@@ -1240,7 +1259,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           // When the player is typing into the chat input (or any text field),
           // WASD / arrow keys must NOT move the avatar — they're letters in a
           // message, not movement intent.
-          if (isTextInputFocused()) return { x: 0, y: 0 };
+          if (this.textInputFocused || isTextInputFocused()) return { x: 0, y: 0 };
 
           const left = Boolean(this.cursors?.left.isDown || this.wasd?.left.isDown);
           const right = Boolean(this.cursors?.right.isDown || this.wasd?.right.isDown);
@@ -1479,6 +1498,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.pet?.setDepth(this.pet.y);
           this.petShadow?.setDepth(this.pet.y - 1);
           this.decorObjects.forEach((decor) => decor.setDepth(decor.y));
+          this.decorBubble?.setDepth(10000);
           this.remoteAvatars.forEach((remote) => {
             remote.container.setDepth(remote.container.y);
             remote.shadow.setDepth(remote.container.y - 1);
@@ -1509,13 +1529,13 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.createDecoration(decoration);
           this.persistDecorations();
           playCozyCue("place");
-          setStatus(`${item.label} placed. Drag it around the garden or press R while selected to rotate.`);
+          setStatus(`${item.label} placed. Drag it around the garden or press R while selected to face left/right.`);
         }
 
         private createDecoration(decoration: GardenDecorPlacement) {
           const spriteConfig = worldObjectSprites[decoration.kind];
           const container = this.add.container(decoration.x, decoration.y).setDepth(decoration.y);
-          container.setRotation((decoration.rotation * Math.PI) / 180);
+          container.setRotation(0);
           container.setSize(spriteConfig.width, spriteConfig.height);
           container.setInteractive({ draggable: canEditGarden, useHandCursor: true });
           if (canEditGarden) this.input.setDraggable(container);
@@ -1539,7 +1559,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             glow.setVisible(true);
             setStatus(
               canEditGarden
-                ? `${decoration.label}: drag to move, R rotates${decoration.href ? ", click while nearby to play" : ""}.`
+                ? `${decoration.label}: drag to move, R flips facing${decoration.href ? ", click while nearby to play" : ""}.`
                 : `${decoration.label}: click while nearby to interact${decoration.href ? " or play" : ""}.`,
             );
           });
@@ -1553,6 +1573,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             container.setPosition(next.x, next.y);
             decoration.x = Math.round(next.x);
             decoration.y = Math.round(next.y);
+            this.moveDecorBubble();
           });
           container.on("dragend", () => {
             if (!canEditGarden) return;
@@ -1585,8 +1606,10 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           container.add(this.add.ellipse(0, 42, spriteConfig.width * 0.62, 34, 0x3a2a2a, 0.13));
           const sprite = this.add
             .image(0, spriteConfig.yOffset, "world-object-sprites", spriteConfig.frame)
-            .setDisplaySize(spriteConfig.width, spriteConfig.height);
+            .setDisplaySize(spriteConfig.width, spriteConfig.height)
+            .setFlipX(isFacingLeft((container.getData("placement") as GardenDecorPlacement | undefined)?.rotation ?? 0));
           container.add(sprite);
+          container.setData("sprite", sprite);
           this.addPassiveDecorMotion(container, sprite, kind);
         }
 
@@ -1716,25 +1739,99 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             playCozyCue("ui");
             setStatus(
               canEditGarden
-                ? `${this.selectedDecor.label} selected. Drag to move, R rotates.`
+                ? `${this.selectedDecor.label} selected. Drag to move, R flips left/right.`
                 : `${this.selectedDecor.label} selected. Ask the host for decorator permission to move it.`,
             );
+            this.showDecorBubble(this.selectedDecor);
           }
         }
 
-        private rotateSelectedDecor() {
+        private showDecorBubble(decoration: GardenDecorPlacement) {
+          this.decorBubble?.destroy(true);
+          if (!canEditGarden) return;
+          const container = this.decorObjects.get(decoration.id);
+          if (!container) return;
+          const spriteConfig = worldObjectSprites[decoration.kind];
+          const bubble = this.add.container(container.x, container.y - spriteConfig.height - 20).setDepth(10000);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.96);
+          bg.fillRoundedRect(-92, -28, 184, 56, 16);
+          bg.lineStyle(2, 0xc0a8dc, 0.9);
+          bg.strokeRoundedRect(-92, -28, 184, 56, 16);
+
+          const label = this.add
+            .text(0, -12, decoration.label, {
+              color: "#3A2A2A",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "12px",
+              fontStyle: "900",
+            })
+            .setOrigin(0.5);
+
+          const leftButton = this.add
+            .text(-42, 12, "Face L", {
+              color: "#8E70BD",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "11px",
+              fontStyle: "900",
+              backgroundColor: "#EFE6F7",
+              padding: { x: 8, y: 4 },
+            })
+            .setOrigin(0.5)
+            .setInteractive({ useHandCursor: true });
+          leftButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            pointer.event.stopPropagation();
+            this.setSelectedDecorFacing("left");
+          });
+
+          const rightButton = this.add
+            .text(42, 12, "Face R", {
+              color: "#8E70BD",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "11px",
+              fontStyle: "900",
+              backgroundColor: "#EFE6F7",
+              padding: { x: 8, y: 4 },
+            })
+            .setOrigin(0.5)
+            .setInteractive({ useHandCursor: true });
+          rightButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            pointer.event.stopPropagation();
+            this.setSelectedDecorFacing("right");
+          });
+
+          bubble.add([bg, label, leftButton, rightButton]);
+          this.decorBubble = bubble;
+        }
+
+        private moveDecorBubble() {
+          if (!this.decorBubble || !this.selectedDecor) return;
+          const container = this.decorObjects.get(this.selectedDecor.id);
+          if (!container) return;
+          const spriteConfig = worldObjectSprites[this.selectedDecor.kind];
+          this.decorBubble.setPosition(container.x, container.y - spriteConfig.height - 20);
+        }
+
+        private toggleSelectedDecorFacing() {
+          if (!this.selectedDecor) return;
+          this.setSelectedDecorFacing(isFacingLeft(this.selectedDecor.rotation) ? "right" : "left");
+        }
+
+        private setSelectedDecorFacing(facing: FacingDirection) {
           if (!canEditGarden) {
-            setStatus("Only the host or trusted decorators can rotate garden items in this visit.");
+            setStatus("Only the host or trusted decorators can change garden item facing in this visit.");
             return;
           }
           if (!this.selectedDecor) return;
           const container = this.decorObjects.get(this.selectedDecor.id);
           if (!container) return;
-          this.selectedDecor.rotation = (this.selectedDecor.rotation + 15) % 360;
-          container.setRotation((this.selectedDecor.rotation * Math.PI) / 180);
+          this.selectedDecor.rotation = facingRotation(facing);
+          container.setRotation(0);
+          const sprite = container.getData("sprite") as Phaser.GameObjects.Image | undefined;
+          sprite?.setFlipX(facing === "left");
           this.persistDecorations();
           playCozyCue("rotate");
-          setStatus(`${this.selectedDecor.label} rotated.`);
+          setStatus(`${this.selectedDecor.label} now faces ${facing}.`);
         }
 
         private persistDecorations() {
@@ -1744,7 +1841,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               ...placement,
               x: Math.round(container.x),
               y: Math.round(container.y),
-              rotation: Math.round((container.rotation * 180) / Math.PI),
+              rotation: placement.rotation,
             };
           });
           writeGardenDecor(variant, decorations);
@@ -2011,7 +2108,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           <span className="text-xs font-extrabold uppercase tracking-normal text-garden-700">Garden decor drawer</span>
           <span className="text-xs font-bold text-ink-600">
             {canEditGarden
-              ? "Place here, then drag inside the garden. R rotates selected decor."
+              ? "Place here, then drag inside the garden. R flips selected decor left/right."
               : "Decorator permissions are off for this visit."}
           </span>
         </div>

@@ -118,7 +118,9 @@ language sql
 security definer
 set search_path = public
 as $$
-  select p.id, p.display_name, p.friend_code, p.avatar_key
+  -- Public lookup surfaces only the keeper username (or friend code fallback).
+  -- Private/legal name context stays in backend-only profile columns.
+  select p.id, coalesce(nullif(p.username, ''), p.friend_code) as display_name, p.friend_code, p.avatar_key
   from public.profiles p
   where p.friend_code = upper(trim(target_code))
     and public.can_profiles_interact(p.id)

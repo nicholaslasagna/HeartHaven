@@ -130,16 +130,12 @@ export function gaitPhase(timeMs: number) {
 
 export function keeperGaitPose(timeMs: number): KeeperPose {
   const phase = Math.floor(timeMs / GAIT_FRAME_MS) % 4;
-  if (phase === 0) return "walk1";
-  if (phase === 2) return "walk2";
-  return "idle";
+  return phase === 1 || phase === 3 ? "idle" : "walk1";
 }
 
 export function petGaitPose(timeMs: number): PetPose {
   const phase = Math.floor(timeMs / GAIT_FRAME_MS) % 4;
-  if (phase === 0) return "walk1";
-  if (phase === 2) return "walk2";
-  return "idle";
+  return phase === 1 || phase === 3 ? "idle" : "walk1";
 }
 
 export const KEEPER_CUSTOMIZATION_EVENT = "hearthaven:avatar-customization-changed";

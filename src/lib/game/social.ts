@@ -21,6 +21,8 @@
 
 export const SOCIAL_STATE_KEY = "hearthaven:social-state";
 export const SOCIAL_EVENT = "hearthaven:social-changed";
+const PUBLIC_USERNAME_STORAGE_KEY = "hearthaven:public-username";
+const PUBLIC_USERNAME_MAX_LENGTH = 24;
 
 export type FriendCode = string;
 
@@ -107,6 +109,21 @@ function freshState(): SocialState {
   };
 }
 
+function normalizePublicDisplayName(value: string | null | undefined, fallback = "Keeper") {
+  const cleaned = String(value ?? "")
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, PUBLIC_USERNAME_MAX_LENGTH);
+  return cleaned || fallback;
+}
+
+function readCachedPublicDisplayName(fallback = "Keeper") {
+  if (typeof window === "undefined") return normalizePublicDisplayName(fallback);
+  return normalizePublicDisplayName(window.localStorage.getItem(PUBLIC_USERNAME_STORAGE_KEY) ?? fallback);
+}
+
 function rawRead(): SocialState {
   if (typeof window === "undefined") return freshState();
   try {
@@ -121,7 +138,9 @@ function rawRead(): SocialState {
     const base = freshState();
     return {
       selfCode: typeof parsed.selfCode === "string" ? parsed.selfCode : base.selfCode,
-      selfDisplayName: typeof parsed.selfDisplayName === "string" ? parsed.selfDisplayName : base.selfDisplayName,
+      selfDisplayName: readCachedPublicDisplayName(
+        typeof parsed.selfDisplayName === "string" ? parsed.selfDisplayName : base.selfDisplayName,
+      ),
       friends: Array.isArray(parsed.friends) ? (parsed.friends as Friend[]) : [],
       outgoing: Array.isArray(parsed.outgoing) ? (parsed.outgoing as FriendInvite[]) : [],
       inbox: Array.isArray(parsed.inbox) ? (parsed.inbox as FriendInvite[]) : [],
@@ -150,7 +169,7 @@ export function getSocialState(): SocialState {
 /** Cosmetically set the keeper's display name (used in invite cards). */
 export function setSelfDisplayName(displayName: string) {
   const state = rawRead();
-  rawWrite({ ...state, selfDisplayName: displayName || state.selfDisplayName });
+  rawWrite({ ...state, selfDisplayName: normalizePublicDisplayName(displayName, state.selfDisplayName) });
 }
 
 /** Reset the friend code (rarely needed — exposed for the account page). */
@@ -203,7 +222,7 @@ export function lookupFriendCode(code: FriendCode, state: SocialState = rawRead(
   | null {
   const normalized = normalizeFriendCode(code);
   if (normalized === state.selfCode) {
-    return { code: state.selfCode, displayName: state.selfDisplayName, relationship: "self" };
+    return { code: state.selfCode, displayName: readCachedPublicDisplayName(state.selfDisplayName), relationship: "self" };
   }
   const friend = state.friends.find((entry) => entry.code === normalized);
   if (friend) return { code: friend.code, displayName: friend.displayName, relationship: "friend" };
@@ -236,7 +255,7 @@ export function sendFriendInvite(
   const invite: FriendInvite = {
     id: `inv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     fromCode: state.selfCode,
-    fromDisplayName: state.selfDisplayName,
+    fromDisplayName: readCachedPublicDisplayName(state.selfDisplayName),
     toCode: code,
     message,
     sentAt: new Date().toISOString(),
@@ -324,4 +343,3 @@ export function markInviteBlocked(inviteId: string) {
     inbox: state.inbox.map((entry) => (entry.id === inviteId ? { ...entry, status: "blocked" } : entry)),
   });
 }
-

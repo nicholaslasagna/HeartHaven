@@ -12,6 +12,7 @@ import {
 } from "@/lib/game/avatar-customization";
 import { getSocialState, recordPlayedWith } from "@/lib/game/social";
 import { isBlocked } from "@/lib/game/safety";
+import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 
 type UseRoomRealtimeOptions = {
   roomId: string;
@@ -29,17 +30,20 @@ function createGuestId() {
   return next;
 }
 
-function createDisplayName(email?: string | null) {
-  if (!email) return "Guest Keeper";
-  return email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
 function normalizeRoomId(roomId: string) {
   return roomId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "moonlit-loft";
 }
 
+function normalizeFriendCode(code: string) {
+  return code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
+}
+
 export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
   const [players, setPlayers] = useState<RealtimeRoomPlayer[]>([]);
+  const [approvedDecoratorCodes, setApprovedDecoratorCodes] = useState<string[]>([]);
+  const [localFriendCode, setLocalFriendCode] = useState(() =>
+    typeof window === "undefined" ? "" : getSocialState().selfCode,
+  );
   const [connectionState, setConnectionState] = useState<ConnectionState>("demo");
   const [status, setStatus] = useState("Realtime demo mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -59,6 +63,19 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       queueMicrotask(() => {
+        const username = getCachedPublicUsername();
+        const social = getSocialState();
+        setLocalFriendCode(social.selfCode);
+        localPlayerRef.current = {
+          id: createGuestId(),
+          displayName: username,
+          friendCode: social.selfCode,
+          ...readPresenceCustomization(),
+          facing: "right",
+          x: 390,
+          y: 374,
+          updatedAt: Date.now(),
+        };
         setConnectionState("demo");
         setStatus("Set Supabase env vars to enable live room presence.");
       });
@@ -78,8 +95,9 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
           data: { user },
         } = await supabase.auth.getUser();
         const localId = user?.id ?? createGuestId();
-        const displayName = createDisplayName(user?.email);
+        const displayName = await resolvePublicUsername(user);
         const social = getSocialState();
+        setLocalFriendCode(social.selfCode);
 
         // Full customization snapshot — keeper palette + outfit, pet species +
         // fur tone + accessory — so remote keepers see the real avatar/pet.
@@ -143,6 +161,14 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
             setPlayers((current) => upsertPlayer(current, player));
             window.dispatchEvent(new CustomEvent("hearthaven:remote-emote", { detail: player }));
           })
+          .on("broadcast", { event: "room_decorator_permissions" }, ({ payload }) => {
+            const approvedCodes: string[] = Array.isArray(payload?.approvedCodes)
+              ? (payload.approvedCodes as unknown[])
+                .map((code: unknown) => normalizeFriendCode(String(code)))
+                .filter((code): code is string => Boolean(code))
+              : [];
+            setApprovedDecoratorCodes([...new Set(approvedCodes)]);
+          })
           .subscribe(async (state) => {
             if (cancelled) return;
             if (state === "SUBSCRIBED") {
@@ -166,6 +192,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
           if (!current) return;
           const payload: RealtimeRoomPlayer = {
             ...current,
+            displayName: getCachedPublicUsername(),
             friendCode: getSocialState().selfCode,
             ...readPresenceCustomization(),
             updatedAt: Date.now(),
@@ -236,14 +263,43 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
     void channel.send({ type: "broadcast", event: "room_emote", payload });
   }, []);
 
+  const toggleDecoratorPermission = useCallback((friendCode: string) => {
+    const normalized = normalizeFriendCode(friendCode);
+    if (!normalized) return;
+
+    setApprovedDecoratorCodes((current) => {
+      const next = current.includes(normalized)
+        ? current.filter((code) => code !== normalized)
+        : [...current, normalized];
+
+      const channel = channelRef.current;
+      if (channel) {
+        void channel.send({
+          type: "broadcast",
+          event: "room_decorator_permissions",
+          payload: {
+            approvedCodes: next,
+            hostCode: getSocialState().selfCode,
+            updatedAt: Date.now(),
+          },
+        });
+      }
+
+      return next;
+    });
+  }, []);
+
   return {
+    approvedDecoratorCodes,
     connectionState,
     inviteUrl,
+    localFriendCode,
     players,
     roomCode,
     sendEmote,
     sendMove,
     status,
+    toggleDecoratorPermission,
   };
 }
 

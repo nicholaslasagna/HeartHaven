@@ -10,13 +10,17 @@ export function ProfileForm() {
     <Card className="bg-white/78">
       <CardHeader>
         <CardTitle>Create your keeper profile</CardTitle>
-        <CardDescription>Your public name, private preferences, and friend code live here.</CardDescription>
+        <CardDescription>Your username is public. Your display name stays private account context.</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="grid gap-4" action={createProfileAction}>
           <label className="grid gap-2 text-sm font-extrabold text-ink-700">
-            Display name
-            <Input name="displayName" placeholder="Avery" />
+            Username shown in-game
+            <Input name="username" placeholder="moonberrykeeper" pattern="[A-Za-z0-9_.-]{3,24}" />
+          </label>
+          <label className="grid gap-2 text-sm font-extrabold text-ink-700">
+            Private display name
+            <Input name="displayName" placeholder="Only visible to you and backend admin tools" />
           </label>
           <label className="grid gap-2 text-sm font-extrabold text-ink-700">
             Haven name
