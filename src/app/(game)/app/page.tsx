@@ -9,6 +9,7 @@ import { MiniGameCard } from "@/components/cozy/mini-game-card";
 import { PetCarePanel } from "@/components/cozy/pet-care-panel";
 import { RoomPreview } from "@/components/cozy/room-preview";
 import { AchievementsPanel } from "@/components/game/achievements-panel";
+import { CasperWishPanel } from "@/components/game/casper-wish-panel";
 import { DailyLoopPanel } from "@/components/game/daily-loop-panel";
 import { DashboardWalletCard } from "@/components/game/dashboard-wallet-card";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
@@ -123,7 +124,10 @@ export default function DashboardPage() {
       {/* The come-back-tomorrow engine: daily gift, tasks, streak + milestones */}
       <section className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
         <DailyLoopPanel />
-        <AchievementsPanel limit={6} />
+        <div className="grid gap-5">
+          <CasperWishPanel compact />
+          <AchievementsPanel limit={4} />
+        </div>
       </section>
 
       {/* Room + social */}

@@ -14,6 +14,7 @@
  */
 
 import { applyActivityToDailyTasks } from "@/lib/game/daily-loop";
+import { applyActivityToDailyWish, type DailyWish } from "@/lib/game/daily-wish";
 import { applyActivityToAchievements, type AchievementDef } from "@/lib/game/achievements";
 
 export type ActivityType =
@@ -42,6 +43,8 @@ export type ActivityDetail = {
   unlockedAchievements: AchievementDef[];
   /** Number of daily tasks that completed as a direct result of this activity. */
   completedTaskCount: number;
+  /** Casper's daily wish if this activity completed it. */
+  completedWish: DailyWish | null;
 };
 
 /**
@@ -55,6 +58,9 @@ export function recordActivity(
 ): ActivityDetail {
   // 1. Daily tasks — returns ids of tasks that just completed.
   const completedTaskIds = applyActivityToDailyTasks(type, value);
+
+  // 1b. Casper's daily wish — a pet-flavored single daily nudge.
+  const completedWish = applyActivityToDailyWish(type, value);
 
   // 2. Achievement metrics for the activity itself.
   const unlocked = applyActivityToAchievements(type, value);
@@ -70,6 +76,7 @@ export function recordActivity(
     meta,
     unlockedAchievements: unlocked,
     completedTaskCount: completedTaskIds.length,
+    completedWish,
   };
 
   if (typeof window !== "undefined") {
