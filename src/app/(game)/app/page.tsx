@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ArrowRight, BookHeart, Heart, Inbox, Sparkles } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, BookHeart, Compass, Gamepad2, Heart, Inbox, Leaf, Sparkles } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
@@ -18,6 +19,56 @@ export default function DashboardPage() {
   return (
     <div className="grid gap-5">
       <SeasonalEventBanner compact />
+
+      <section className="relative overflow-hidden rounded-lg border border-cream-300 bg-ink-900 shadow-xl shadow-blush-200/30">
+        <Image
+          src="/game-assets/generated/hearthaven-world-poster.png"
+          alt="HeartHaven world with cottages, lantern paths, pets, gardens, and arcade games"
+          width={1680}
+          height={920}
+          priority
+          className="h-[430px] w-full object-cover sm:h-[500px] lg:h-[560px]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-ink-900/76 via-ink-900/24 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-ink-900/68 to-transparent" />
+        <div className="absolute left-5 top-5 flex flex-wrap gap-2">
+          <Badge className="border-white/30 bg-white/18 text-white shadow-sm backdrop-blur">
+            <Compass className="size-3.5" />
+            Living world
+          </Badge>
+          <Badge className="border-white/30 bg-white/18 text-white shadow-sm backdrop-blur">
+            <Sparkles className="size-3.5" />
+            Walk, decorate, invite, play
+          </Badge>
+        </div>
+        <div className="absolute inset-y-0 left-0 flex max-w-2xl flex-col justify-end p-5 sm:p-8 lg:p-10">
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-cream-100">HeartHaven is awake</p>
+          <h1 className="mt-3 font-display text-5xl leading-[0.95] text-white drop-shadow-sm sm:text-6xl lg:text-7xl">
+            Step into the garden village.
+          </h1>
+          <p className="mt-4 max-w-xl text-base font-bold leading-7 text-cream-100 sm:text-lg">
+            Follow the lantern roads, decorate rooms and parks, care for Casper, host party games, and build a shared
+            place that feels like a love letter you can walk around inside.
+          </p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap">
+            <CozyButton asChild>
+              <Link href="/app/garden">
+                Enter garden <Leaf />
+              </Link>
+            </CozyButton>
+            <CozyButton asChild variant="warm">
+              <Link href="/app/park">
+                Go to park <Compass />
+              </Link>
+            </CozyButton>
+            <CozyButton asChild variant="warm">
+              <Link href="/app/games">
+                Open games <Gamepad2 />
+              </Link>
+            </CozyButton>
+          </div>
+        </div>
+      </section>
 
       {/* Hero + the living companion */}
       <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">

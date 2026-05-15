@@ -171,6 +171,21 @@ const worldObjectSprites: Record<GardenDecorKind, { frame: number; width: number
   flowerStand: { frame: 11, width: 226, height: 210, yOffset: -58 },
 };
 
+const decorInteractionCopy: Record<GardenDecorKind, string> = {
+  gazebo: "The gazebo glows like a tiny party room. A good place for friend invites.",
+  swing: "The swing rocks gently. Casper trots over like this is the best part of the park.",
+  picnic: "The picnic table is set with moonberry tea and a little envelope for guests.",
+  bbq: "The BBQ warms up for a garden party. The smoke smells like honey clover.",
+  fountain: "The berry fountain splashes a bright little wish into the air.",
+  lanternArch: "The lantern arch turns the path into a date-night walkway.",
+  fashionStage: "The fashion stage is ready. Walk up again to start the runway.",
+  arcadeKiosk: "The arcade kiosk hums with petals, combos, and prizes.",
+  bowlingKiosk: "The moonberry lane is polished. Walk up again to bowl.",
+  greenhouse: "The greenhouse breathes warm air over every growing plot.",
+  memoryTree: "The memory tree lights up, saving this visit as a tiny keepsake.",
+  flowerStand: "The flower stand releases fresh petals across the walkway.",
+};
+
 export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots }: GardenCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotePlayersRef = useRef(remotePlayers);
@@ -341,7 +356,33 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         }
 
         private drawRoadNetwork() {
-          // Roads are painted into the map at native resolution.
+          const segments = variant === "park" ? parkWalkSegments : sharedWalkSegments;
+          segments.forEach((segment, segmentIndex) => {
+            const steps = Math.max(4, Math.floor(PhaserModule.Math.Distance.Between(segment.x1, segment.y1, segment.x2, segment.y2) / 180));
+            for (let index = 0; index <= steps; index += 1) {
+              const t = index / steps;
+              const x = PhaserModule.Math.Linear(segment.x1, segment.x2, t);
+              const y = PhaserModule.Math.Linear(segment.y1, segment.y2, t);
+              const glint = this.add.star(
+                x + PhaserModule.Math.Between(-18, 18),
+                y + PhaserModule.Math.Between(-10, 10),
+                5,
+                2,
+                7,
+                segmentIndex % 2 === 0 ? 0xfffcf3 : 0xfaebc2,
+                0.18,
+              ).setDepth(58);
+              this.tweens.add({
+                targets: glint,
+                alpha: 0.44,
+                scale: 1.35,
+                duration: 1200 + segmentIndex * 70 + index * 40,
+                yoyo: true,
+                repeat: -1,
+                ease: "Sine.inOut",
+              });
+            }
+          });
         }
 
         private drawParkDistrict() {
@@ -507,6 +548,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
               onComplete: () => drop.destroy(),
             });
           }
+          this.spawnSparkleBurst(x, y - 32, 0x5e94b0, 12);
         }
 
         private drawPersonalGardenCenterpiece() {
@@ -609,6 +651,120 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
               onComplete: () => heart.destroy(),
             });
           }
+        }
+
+        private spawnSparkleBurst(x: number, y: number, color = 0xfaebc2, count = 16) {
+          for (let index = 0; index < count; index += 1) {
+            const sparkle = this.add.star(
+              x + PhaserModule.Math.Between(-18, 18),
+              y + PhaserModule.Math.Between(-12, 12),
+              5,
+              4,
+              PhaserModule.Math.Between(8, 15),
+              index % 3 === 0 ? 0xffffff : color,
+              0.86,
+            ).setDepth(6600);
+            this.tweens.add({
+              targets: sparkle,
+              x: sparkle.x + PhaserModule.Math.Between(-96, 96),
+              y: sparkle.y - PhaserModule.Math.Between(36, 120),
+              alpha: 0,
+              rotation: sparkle.rotation + PhaserModule.Math.FloatBetween(-1.6, 1.6),
+              scale: 0.2,
+              duration: PhaserModule.Math.Between(760, 1240),
+              ease: "Sine.out",
+              onComplete: () => sparkle.destroy(),
+            });
+          }
+        }
+
+        private spawnPetalSpiral(x: number, y: number, count = 22) {
+          for (let index = 0; index < count; index += 1) {
+            const petal = this.add.ellipse(
+              x + PhaserModule.Math.Between(-28, 28),
+              y + PhaserModule.Math.Between(-18, 22),
+              PhaserModule.Math.Between(10, 18),
+              PhaserModule.Math.Between(5, 9),
+              index % 2 === 0 ? 0xf6cfd2 : 0xddceec,
+              0.88,
+            ).setDepth(6500);
+            this.tweens.add({
+              targets: petal,
+              x: x + Math.cos(index * 0.75) * PhaserModule.Math.Between(72, 150),
+              y: y - PhaserModule.Math.Between(46, 156),
+              alpha: 0,
+              rotation: petal.rotation + PhaserModule.Math.FloatBetween(2, 5),
+              duration: PhaserModule.Math.Between(1100, 1700),
+              ease: "Sine.out",
+              onComplete: () => petal.destroy(),
+            });
+          }
+        }
+
+        private spawnSmokePuffs(x: number, y: number) {
+          for (let index = 0; index < 11; index += 1) {
+            const puff = this.add.circle(
+              x + PhaserModule.Math.Between(-20, 26),
+              y - PhaserModule.Math.Between(46, 78),
+              PhaserModule.Math.Between(10, 19),
+              0xfffcf3,
+              0.48,
+            ).setDepth(6400);
+            this.tweens.add({
+              targets: puff,
+              x: puff.x + PhaserModule.Math.Between(-26, 36),
+              y: puff.y - PhaserModule.Math.Between(70, 132),
+              alpha: 0,
+              scale: 1.8,
+              duration: PhaserModule.Math.Between(1200, 1900),
+              ease: "Sine.out",
+              onComplete: () => puff.destroy(),
+            });
+          }
+        }
+
+        private spawnWaterCrown(x: number, y: number) {
+          for (let index = 0; index < 18; index += 1) {
+            const angle = (Math.PI * 2 * index) / 18;
+            const drop = this.add.circle(x, y - 52, 4, 0xaed7e8, 0.86).setDepth(6500);
+            this.tweens.add({
+              targets: drop,
+              x: x + Math.cos(angle) * PhaserModule.Math.Between(54, 118),
+              y: y - 52 + Math.sin(angle) * PhaserModule.Math.Between(28, 54),
+              alpha: 0,
+              scale: 0.2,
+              duration: 820,
+              ease: "Sine.out",
+              onComplete: () => drop.destroy(),
+            });
+          }
+        }
+
+        private showLocalBubble(text: string) {
+          if (!this.avatar) return;
+          const bubble = this.add.container(this.avatar.x, this.avatar.y - 126).setDepth(7200);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.96);
+          bg.fillRoundedRect(-126, -32, 252, 64, 18);
+          bg.lineStyle(2, 0xf6cfd2, 0.82);
+          bg.strokeRoundedRect(-126, -32, 252, 64, 18);
+          bubble.add(bg);
+          bubble.add(this.add.text(0, 0, text, {
+            align: "center",
+            color: "#3A2A2A",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "12px",
+            fontStyle: "900",
+            wordWrap: { width: 218 },
+          }).setOrigin(0.5));
+          this.tweens.add({
+            targets: bubble,
+            y: bubble.y - 36,
+            alpha: 0,
+            duration: 2200,
+            ease: "Sine.out",
+            onComplete: () => bubble.destroy(true),
+          });
         }
 
         private drawButterflies() {
@@ -905,6 +1061,7 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             this.petFacing = this.avatar.x < this.pet.x ? "left" : "right";
           }
           this.petSprite.setFlipX(this.petFacing === "left");
+          this.petAccessorySprite?.setFlipX(this.petFacing === "left");
 
           const pose: PetPose = this.petMood === "sit"
             ? "sit"
@@ -1231,15 +1388,17 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
             });
           });
           container.on("pointerup", () => {
-            if (!decoration.href || this.decorDragging) return;
+            if (this.decorDragging) return;
             const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? decoration.x, this.avatar?.y ?? decoration.y, decoration.x, decoration.y);
             if (distance > 180 && this.avatar) {
               const pathPoint = this.constrainAvatarToWalkable(decoration.x, decoration.y + 62);
               this.target = new PhaserModule.Math.Vector2(pathPoint.x, pathPoint.y);
               playCozyCue("move");
-              setStatus(`Walking to ${decoration.label}. Click it again when you arrive to play.`);
+              setStatus(`Walking to ${decoration.label}. Click it again when you arrive.`);
               return;
             }
+            this.activateDecoration(decoration);
+            if (!decoration.href) return;
             playCozyCue("ui");
             setStatus(`Opening ${decoration.label}.`);
             window.location.assign(decoration.href);
@@ -1249,11 +1408,127 @@ export function GardenCanvas({ onAvatarMove, remotePlayers = [], variant, plots 
         private drawGardenDecoration(container: Phaser.GameObjects.Container, kind: GardenDecorKind) {
           const spriteConfig = worldObjectSprites[kind];
           container.add(this.add.ellipse(0, 42, spriteConfig.width * 0.62, 34, 0x3a2a2a, 0.13));
-          container.add(
-            this.add
-              .image(0, spriteConfig.yOffset, "world-object-sprites", spriteConfig.frame)
-              .setDisplaySize(spriteConfig.width, spriteConfig.height),
-          );
+          const sprite = this.add
+            .image(0, spriteConfig.yOffset, "world-object-sprites", spriteConfig.frame)
+            .setDisplaySize(spriteConfig.width, spriteConfig.height);
+          container.add(sprite);
+          this.addPassiveDecorMotion(container, sprite, kind);
+        }
+
+        private addPassiveDecorMotion(
+          container: Phaser.GameObjects.Container,
+          sprite: Phaser.GameObjects.Image,
+          kind: GardenDecorKind,
+        ) {
+          if (kind === "swing") {
+            this.tweens.add({
+              targets: sprite,
+              rotation: 0.018,
+              duration: 1500,
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
+            });
+            return;
+          }
+
+          if (kind === "fountain" || kind === "lanternArch" || kind === "arcadeKiosk" || kind === "bowlingKiosk") {
+            const glowColor = kind === "fountain" ? 0xaed7e8 : kind === "lanternArch" ? 0xfaebc2 : 0xf6cfd2;
+            const glow = this.add.circle(0, sprite.y + sprite.displayHeight * 0.06, sprite.displayWidth * 0.22, glowColor, 0.16);
+            container.addAt(glow, 1);
+            this.tweens.add({
+              targets: glow,
+              alpha: 0.34,
+              scale: 1.2,
+              duration: 980,
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
+            });
+            return;
+          }
+
+          if (kind === "memoryTree" || kind === "greenhouse" || kind === "flowerStand") {
+            this.tweens.add({
+              targets: sprite,
+              y: sprite.y - 4,
+              duration: 1850,
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
+            });
+          }
+        }
+
+        private activateDecoration(decoration: GardenDecorPlacement) {
+          const container = this.decorObjects.get(decoration.id);
+          container?.setScale(1.035);
+          if (container) {
+            this.tweens.add({
+              targets: container,
+              scale: 1,
+              duration: 280,
+              ease: "Back.out",
+            });
+          }
+
+          setStatus(decorInteractionCopy[decoration.kind]);
+          this.showLocalBubble(decoration.kind === "memoryTree" ? "Saved this visit." : "This feels alive.");
+
+          switch (decoration.kind) {
+            case "gazebo":
+              playCozyCue("heart");
+              this.spawnPetalSpiral(decoration.x, decoration.y - 78, 28);
+              this.spawnSparkleBurst(decoration.x, decoration.y - 112, 0xfaebc2, 16);
+              break;
+            case "swing":
+              playCozyCue("pet");
+              this.petMood = "happy";
+              this.petMoodTimer = 0;
+              this.spawnHeartBurst(decoration.x, decoration.y - 52);
+              this.spawnPetalSpiral(decoration.x, decoration.y - 78, 14);
+              break;
+            case "picnic":
+              playCozyCue("heart");
+              this.spawnHeartBurst(decoration.x, decoration.y - 34);
+              recordActivity("pet-played");
+              break;
+            case "bbq":
+              playCozyCue("place");
+              this.spawnSmokePuffs(decoration.x, decoration.y - 34);
+              this.spawnSparkleBurst(decoration.x, decoration.y - 42, 0xd9a53e, 10);
+              break;
+            case "fountain":
+              playCozyCue("water");
+              this.spawnWaterCrown(decoration.x, decoration.y - 18);
+              this.spawnSparkleBurst(decoration.x, decoration.y - 60, 0x5e94b0, 12);
+              break;
+            case "lanternArch":
+              playCozyCue("heart");
+              setTimeOfDay("night");
+              this.spawnSparkleBurst(decoration.x, decoration.y - 82, 0xfaebc2, 24);
+              break;
+            case "greenhouse":
+              playCozyCue("water");
+              recordActivity("garden-watered");
+              this.spawnPetalSpiral(decoration.x, decoration.y - 72, 26);
+              this.spawnSparkleBurst(decoration.x, decoration.y - 94, 0x6e9651, 18);
+              break;
+            case "memoryTree":
+              playCozyCue("heart");
+              this.spawnHeartBurst(decoration.x, decoration.y - 86);
+              this.spawnSparkleBurst(decoration.x, decoration.y - 128, 0xc0a8dc, 26);
+              break;
+            case "flowerStand":
+              playCozyCue("place");
+              this.spawnPetalSpiral(decoration.x, decoration.y - 44, 30);
+              break;
+            case "fashionStage":
+            case "arcadeKiosk":
+            case "bowlingKiosk":
+              this.spawnSparkleBurst(decoration.x, decoration.y - 84, 0xfaebc2, 16);
+              break;
+          }
         }
 
         private selectDecor(id: string) {

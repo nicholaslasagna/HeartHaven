@@ -1037,6 +1037,7 @@ export function RoomCanvas({
             this.petFacing = this.avatar.x < this.pet.x ? "left" : "right";
           }
           this.petSprite.setFlipX(this.petFacing === "left");
+          this.petAccessorySprite?.setFlipX(this.petFacing === "left");
 
           const squish = this.petMood === "sit" ? 0.88 : this.petMood === "sleep" ? 0.7 : 1;
           this.pet.setScale(1, squish);
