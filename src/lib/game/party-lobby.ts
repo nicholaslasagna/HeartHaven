@@ -12,6 +12,7 @@ import {
 
 export const PARTY_LOBBY_KEY = "hearthaven:party-lobby-state";
 export const PARTY_LOBBY_EVENT = "hearthaven:party-lobby-changed";
+export const PARTY_CODE_REGISTRY_KEY = "hearthaven:party-code-registry";
 
 export type PartySeatStatus = "host" | "occupied" | "invited" | "open";
 
@@ -35,8 +36,11 @@ export type PartyLobby = {
   hostDisplayName: string;
   size: 2 | 4 | 6 | 8;
   createdAt: string;
+  status: "forming" | "started";
   gameHref?: string;
   gameTitle?: string;
+  startedAt?: string;
+  startedByCode?: FriendCode;
   seats: PartySeat[];
 };
 
@@ -64,15 +68,21 @@ function randomChars(count: number) {
 }
 
 export function generatePartyCode() {
-  return `HH-GAME-${randomChars(4)}`;
+  if (typeof window === "undefined") return `HH-GAME-${randomChars(4)}-${randomChars(4)}-${randomChars(4)}`;
+  const used = readPartyCodeRegistry();
+  let code = "";
+  do {
+    code = `HH-GAME-${randomChars(4)}-${randomChars(4)}-${randomChars(4)}`;
+  } while (used.includes(code));
+  return code;
 }
 
 export function normalizePartyCode(value: string) {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 24);
+  return value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
 }
 
 export function isPartyCodeShape(value: string) {
-  return /^HH-GAME-[A-Z0-9]{4}$/.test(normalizePartyCode(value));
+  return /^HH-GAME-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(normalizePartyCode(value));
 }
 
 function teamForIndex(index: number): PartySeat["team"] {
@@ -81,6 +91,24 @@ function teamForIndex(index: number): PartySeat["team"] {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function readPartyCodeRegistry(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(PARTY_CODE_REGISTRY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function registerPartyCode(code: string) {
+  if (typeof window === "undefined") return;
+  const normalized = normalizePartyCode(code);
+  const used = readPartyCodeRegistry().filter((entry) => entry !== normalized);
+  window.localStorage.setItem(PARTY_CODE_REGISTRY_KEY, JSON.stringify([normalized, ...used].slice(0, 80)));
 }
 
 function base64UrlEncode(value: string): string {
@@ -171,8 +199,11 @@ function normalizeLobby(lobby: Partial<PartyLobby> | null | undefined): PartyLob
       : "Host",
     size,
     createdAt: typeof lobby.createdAt === "string" ? lobby.createdAt : nowIso(),
+    status: lobby.status === "started" ? "started" : "forming",
     gameHref: typeof lobby.gameHref === "string" ? lobby.gameHref : undefined,
     gameTitle: typeof lobby.gameTitle === "string" ? lobby.gameTitle : undefined,
+    startedAt: typeof lobby.startedAt === "string" ? lobby.startedAt : undefined,
+    startedByCode: typeof lobby.startedByCode === "string" ? normalizeFriendCode(lobby.startedByCode) : undefined,
     seats: trimmed.map((seat, index) => ({ ...seat, index, team: teamForIndex(index) })),
   };
 }
@@ -186,9 +217,11 @@ export function createPartyLobby(size: PartyLobby["size"] = 4): PartyLobby {
     hostDisplayName: hostSeat.displayName,
     size,
     createdAt: nowIso(),
+    status: "forming",
     seats: [hostSeat, ...Array.from({ length: size - 1 }, (_, index) => createOpenSeat(index + 1))],
   };
   writePartyLobby(lobby);
+  registerPartyCode(lobby.code);
   return lobby;
 }
 
@@ -208,6 +241,7 @@ export function writePartyLobby(lobby: PartyLobby) {
   const normalized = normalizeLobby(lobby);
   if (!normalized) return;
   window.localStorage.setItem(PARTY_LOBBY_KEY, JSON.stringify(normalized));
+  registerPartyCode(normalized.code);
   window.dispatchEvent(new CustomEvent(PARTY_LOBBY_EVENT, { detail: normalized }));
 }
 
@@ -228,6 +262,9 @@ export function setPartySize(size: PartyLobby["size"]) {
   const next: PartyLobby = {
     ...lobby,
     size: nextSize,
+    status: "forming",
+    startedAt: undefined,
+    startedByCode: undefined,
     seats: nextSeats.map((seat, index) => ({ ...seat, index, team: teamForIndex(index) })),
   };
   writePartyLobby(next);
@@ -259,7 +296,7 @@ export function inviteFriendToParty(friend: Friend):
     invitedAt: nowIso(),
   };
   const seats = lobby.seats.map((entry, index) => (index === openIndex ? seat : entry));
-  const next = { ...lobby, seats };
+  const next = { ...lobby, status: "forming" as const, startedAt: undefined, startedByCode: undefined, seats };
   writePartyLobby(next);
   return { ok: true, lobby: next, seat };
 }
@@ -274,7 +311,7 @@ export function removePartySeat(seatId: string) {
     if (seat.status === "host" && seat.code === selfCode) return seat;
     return createOpenSeat(seat.index);
   });
-  const next = { ...lobby, seats };
+  const next = { ...lobby, status: "forming" as const, startedAt: undefined, startedByCode: undefined, seats };
   writePartyLobby(next);
   return next;
 }
@@ -288,9 +325,60 @@ export function togglePartyReady() {
       ? { ...seat, ready: !seat.ready }
       : seat,
   );
-  const next = { ...lobby, seats };
+  const next = { ...lobby, status: "forming" as const, startedAt: undefined, startedByCode: undefined, seats };
   writePartyLobby(next);
   return next;
+}
+
+export function selectPartyGame(game: { href: string; title: string }):
+  | { ok: true; lobby: PartyLobby }
+  | { ok: false; reason: "not-host" } {
+  const lobby = ensurePartyLobby();
+  const selfCode = getSocialState().selfCode;
+  if (lobby.hostCode !== selfCode) return { ok: false, reason: "not-host" };
+  const next: PartyLobby = {
+    ...lobby,
+    status: "forming",
+    gameHref: game.href,
+    gameTitle: game.title,
+    startedAt: undefined,
+    startedByCode: undefined,
+  };
+  writePartyLobby(next);
+  return { ok: true, lobby: next };
+}
+
+export function getPartyStartStatus(lobby: PartyLobby | null | undefined):
+  | { canStart: true; reason: "ready" }
+  | { canStart: false; reason: "no-lobby" | "no-game" | "need-player" | "pending-invites" | "not-ready" } {
+  if (!lobby) return { canStart: false, reason: "no-lobby" };
+  if (!lobby.gameHref || !lobby.gameTitle) return { canStart: false, reason: "no-game" };
+  const joined = lobby.seats.filter((seat) => seat.status === "host" || seat.status === "occupied");
+  const pendingInvites = lobby.seats.some((seat) => seat.status === "invited");
+  if (joined.length < 2) return { canStart: false, reason: "need-player" };
+  if (pendingInvites) return { canStart: false, reason: "pending-invites" };
+  if (joined.some((seat) => !seat.ready)) return { canStart: false, reason: "not-ready" };
+  return { canStart: true, reason: "ready" };
+}
+
+export function startPartyGame():
+  | { ok: true; lobby: PartyLobby; href: string }
+  | { ok: false; reason: "not-host" | "no-lobby" | "no-game" | "need-player" | "pending-invites" | "not-ready" } {
+  const lobby = readPartyLobby();
+  const selfCode = getSocialState().selfCode;
+  if (!lobby) return { ok: false, reason: "no-lobby" };
+  if (lobby.hostCode !== selfCode) return { ok: false, reason: "not-host" };
+  const startStatus = getPartyStartStatus(lobby);
+  if (!startStatus.canStart) return { ok: false, reason: startStatus.reason };
+  const href = `${lobby.gameHref}?party=${encodeURIComponent(lobby.code)}`;
+  const next: PartyLobby = {
+    ...lobby,
+    status: "started",
+    startedAt: nowIso(),
+    startedByCode: selfCode,
+  };
+  writePartyLobby(next);
+  return { ok: true, lobby: next, href };
 }
 
 export function buildPartyInviteToken(
@@ -392,6 +480,7 @@ export function joinPartyFromInput(input: string):
         hostDisplayName: payload.hostDisplayName,
         size: payload.size,
         createdAt: payload.sentAt,
+        status: "forming",
         gameHref: payload.gameHref,
         gameTitle: payload.gameTitle,
         seats: [
@@ -438,7 +527,15 @@ export function joinPartyFromInput(input: string):
       joinedAt: nowIso(),
     };
     const seats = base.seats.map((seat, seatIndex) => (seatIndex === index ? joinedSeat : seat));
-    const next = { ...base, seats, gameHref: payload.gameHref ?? base.gameHref, gameTitle: payload.gameTitle ?? base.gameTitle };
+    const next = {
+      ...base,
+      status: "forming" as const,
+      startedAt: undefined,
+      startedByCode: undefined,
+      seats,
+      gameHref: payload.gameHref ?? base.gameHref,
+      gameTitle: payload.gameTitle ?? base.gameTitle,
+    };
     writePartyLobby(next);
     recordPlayedWith({ code: payload.hostCode, displayName: payload.hostDisplayName, context: "party-lobby" });
     return { ok: true, lobby: next, launchedHref: payload.gameHref };
@@ -462,7 +559,13 @@ export function joinPartyFromInput(input: string):
       ready: false,
       joinedAt: nowIso(),
     };
-    const next = { ...lobby, seats: lobby.seats.map((entry, index) => (index === openIndex ? seat : entry)) };
+    const next = {
+      ...lobby,
+      status: "forming" as const,
+      startedAt: undefined,
+      startedByCode: undefined,
+      seats: lobby.seats.map((entry, index) => (index === openIndex ? seat : entry)),
+    };
     writePartyLobby(next);
     recordPlayedWith({ code: lobby.hostCode, displayName: lobby.hostDisplayName, context: "party-lobby" });
     return { ok: true, lobby: next };

@@ -8,9 +8,12 @@ import {
   ensurePartyLobby,
   inviteFriendToParty,
   joinPartyFromInput,
+  getPartyStartStatus,
   readPartyLobby,
   removePartySeat,
+  selectPartyGame,
   setPartySize,
+  startPartyGame,
   togglePartyReady,
   type PartyLobby,
 } from "@/lib/game/party-lobby";
@@ -37,6 +40,8 @@ export function usePartyLobby(initialSize: PartyLobby["size"] = 4) {
   const removeSeat = useCallback((seatId: string) => removePartySeat(seatId), []);
   const toggleReady = useCallback(() => togglePartyReady(), []);
   const join = useCallback((input: string) => joinPartyFromInput(input), []);
+  const selectGame = useCallback((game: { href: string; title: string }) => selectPartyGame(game), []);
+  const startGame = useCallback(() => startPartyGame(), []);
   const buildLink = useCallback((friend?: Friend, game?: { href?: string; title?: string }) => {
     const current = readPartyLobby() ?? ensurePartyLobby(initialSize);
     const origin = typeof window !== "undefined" ? window.location.origin : "https://realfiction.store";
@@ -53,8 +58,11 @@ export function usePartyLobby(initialSize: PartyLobby["size"] = 4) {
       removeSeat,
       toggleReady,
       join,
+      selectGame,
+      startGame,
+      startStatus: getPartyStartStatus(lobby),
       buildLink,
     }),
-    [lobby, resetLobby, resize, inviteFriend, removeSeat, toggleReady, join, buildLink],
+    [lobby, resetLobby, resize, inviteFriend, removeSeat, toggleReady, join, selectGame, startGame, buildLink],
   );
 }

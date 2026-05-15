@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ClipboardCheck,
   Copy,
@@ -10,6 +11,7 @@ import {
   Link2,
   Map,
   PartyPopper,
+  Play,
   RadioTower,
   RefreshCw,
   Send,
@@ -53,6 +55,7 @@ function joinErrorCopy(reason: string) {
 }
 
 export function GamesClient() {
+  const router = useRouter();
   const social = useSocial();
   const party = usePartyLobby(4);
   const lobby = party.lobby;
@@ -83,6 +86,7 @@ export function GamesClient() {
   const isHost = Boolean(lobby && lobby.hostCode === social.selfCode);
   const readyCount = lobby?.seats.filter((seat) => (seat.status === "host" || seat.status === "occupied") && seat.ready).length ?? 0;
   const occupiedCount = lobby?.seats.filter((seat) => seat.status === "host" || seat.status === "occupied").length ?? 0;
+  const startStatus = party.startStatus;
 
   useEffect(() => {
     if (!party.ready || !social.ready) return;
@@ -164,6 +168,34 @@ export function GamesClient() {
     void copyText(link, `friend-${friend.code}`);
   }
 
+  function startErrorCopy(reason: string) {
+    if (reason === "no-game") return "Choose a party game first.";
+    if (reason === "need-player") return "At least one friend needs to join before the host can start.";
+    if (reason === "pending-invites") return "Wait for invited friends to join, or remove their pending seat.";
+    if (reason === "not-ready") return "Everyone in the lobby needs to mark ready first.";
+    if (reason === "not-host") return "Only the host can start the party game.";
+    return "The party cannot start yet.";
+  }
+
+  function chooseGame(game: { href: string; title: string }) {
+    const result = party.selectGame(game);
+    if (result.ok) {
+      setInviteNotice({ kind: "ok", message: `${game.title} is selected. Everyone can ready up now.` });
+    } else {
+      setInviteNotice({ kind: "error", message: "Only the host can choose the party game." });
+    }
+  }
+
+  function startGame() {
+    const result = party.startGame();
+    if (!result.ok) {
+      setJoinNotice({ kind: "error", message: startErrorCopy(result.reason) });
+      return;
+    }
+    setJoinNotice({ kind: "ok", message: `Starting ${result.lobby.gameTitle ?? "party game"}...` });
+    router.push(result.href);
+  }
+
   return (
     <div className="grid gap-5">
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_360px]">
@@ -212,6 +244,9 @@ export function GamesClient() {
               <CozyButton asChild size="sm">
                 <Link href={featuredGame.href}>Play stage</Link>
               </CozyButton>
+              <Button disabled={!isHost} onClick={() => chooseGame({ href: featuredGame.href, title: featuredGame.title })} size="sm" variant="warm">
+                <Trophy /> Select
+              </Button>
               <Button onClick={() => copyGameInvite(featuredGame.id, featuredGame.href, featuredGame.title)} size="sm" variant="secondary">
                 <Link2 /> {copiedGameId === featuredGame.id ? "Copied" : "Invite"}
               </Button>
@@ -247,7 +282,7 @@ export function GamesClient() {
               </Button>
             </div>
             <p className="mt-2 text-xs font-bold text-ink-600">
-              Share the full invite link for friend-only verification. The short code works after the lobby exists on this device.
+              Codes are long and unique for safer invites. Share the full invite link for friend-only verification.
             </p>
           </div>
 
@@ -280,7 +315,7 @@ export function GamesClient() {
                   setJoinInput(event.target.value);
                   if (joinNotice.kind !== "idle") setJoinNotice({ kind: "idle", message: "" });
                 }}
-                placeholder="Paste party link or HH-GAME-ABCD"
+                placeholder="Paste party link or HH-GAME-ABCD-EFGH-JKLM"
                 className="min-w-0 flex-1 rounded-md border border-cream-300 bg-white p-2.5 text-sm font-bold text-ink-900 placeholder:font-normal focus:border-lavender-300 focus:outline-none"
               />
               <CozyButton size="sm" onClick={handleJoinParty}>
@@ -303,6 +338,18 @@ export function GamesClient() {
                 <Trophy /> {currentSeat.ready ? "Ready" : "Mark ready"}
               </Button>
             )}
+            <Button disabled={!isHost || !startStatus.canStart} onClick={startGame} size="sm" variant="default">
+              <Play /> Start game
+            </Button>
+          </div>
+          <div className="mt-3 rounded-lg border border-honey-500/30 bg-honey-100/65 p-3 text-xs font-bold text-ink-700">
+            <span className="font-extrabold text-honey-700">Selected game:</span>{" "}
+            {lobby?.gameTitle ?? "Choose a game from the cards below."}
+            <span className="mt-1 block font-extrabold text-ink-600">
+              {startStatus.canStart
+                ? "Everyone is in and ready. The host can start."
+                : startErrorCopy(startStatus.reason)}
+            </span>
           </div>
         </CozyCard>
 
@@ -460,6 +507,9 @@ export function GamesClient() {
               <CozyButton asChild size="sm" variant="warm">
                 <Link href={lobby ? `${game.href}?party=${encodeURIComponent(lobby.code)}` : game.href}>Play</Link>
               </CozyButton>
+              <Button disabled={!isHost} onClick={() => chooseGame({ href: game.href, title: game.title })} size="sm" variant="warm">
+                <Trophy /> Select
+              </Button>
               <Button onClick={() => copyGameInvite(game.id, game.href, game.title)} size="sm" variant="secondary">
                 <Link2 /> {copiedGameId === game.id ? "Copied" : "Invite"}
               </Button>
