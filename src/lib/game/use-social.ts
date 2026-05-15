@@ -4,17 +4,21 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   SOCIAL_EVENT,
   acceptFriendInvite,
+  acceptInviteFromCode,
+  buildInviteLink,
   cancelOutgoingInvite,
   canLookupCode,
   declineFriendInvite,
   getSocialState,
   lookupFriendCode,
   markInviteBlocked,
+  parseInviteToken,
   recordPlayedWith,
   removeFriend,
   sendFriendInvite,
   setSelfDisplayName,
   type FriendCode,
+  type FriendInvite,
   type SocialState,
 } from "@/lib/game/social";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
@@ -44,6 +48,15 @@ export function useSocial() {
     setSelfDisplayName(username);
     return sendFriendInvite(code, message);
   }, []);
+  const buildLink = useCallback((invite: FriendInvite) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://realfiction.store";
+    return buildInviteLink(invite, origin);
+  }, []);
+  const redeemToken = useCallback((token: string) => {
+    const payload = parseInviteToken(token);
+    if (!payload) return { ok: false as const, reason: "invalid-code" as const };
+    return acceptInviteFromCode(payload.fromCode, payload.fromDisplayName, payload.message);
+  }, []);
 
   return useMemo(
     () => ({
@@ -58,6 +71,9 @@ export function useSocial() {
       lookup,
       canLookup,
       sendInvite,
+      buildLink,
+      redeemToken,
+      redeemCode: acceptInviteFromCode,
       cancelInvite: cancelOutgoingInvite,
       acceptInvite: acceptFriendInvite,
       declineInvite: declineFriendInvite,
@@ -66,6 +82,6 @@ export function useSocial() {
       recordPlayedWith,
       setSelfDisplayName,
     }),
-    [state, lookup, canLookup, sendInvite],
+    [state, lookup, canLookup, sendInvite, buildLink, redeemToken],
   );
 }

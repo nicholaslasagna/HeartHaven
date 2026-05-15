@@ -644,6 +644,110 @@ export const roomBlueprints: RoomBlueprint[] = [
 
 export const starterPlacements: RoomPlacement[] = [];
 
+/**
+ * Curated, cozy starter layouts per room blueprint. Each room loads with a
+ * thoughtfully placed set of cozy props so it never opens as a bare shell.
+ * Players can still drag, face, or remove anything — these are just the
+ * "move-in ready" defaults.
+ *
+ * Coordinate system (matches room-canvas):
+ *   ROOM_WIDTH  = 960  (x ~0..960, lower x = left of room)
+ *   ROOM_HEIGHT = 600  (y ~0..600, lower y = back/wall, higher y = front/floor)
+ *   wall items sit around y 110-200, floor items around y 280-420.
+ *   zIndex 0-1 = wall; 2-5 = floor; bigger = drawn on top.
+ */
+function placement(
+  prefix: string,
+  catalogItemId: string,
+  x: number,
+  y: number,
+  options: Partial<Pick<RoomPlacement, "rotation" | "scale" | "zIndex">> = {},
+): RoomPlacement {
+  return {
+    id: `${prefix}-${catalogItemId}`,
+    catalogItemId,
+    x,
+    y,
+    rotation: options.rotation ?? 0,
+    scale: options.scale ?? 1,
+    zIndex: options.zIndex ?? 3,
+  };
+}
+
+export const roomStarterPlacements: Record<string, RoomPlacement[]> = {
+  // Cozy default loft — the Webkinz-style "your starter room" experience.
+  "moonlit-loft": [
+    placement("moonlit-loft", "window-garden-arch", 240, 150, { zIndex: 0 }),
+    placement("moonlit-loft", "shelf-memory-oak", 470, 160, { zIndex: 1 }),
+    placement("moonlit-loft", "fireplace-honey-stone", 720, 170, { zIndex: 1 }),
+    placement("moonlit-loft", "cozy-rug-blush", 480, 410, { zIndex: 2 }),
+    placement("moonlit-loft", "bed-cream-canopy", 770, 380, { zIndex: 3 }),
+    placement("moonlit-loft", "sofa-blush-cloud", 340, 380, { zIndex: 3 }),
+    placement("moonlit-loft", "table-honey-tea", 470, 420, { zIndex: 4 }),
+    placement("moonlit-loft", "lamp-honey-lantern", 180, 380, { zIndex: 4 }),
+    placement("moonlit-loft", "plant-sweetfern-pot", 580, 360, { zIndex: 4 }),
+    placement("moonlit-loft", "casper-moonberry-plush", 470, 415, { zIndex: 5 }),
+  ],
+  "sunbeam-kitchen": [
+    placement("sunbeam-kitchen", "window-garden-arch", 240, 150, { zIndex: 0 }),
+    placement("sunbeam-kitchen", "shelf-memory-oak", 720, 160, { zIndex: 1 }),
+    placement("sunbeam-kitchen", "cozy-rug-blush", 480, 420, { zIndex: 2 }),
+    placement("sunbeam-kitchen", "table-honey-tea", 480, 380, { zIndex: 3 }),
+    placement("sunbeam-kitchen", "chair-lavender-cushion", 360, 400, { zIndex: 4 }),
+    placement("sunbeam-kitchen", "chair-lavender-cushion", 600, 400, { rotation: 180, zIndex: 4 }),
+    placement("sunbeam-kitchen", "plant-sweetfern-pot", 220, 360, { zIndex: 4 }),
+    placement("sunbeam-kitchen", "lamp-honey-lantern", 780, 370, { zIndex: 4 }),
+  ],
+  "rose-studio": [
+    placement("rose-studio", "window-garden-arch", 280, 150, { zIndex: 0 }),
+    placement("rose-studio", "shelf-memory-oak", 670, 160, { zIndex: 1 }),
+    placement("rose-studio", "cozy-rug-blush", 480, 420, { zIndex: 2 }),
+    placement("rose-studio", "sofa-blush-cloud", 460, 390, { zIndex: 3 }),
+    placement("rose-studio", "plant-sweetfern-pot", 200, 380, { zIndex: 4 }),
+    placement("rose-studio", "plant-sweetfern-pot", 760, 380, { zIndex: 4 }),
+    placement("rose-studio", "lamp-honey-lantern", 300, 380, { zIndex: 4 }),
+    placement("rose-studio", "casper-moonberry-plush", 620, 410, { zIndex: 5 }),
+  ],
+  "pet-nursery": [
+    placement("pet-nursery", "window-garden-arch", 240, 150, { zIndex: 0 }),
+    placement("pet-nursery", "shelf-memory-oak", 720, 160, { zIndex: 1 }),
+    placement("pet-nursery", "cozy-rug-blush", 480, 410, { zIndex: 2 }),
+    placement("pet-nursery", "bed-cream-canopy", 640, 380, { zIndex: 3 }),
+    placement("pet-nursery", "pet-bed-moonberry", 320, 410, { zIndex: 3 }),
+    placement("pet-nursery", "plant-sweetfern-pot", 200, 370, { zIndex: 4 }),
+    placement("pet-nursery", "lamp-honey-lantern", 820, 370, { zIndex: 4 }),
+    placement("pet-nursery", "casper-moonberry-plush", 480, 420, { zIndex: 5 }),
+  ],
+  "lavender-library": [
+    placement("lavender-library", "shelf-memory-oak", 240, 160, { zIndex: 1 }),
+    placement("lavender-library", "shelf-memory-oak", 470, 160, { zIndex: 1 }),
+    placement("lavender-library", "shelf-memory-oak", 720, 160, { zIndex: 1 }),
+    placement("lavender-library", "cozy-rug-blush", 480, 410, { zIndex: 2 }),
+    placement("lavender-library", "chair-lavender-cushion", 360, 400, { zIndex: 3 }),
+    placement("lavender-library", "table-honey-tea", 480, 400, { zIndex: 3 }),
+    placement("lavender-library", "chair-lavender-cushion", 600, 400, { rotation: 180, zIndex: 3 }),
+    placement("lavender-library", "lamp-honey-lantern", 200, 380, { zIndex: 4 }),
+    placement("lavender-library", "lamp-honey-lantern", 780, 380, { zIndex: 4 }),
+  ],
+  "lantern-patio": [
+    placement("lantern-patio", "window-garden-arch", 240, 150, { zIndex: 0 }),
+    placement("lantern-patio", "window-garden-arch", 720, 150, { zIndex: 0 }),
+    placement("lantern-patio", "cozy-rug-blush", 480, 420, { zIndex: 2 }),
+    placement("lantern-patio", "sofa-blush-cloud", 460, 390, { zIndex: 3 }),
+    placement("lantern-patio", "lamp-honey-lantern", 220, 390, { zIndex: 4 }),
+    placement("lantern-patio", "lamp-honey-lantern", 740, 390, { zIndex: 4 }),
+    placement("lantern-patio", "plant-sweetfern-pot", 340, 370, { zIndex: 4 }),
+    placement("lantern-patio", "plant-sweetfern-pot", 620, 370, { zIndex: 4 }),
+  ],
+};
+
+export function getStarterPlacementsForRoom(roomId: string): RoomPlacement[] {
+  const layout = roomStarterPlacements[roomId];
+  if (!layout) return starterPlacements;
+  // Return a fresh copy so callers can safely mutate without polluting the shared default.
+  return layout.map((item) => ({ ...item }));
+}
+
 export const privateGiftMilestones = [
   "Private Partner Garden",
   "Garden Guardian",

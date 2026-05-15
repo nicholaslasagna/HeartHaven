@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { ArrowLeft, Gamepad2, Map, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Button } from "@/components/ui/button";
-import { lookupFriendCode } from "@/lib/game/social";
+import { isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import { parkGames } from "@/lib/mock-data";
 
@@ -17,16 +18,28 @@ const parkPlots = [
   { id: "park-clover", name: "Clover Hill", stage: "Sprout", progress: 44, accent: "#6E9651", status: "Public" },
 ];
 
-export function ParkClient() {
+export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
   const searchParams = useSearchParams();
-  const visitTarget = searchParams.get("visit");
+  const visitTargetRaw = searchParams.get("visit");
+  const visitTarget = visitTargetRaw ? normalizeFriendCode(visitTargetRaw) : null;
   const isGuestVisit = Boolean(visitTarget);
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
-  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
+  // Well-formed park-visit codes always allow entry.
+  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget) || isFriendCodeShape(visitTarget);
+
+  useEffect(() => {
+    if (!visitTarget || !isFriendCodeShape(visitTarget)) return;
+    recordPlayedWith({
+      code: visitTarget,
+      displayName: allowedVisitTarget?.displayName ?? "Keeper",
+      context: "park-visit",
+    });
+  }, [visitTarget, allowedVisitTarget?.displayName]);
   const realtime = useGardenRealtime({
     gardenId: isVisitAllowed ? "honeyheart-park" : "friend-only-park-gate",
     gardenName: isVisitAllowed ? "Honeyheart Park" : "Friend-only park",
-    invitePath: "/app/park",
+    invitePath: embedded ? "/app/area" : "/app/park",
+    inviteZone: embedded ? "park" : undefined,
   });
   const canEditGarden = !isGuestVisit || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
 
@@ -50,7 +63,7 @@ export function ParkClient() {
 
   return (
     <div className="grid gap-5">
-      <WorldZoneDock active="park" />
+      {!embedded && <WorldZoneDock active="park" />}
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-garden-300/50 bg-garden-100/65 p-5 shadow-sm md:flex-row md:items-center">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-normal text-garden-700">World zone</p>
@@ -62,7 +75,7 @@ export function ParkClient() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="secondary">
-            <Link href="/app/garden"><ArrowLeft /> Garden road</Link>
+            <Link href={embedded ? "/app/area?zone=garden" : "/app/garden"}><ArrowLeft /> Garden road</Link>
           </Button>
           <Button asChild variant="warm">
             <Link href="/app/games"><Map /> Invite party</Link>

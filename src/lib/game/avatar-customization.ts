@@ -129,13 +129,24 @@ export function gaitPhase(timeMs: number) {
 }
 
 export function keeperGaitPose(timeMs: number): KeeperPose {
+  // Four-beat gait cycle: walk1 (left foot fwd) → idle (mid-stance) →
+  // walk2 (right foot fwd) → idle (mid-stance). Alternating walk1 and
+  // walk2 is what makes the keeper read as STEPPING rather than
+  // shuffling the same frame back and forth.
   const phase = Math.floor(timeMs / GAIT_FRAME_MS) % 4;
-  return phase === 1 || phase === 3 ? "idle" : "walk1";
+  if (phase === 0) return "walk1";
+  if (phase === 2) return "walk2";
+  return "idle";
 }
 
 export function petGaitPose(timeMs: number): PetPose {
+  // Same four-beat alternation for the companion so it visually
+  // trots (paw-fwd, neutral, paw-fwd-other, neutral) instead of
+  // bobbing in place.
   const phase = Math.floor(timeMs / GAIT_FRAME_MS) % 4;
-  return phase === 1 || phase === 3 ? "idle" : "walk1";
+  if (phase === 0) return "walk1";
+  if (phase === 2) return "walk2";
+  return "idle";
 }
 
 export const KEEPER_CUSTOMIZATION_EVENT = "hearthaven:avatar-customization-changed";

@@ -2,6 +2,7 @@ import { KeyRound, LogOut, MailCheck, ShieldCheck } from "lucide-react";
 import { signOutAction, updatePasswordAction } from "@/app/auth/actions";
 import { MfaPanel } from "@/components/auth/mfa-panel";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { UsernameSettingsPanel } from "@/components/account/username-settings-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getSupabaseMissingConfigMessage, isSupabaseConfigured } from "@/lib/supabase/config";
@@ -15,6 +16,8 @@ export default async function AccountPage({
   const { message } = await searchParams;
   let email = "Demo keeper";
   let confirmed = false;
+  let serverUsername: string | null = null;
+  let serverUsernameHistory: string[] | null = null;
 
   if (isSupabaseConfigured()) {
     const supabase = await getSupabaseServerClient();
@@ -24,15 +27,28 @@ export default async function AccountPage({
 
     email = user?.email ?? "HeartHaven keeper";
     confirmed = Boolean(user?.email_confirmed_at);
+
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("username, username_changes")
+        .eq("id", user.id)
+        .maybeSingle();
+      serverUsername = typeof profile?.username === "string" ? profile.username : null;
+      serverUsernameHistory = Array.isArray(profile?.username_changes)
+        ? (profile.username_changes as unknown[]).map((entry) => String(entry))
+        : null;
+    }
   }
 
   return (
     <div className="grid gap-5">
       <section className="rounded-lg border border-cream-300 bg-white/70 p-5 shadow-sm">
         <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Keeper account</p>
-        <h1 className="mt-1 font-display text-4xl text-ink-900">Security and sign-in</h1>
+        <h1 className="mt-1 font-display text-4xl text-ink-900">Username, sign-in, and security</h1>
         <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-ink-700">
-          Keep the session stable for rooms, parties, private memories, friend invites, and live multiplayer presence.
+          Your username is what everyone sees in HeartHaven — chat, invites, the header, everywhere. Email stays
+          private to you.
         </p>
       </section>
 
@@ -48,14 +64,19 @@ export default async function AccountPage({
         </div>
       )}
 
+      <UsernameSettingsPanel serverHistory={serverUsernameHistory} serverUsername={serverUsername} />
+
       <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
         <CozyCard className="p-5">
           <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-blush-500">
-            <MailCheck className="size-4" /> Session
+            <MailCheck className="size-4" /> Session email
           </p>
-          <h2 className="mt-2 font-display text-3xl text-ink-900">{email}</h2>
+          <h2 className="mt-2 font-display text-2xl text-ink-900">{email}</h2>
           <p className="mt-2 text-sm font-bold text-ink-700">
             Email status: {confirmed ? "confirmed" : "not confirmed or unavailable in demo mode"}
+          </p>
+          <p className="mt-2 text-xs font-bold text-ink-500">
+            Your email is only used to sign in and recover your account. It&apos;s never shown to other keepers.
           </p>
           <form action={signOutAction} className="mt-5">
             <Button variant="secondary">
@@ -68,7 +89,7 @@ export default async function AccountPage({
           <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-honey-700">
             <KeyRound className="size-4" /> Password
           </p>
-          <h2 className="mt-2 font-display text-3xl text-ink-900">Change password</h2>
+          <h2 className="mt-2 font-display text-2xl text-ink-900">Change password</h2>
           <form action={updatePasswordAction} className="mt-4 grid gap-3">
             <label className="grid gap-2 text-sm font-extrabold text-ink-700">
               New password

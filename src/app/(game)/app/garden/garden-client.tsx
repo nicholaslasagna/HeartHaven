@@ -9,25 +9,41 @@ import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Button } from "@/components/ui/button";
-import { lookupFriendCode } from "@/lib/game/social";
+import { isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
+import { useEffect } from "react";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import type { gardenPlots, miniGames } from "@/lib/mock-data";
 
 type GardenClientProps = {
   games: typeof miniGames;
   plots: typeof gardenPlots;
+  embedded?: boolean;
 };
 
-export function GardenClient({ games, plots }: GardenClientProps) {
+export function GardenClient({ games, plots, embedded = false }: GardenClientProps) {
   const searchParams = useSearchParams();
   const gardenId = searchParams.get("garden") ?? "caspers-moonberry-beds";
-  const visitTarget = searchParams.get("visit");
+  const visitTargetRaw = searchParams.get("visit");
+  const visitTarget = visitTargetRaw ? normalizeFriendCode(visitTargetRaw) : null;
   const isGuestVisit = Boolean(visitTarget);
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
-  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
+  // Well-formed visit codes always allow entry. The presence of the URL
+  // is itself the invite — the host gives it out, the guest follows it.
+  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget) || isFriendCodeShape(visitTarget);
+
+  useEffect(() => {
+    if (!visitTarget || !isFriendCodeShape(visitTarget)) return;
+    recordPlayedWith({
+      code: visitTarget,
+      displayName: allowedVisitTarget?.displayName ?? "Keeper",
+      context: `garden-visit:${gardenId}`,
+    });
+  }, [visitTarget, allowedVisitTarget?.displayName, gardenId]);
   const realtime = useGardenRealtime({
     gardenId: isVisitAllowed ? gardenId : "friend-only-gate",
     gardenName: isVisitAllowed ? "Casper's Moonberry Beds" : "Friend-only garden",
+    invitePath: embedded ? "/app/area" : "/app/garden",
+    inviteZone: embedded ? "garden" : undefined,
   });
   const canEditGarden = !isGuestVisit || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
 
@@ -51,8 +67,8 @@ export function GardenClient({ games, plots }: GardenClientProps) {
 
   return (
     <div className="grid gap-5">
-      <SeasonalEventBanner compact />
-      <WorldZoneDock active="garden" />
+      {!embedded && <SeasonalEventBanner compact />}
+      {!embedded && <WorldZoneDock active="garden" />}
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-garden-300/50 bg-garden-100/65 p-5 shadow-sm md:flex-row md:items-center">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-normal text-garden-700">My garden</p>
@@ -63,7 +79,7 @@ export function GardenClient({ games, plots }: GardenClientProps) {
           </p>
         </div>
         <Button asChild variant="warm">
-          <Link href="/app/park">
+          <Link href={embedded ? "/app/area?zone=park" : "/app/park"}>
             Honeyheart Park <ArrowRight />
           </Link>
         </Button>

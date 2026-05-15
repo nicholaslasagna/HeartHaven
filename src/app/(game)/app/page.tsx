@@ -53,12 +53,12 @@ export default function DashboardPage() {
           </p>
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap">
             <CozyButton asChild>
-              <Link href="/app/garden">
+              <Link href="/app/area?zone=garden">
                 Enter garden <Leaf />
               </Link>
             </CozyButton>
             <CozyButton asChild variant="warm">
-              <Link href="/app/park">
+              <Link href="/app/area?zone=park">
                 Go to park <Compass />
               </Link>
             </CozyButton>
@@ -90,7 +90,7 @@ export default function DashboardPage() {
               </Link>
             </CozyButton>
             <CozyButton asChild variant="warm">
-              <Link href="/app/room">
+              <Link href="/app/area?zone=room">
                 Visit room <ArrowRight />
               </Link>
             </CozyButton>

@@ -614,10 +614,12 @@ export function RoomCanvas({
           this.pet.add([this.petSprite, this.petAccessorySprite]);
           this.pet.setSize(70, 70);
 
+          // A very gentle breathing motion. 0.6px over 3.2s reads as
+          // "alive" without making the pet feel restless or jittery.
           this.tweens.add({
             targets: this.pet,
-            y: this.pet.y - 1.2,
-            duration: 2300,
+            y: this.pet.y - 0.6,
+            duration: 3200,
             yoyo: true,
             repeat: -1,
             ease: "Sine.inOut",
@@ -1171,7 +1173,9 @@ export function RoomCanvas({
             this.time.delayedCall(120, () => this.petEyes.forEach((eye) => eye.setScale(1, 1)));
           }
 
-          if (this.petMoodTimer > 6200 && this.petMood !== "follow") {
+          // Settled lounging cycle — 14 seconds between idle/sit
+          // toggles. The previous 6.2s made the pet read as twitchy.
+          if (this.petMoodTimer > 14000 && this.petMood !== "follow") {
             this.petMoodTimer = 0;
             this.petMood = this.petMood === "idle" ? "sit" : "idle";
             setStatus(this.petMood === "sit" ? "Casper sits beside the room glow." : "Casper is keeping watch.");
@@ -1205,7 +1209,10 @@ export function RoomCanvas({
           this.petSprite.setFlipX(this.petFacing === "left");
           this.petAccessorySprite?.setFlipX(this.petFacing === "left");
 
-          const squish = this.petMood === "sit" ? 0.88 : this.petMood === "sleep" ? 0.7 : 1;
+          // Gentler squish — sit is barely compressed, sleep is a softer
+          // curl. Snap-shifting from 1.0 to 0.88 every few seconds is the
+          // "constantly moving" feel we're trying to avoid.
+          const squish = this.petMood === "sit" ? 0.96 : this.petMood === "sleep" ? 0.84 : 1;
           this.pet.setScale(1, squish);
           this.petEyes.forEach((eye) => eye.setScale(1, this.petMood === "sleep" ? 0.1 : 1));
           // Idle pose reflects the vitals-derived companion mood: blissful pets

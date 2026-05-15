@@ -55,8 +55,9 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
   const normalizedRoomId = useMemo(() => normalizeRoomId(roomId), [roomId]);
 
   const inviteUrl = useMemo(() => {
-    if (typeof window === "undefined") return `/app/room?room=${normalizedRoomId}`;
-    const url = new URL("/app/room", window.location.origin);
+    if (typeof window === "undefined") return `/app/area?zone=room&room=${normalizedRoomId}`;
+    const url = new URL("/app/area", window.location.origin);
+    url.searchParams.set("zone", "room");
     url.searchParams.set("room", normalizedRoomId);
     url.searchParams.set("visit", getSocialState().selfCode);
     return url.toString();

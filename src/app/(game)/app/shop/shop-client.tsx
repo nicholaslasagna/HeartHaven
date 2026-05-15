@@ -9,6 +9,7 @@ import { CurrencyPill } from "@/components/cozy/currency-pill";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
 import { useGameWallet } from "@/lib/game/use-game-wallet";
+import { useInventory } from "@/lib/game/use-inventory";
 import type { CatalogItem, ItemCategory } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { getCatalogItemSeason, isItemVisibleForSeason, isSeasonalCatalogItem } from "@/lib/seasonal-events";
@@ -31,10 +32,10 @@ type ShopClientProps = {
 
 export function ShopClient({ items }: ShopClientProps) {
   const [activeFilter, setActiveFilter] = useState<ItemCategory | "all" | "seasonal">("all");
-  const [owned, setOwned] = useState<string[]>([]);
   const [notice, setNotice] = useState("Tap an item to buy it for your room or garden.");
   const { activeEvent } = useSeasonalEvent();
   const { wallet, spendCurrency } = useGameWallet();
+  const inventory = useInventory();
 
   const visibleItems = useMemo(
     () =>
@@ -48,12 +49,15 @@ export function ShopClient({ items }: ShopClientProps) {
     [activeEvent, activeFilter, items],
   );
 
-  function buyItem(item: CatalogItem) {
-    if (owned.includes(item.id)) {
-      setNotice(`${item.name} is already tucked into your inventory.`);
-      return;
+  const ownedCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of inventory.view) {
+      counts.set(row.catalog.id, (counts.get(row.catalog.id) ?? 0) + row.entry.quantity);
     }
+    return counts;
+  }, [inventory.view]);
 
+  function buyItem(item: CatalogItem) {
     if (wallet.coins < item.priceCoins || wallet.hearts < item.priceHearts) {
       setNotice(`You need more currency for ${item.name}.`);
       return;
@@ -64,8 +68,9 @@ export function ShopClient({ items }: ShopClientProps) {
       return;
     }
 
-    setOwned((value) => [...value, item.id]);
-    setNotice(`${item.name} joined your inventory.`);
+    inventory.addItem(item.id, "purchase", 1);
+    const nextCount = (ownedCounts.get(item.id) ?? 0) + 1;
+    setNotice(`${item.name} joined your inventory. You own ${nextCount}.`);
     // TODO: Persist purchases to Supabase inventory_items and wallet transaction tables.
   }
 
@@ -108,7 +113,7 @@ export function ShopClient({ items }: ShopClientProps) {
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         <AnimatePresence mode="popLayout">
           {visibleItems.map((item) => {
-            const isOwned = owned.includes(item.id);
+            const ownedCount = ownedCounts.get(item.id) ?? 0;
             const seasonalItem = getCatalogItemSeason(item);
 
             return (
@@ -149,9 +154,9 @@ export function ShopClient({ items }: ShopClientProps) {
                       <span className="inline-flex items-center gap-1"><Coins className="size-4 text-honey-500" /> {item.priceCoins}</span>
                       <span className="inline-flex items-center gap-1"><Heart className="size-4 fill-current text-blush-500" /> {item.priceHearts}</span>
                     </div>
-                    <CozyButton size="sm" variant={isOwned ? "warm" : "default"} onClick={() => buyItem(item)}>
-                      {isOwned ? <Check /> : <ShoppingBag />}
-                      {isOwned ? "Owned" : "Buy"}
+                    <CozyButton size="sm" variant={ownedCount > 0 ? "warm" : "default"} onClick={() => buyItem(item)}>
+                      {ownedCount > 0 ? <Check /> : <ShoppingBag />}
+                      {ownedCount > 0 ? `Buy more · ${ownedCount}` : "Buy"}
                     </CozyButton>
                   </div>
                 </CozyCard>

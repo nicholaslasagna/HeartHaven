@@ -100,8 +100,8 @@ export function PetCarePanel({ compact = false }: { compact?: boolean }) {
     <CozyCard className={cn("p-5", compact ? "" : "p-6")}>
       <div className="grid grid-cols-[112px_1fr] items-center gap-4">
         <motion.div
-          animate={{ y: mood === "blissful" || mood === "happy" ? [0, -6, 0] : 0 }}
-          transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+          animate={{ y: mood === "blissful" || mood === "happy" ? [0, -2, 0] : 0 }}
+          transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
           className="relative grid h-28 place-items-center rounded-lg border border-cream-300 bg-cream-50"
         >
           <div className="absolute bottom-3 h-4 w-16 rounded-full bg-ink-900/15 blur-[1px]" />

@@ -63,7 +63,7 @@ export async function signInAction(formData: FormData) {
     redirectWithMessage("/auth/sign-in", friendlyAuthMessage(error.message));
   }
 
-  redirect("/app");
+  redirect("/app/area");
 }
 
 export async function signUpAction(formData: FormData) {
@@ -105,7 +105,7 @@ export async function magicLinkAction(formData: FormData) {
     email,
     options: {
       shouldCreateUser: false,
-      emailRedirectTo: `${origin}/auth/callback?next=/app`,
+      emailRedirectTo: `${origin}/auth/callback?next=/app/area`,
     },
   });
 

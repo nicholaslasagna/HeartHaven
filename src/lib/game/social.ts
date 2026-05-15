@@ -204,21 +204,23 @@ export function recordPlayedWith(entry: { code: FriendCode; displayName: string;
 }
 
 /**
- * True if `code` can be resolved by the local keeper. Only friends and
- * previously-played-with keepers are findable — strangers with guessed codes
- * see "not found" even if the code is technically valid.
+ * True if `code` can be resolved by the local keeper. Self, friends, and
+ * previously-played-with keepers always resolve. Any well-formed code also
+ * resolves (the lookup tells you "an unknown keeper with that code") so the
+ * sender can invite without playing first — the recipient still has to
+ * accept to become friends.
  */
 export function canLookupCode(code: FriendCode, state: SocialState = rawRead()): boolean {
   const normalized = normalizeFriendCode(code);
   if (normalized === state.selfCode) return true;
   if (state.friends.some((friend) => friend.code === normalized)) return true;
   if (state.playedWith.some((played) => played.code === normalized)) return true;
-  return false;
+  return isFriendCodeShape(normalized);
 }
 
-/** A summary of who a code resolves to, or null if the lookup is gated. */
+/** A summary of who a code resolves to, or null if the code is malformed. */
 export function lookupFriendCode(code: FriendCode, state: SocialState = rawRead()):
-  | { code: FriendCode; displayName: string; relationship: "self" | "friend" | "played-with" }
+  | { code: FriendCode; displayName: string; relationship: "self" | "friend" | "played-with" | "stranger" }
   | null {
   const normalized = normalizeFriendCode(code);
   if (normalized === state.selfCode) {
@@ -228,29 +230,35 @@ export function lookupFriendCode(code: FriendCode, state: SocialState = rawRead(
   if (friend) return { code: friend.code, displayName: friend.displayName, relationship: "friend" };
   const played = state.playedWith.find((entry) => entry.code === normalized);
   if (played) return { code: played.code, displayName: played.displayName, relationship: "played-with" };
+  // Any well-formed code resolves as a "stranger". The sender can invite,
+  // and the recipient still has to accept on their end — so this isn't a
+  // privacy hole, just a convenience for first-time meetings.
+  if (isFriendCodeShape(normalized)) {
+    return { code: normalized, displayName: "Keeper", relationship: "stranger" };
+  }
   return null;
 }
 
 /**
- * Send a friend invite to `toCode`. Only allowed if the recipient is in the
- * played-with set (i.e. you've actually shared a room before). For the local-
- * only MVP, the "delivery" is mirroring the invite into our own inbox under
- * `toCode` — production wires this to a Supabase `friend_invites` row.
+ * Send a friend invite to `toCode`.
+ *
+ * Anyone with a well-formed code can be invited. The privacy gate is that
+ * the RECIPIENT has to accept on their side — unknown senders can be blocked
+ * or declined, and the invite arrives via a shareable link the sender hands
+ * to the recipient out-of-band (text, DM, room visit). This matches how
+ * Webkinz-style "invite by code" works in practice.
  */
 export function sendFriendInvite(
   toCode: FriendCode,
   message?: string,
 ):
   | { ok: true; invite: FriendInvite }
-  | { ok: false; reason: "not-allowed" | "already-friends" | "self" | "invalid-code" } {
+  | { ok: false; reason: "already-friends" | "self" | "invalid-code" } {
   const state = rawRead();
   const code = normalizeFriendCode(toCode);
   if (!isFriendCodeShape(code)) return { ok: false, reason: "invalid-code" };
   if (code === state.selfCode) return { ok: false, reason: "self" };
   if (state.friends.some((friend) => friend.code === code)) return { ok: false, reason: "already-friends" };
-
-  const allowed = state.playedWith.some((played) => played.code === code);
-  if (!allowed) return { ok: false, reason: "not-allowed" };
 
   const invite: FriendInvite = {
     id: `inv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -263,6 +271,119 @@ export function sendFriendInvite(
   };
 
   rawWrite({ ...state, outgoing: [invite, ...state.outgoing].slice(0, 40) });
+  return { ok: true, invite };
+}
+
+/* ----------------------------------------------------------------
+   Shareable invite tokens.
+
+   A token bundles (fromCode, fromDisplayName, optional message) so a
+   sender can hand a single URL to their friend over text/DM/Discord.
+   The recipient opens the URL, the friends page parses the token, and
+   drops the invite into their inbox to accept like any other.
+
+   The encoding is intentionally simple base64-url of JSON — no
+   secrets here, just public identifiers + a label.
+   ---------------------------------------------------------------- */
+
+export type InviteTokenPayload = {
+  fromCode: FriendCode;
+  fromDisplayName: string;
+  message?: string;
+  sentAt: string;
+};
+
+function base64UrlEncode(value: string): string {
+  if (typeof window === "undefined") return "";
+  return window
+    .btoa(unescape(encodeURIComponent(value)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value: string): string {
+  if (typeof window === "undefined") return "";
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===".slice(0, (4 - (value.length % 4)) % 4);
+  try {
+    return decodeURIComponent(escape(window.atob(padded)));
+  } catch {
+    return "";
+  }
+}
+
+export function buildInviteToken(payload: Omit<InviteTokenPayload, "sentAt"> & { sentAt?: string }): string {
+  const data: InviteTokenPayload = {
+    fromCode: normalizeFriendCode(payload.fromCode),
+    fromDisplayName: normalizePublicDisplayName(payload.fromDisplayName),
+    message: payload.message,
+    sentAt: payload.sentAt ?? new Date().toISOString(),
+  };
+  return base64UrlEncode(JSON.stringify(data));
+}
+
+export function parseInviteToken(token: string): InviteTokenPayload | null {
+  try {
+    const json = base64UrlDecode(token);
+    if (!json) return null;
+    const parsed = JSON.parse(json) as Partial<InviteTokenPayload>;
+    if (!parsed.fromCode || !isFriendCodeShape(String(parsed.fromCode))) return null;
+    return {
+      fromCode: normalizeFriendCode(String(parsed.fromCode)),
+      fromDisplayName: normalizePublicDisplayName(parsed.fromDisplayName, "Keeper"),
+      message: typeof parsed.message === "string" ? parsed.message.slice(0, 240) : undefined,
+      sentAt: typeof parsed.sentAt === "string" ? parsed.sentAt : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build a shareable invite URL for the currently-pending outgoing invite.
+ * The sender DMs this link to their friend — clicking it opens the friends
+ * page and drops the invite straight into the inbox.
+ */
+export function buildInviteLink(invite: FriendInvite, origin: string): string {
+  const token = buildInviteToken({
+    fromCode: invite.fromCode,
+    fromDisplayName: invite.fromDisplayName,
+    message: invite.message,
+    sentAt: invite.sentAt,
+  });
+  const url = new URL("/app/friends", origin);
+  url.searchParams.set("accept", token);
+  return url.toString();
+}
+
+/**
+ * Add an incoming invite to the inbox from a raw code (the visitor pasted
+ * a friend code, no shareable URL). The sender's display name is unknown
+ * locally — we use the code as the label until they actually connect.
+ */
+export function acceptInviteFromCode(
+  fromCode: FriendCode,
+  fromDisplayName?: string,
+  message?: string,
+): { ok: true; invite: FriendInvite } | { ok: false; reason: "self" | "already-friends" | "invalid-code" | "duplicate" } {
+  const state = rawRead();
+  const code = normalizeFriendCode(fromCode);
+  if (!isFriendCodeShape(code)) return { ok: false, reason: "invalid-code" };
+  if (code === state.selfCode) return { ok: false, reason: "self" };
+  if (state.friends.some((friend) => friend.code === code)) return { ok: false, reason: "already-friends" };
+  if (state.inbox.some((entry) => entry.fromCode === code && entry.status === "pending")) {
+    return { ok: false, reason: "duplicate" };
+  }
+  const invite: FriendInvite = {
+    id: `inv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    fromCode: code,
+    fromDisplayName: normalizePublicDisplayName(fromDisplayName, "Keeper"),
+    toCode: state.selfCode,
+    message,
+    sentAt: new Date().toISOString(),
+    status: "pending",
+  };
+  rawWrite({ ...state, inbox: [invite, ...state.inbox].slice(0, 60) });
   return { ok: true, invite };
 }
 

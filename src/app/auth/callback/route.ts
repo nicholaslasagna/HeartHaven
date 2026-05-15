@@ -7,8 +7,8 @@ const otpTypes = new Set(["signup", "invite", "magiclink", "recovery", "email", 
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
-  const next = requestUrl.searchParams.get("next") ?? "/app";
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/app";
+  const next = requestUrl.searchParams.get("next") ?? "/app/area";
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/app/area";
   const successUrl = new URL(safeNext, requestUrl.origin);
   const errorUrl = new URL("/auth/sign-in", requestUrl.origin);
   const code = requestUrl.searchParams.get("code");

@@ -10,11 +10,12 @@ import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Button } from "@/components/ui/button";
 import { recordActivity } from "@/lib/game/activity";
-import { marketCatalog, roomBlueprints, starterPlacements } from "@/lib/catalog";
+import { getStarterPlacementsForRoom, roomBlueprints, starterPlacements } from "@/lib/catalog";
 import type { CatalogItem, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { useRoomRealtime } from "@/lib/game/use-room-realtime";
-import { lookupFriendCode } from "@/lib/game/social";
+import { useInventory } from "@/lib/game/use-inventory";
+import { isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
 import { isItemVisibleForSeason } from "@/lib/seasonal-events";
 
 const ROOM_STORAGE_PREFIX = "hearthaven:room-placements:v2:";
@@ -24,28 +25,49 @@ function getRoomStorageKey(roomId: string) {
 }
 
 function readPlacements(roomId: string): RoomPlacement[] {
-  if (typeof window === "undefined") return starterPlacements;
+  // Each blueprint has a curated, "move-in ready" layout — no room ever opens
+  // as an empty shell. The first time a room is visited, that cozy default is
+  // what loads. After the host saves, the saved layout takes over.
+  const cozyDefault = getStarterPlacementsForRoom(roomId);
+  if (typeof window === "undefined") return cozyDefault;
   try {
     const raw = window.localStorage.getItem(getRoomStorageKey(roomId));
-    if (!raw) return starterPlacements;
+    if (!raw) return cozyDefault;
     const parsed = JSON.parse(raw) as RoomPlacement[];
-    return Array.isArray(parsed) ? parsed : starterPlacements;
+    return Array.isArray(parsed) ? parsed : cozyDefault;
   } catch {
-    return starterPlacements;
+    return cozyDefault;
   }
 }
 
-export function RoomClient() {
+export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("room") ?? "moonlit-loft";
-  const visitTarget = searchParams.get("visit");
+  const visitTargetRaw = searchParams.get("visit");
+  const visitTarget = visitTargetRaw ? normalizeFriendCode(visitTargetRaw) : null;
   const isHostRoom = !visitTarget;
   const activeRoom = roomBlueprints.find((room) => room.id === roomId) ?? roomBlueprints[0];
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
-  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
+  // A visit link is honored as long as the code is well-formed. The host's
+  // realtime presence still gates who actually sees the room — but we don't
+  // bounce a guest at the doorstep just because we haven't met yet. The
+  // visit itself counts as the meeting.
+  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget) || isFriendCodeShape(visitTarget);
+
+  // Record the host in the played-with set as soon as the guest arrives, so
+  // their friend-code resolves locally from then on.
+  useEffect(() => {
+    if (!visitTarget) return;
+    if (!isFriendCodeShape(visitTarget)) return;
+    recordPlayedWith({
+      code: visitTarget,
+      displayName: allowedVisitTarget?.displayName ?? "Keeper",
+      context: `room-visit:${roomId}`,
+    });
+  }, [visitTarget, allowedVisitTarget?.displayName, roomId]);
   const [placements, setPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [draftPlacements, setDraftPlacements] = useState<RoomPlacement[]>(starterPlacements);
-  const [saveStatus, setSaveStatus] = useState("Blank room ready");
+  const [saveStatus, setSaveStatus] = useState("Move-in ready");
   const placementCounter = useRef(0);
   const realtime = useRoomRealtime({
     roomId: isVisitAllowed ? activeRoom.id : "friend-only-gate",
@@ -53,9 +75,10 @@ export function RoomClient() {
   });
   const canEditRoom = isHostRoom || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
   const { activeEvent } = useSeasonalEvent();
-  const roomDrawerItems = marketCatalog
-    .filter((item) => isItemVisibleForSeason(item, activeEvent))
-    .filter((item) => item.placementType === "floor" || item.placementType === "wall")
+  const inventory = useInventory();
+  const roomDrawerItems = inventory.view
+    .filter((row) => isItemVisibleForSeason(row.catalog, activeEvent))
+    .filter((row) => row.catalog.placementType === "floor" || row.catalog.placementType === "wall")
     .slice(0, 18);
 
   useEffect(() => {
@@ -63,7 +86,9 @@ export function RoomClient() {
       const saved = readPlacements(activeRoom.id);
       setPlacements(saved);
       setDraftPlacements(saved);
-      setSaveStatus(saved.length === 0 ? "Blank room ready" : "Loaded saved layout");
+      const hasSavedLayout = typeof window !== "undefined"
+        && Boolean(window.localStorage.getItem(getRoomStorageKey(activeRoom.id)));
+      setSaveStatus(hasSavedLayout ? "Loaded saved layout" : "Move-in ready layout");
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [activeRoom.id]);
@@ -95,9 +120,10 @@ export function RoomClient() {
       return;
     }
     window.localStorage.removeItem(getRoomStorageKey(activeRoom.id));
-    setDraftPlacements(starterPlacements);
-    setPlacements(starterPlacements);
-    setSaveStatus("Room cleared to a blank canvas");
+    const cozyDefault = getStarterPlacementsForRoom(activeRoom.id);
+    setDraftPlacements(cozyDefault);
+    setPlacements(cozyDefault);
+    setSaveStatus("Room restored to its move-in layout");
   }
 
   function addRoomItem(item: CatalogItem) {
@@ -141,8 +167,8 @@ export function RoomClient() {
 
   return (
     <div className="grid gap-5">
-      <SeasonalEventBanner compact />
-      <WorldZoneDock active="room" />
+      {!embedded && <SeasonalEventBanner compact />}
+      {!embedded && <WorldZoneDock active="room" />}
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-cream-300 bg-white/64 p-5 shadow-sm md:flex-row md:items-center">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Playable room</p>
@@ -163,7 +189,7 @@ export function RoomClient() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-normal text-lavender-500">Room wings</p>
-            <p className="text-sm font-bold text-ink-700">Every room opens blank. Add furniture from the drawer, save the layout, then expand into another wing.</p>
+            <p className="text-sm font-bold text-ink-700">Every room opens move-in ready. Rearrange it from the drawer, save the layout, then expand into another wing.</p>
           </div>
           <Button asChild variant="secondary">
             <Link href="/app/shop"><Plus /> Buy rooms</Link>
@@ -177,11 +203,11 @@ export function RoomClient() {
                   ? "border-blush-300 bg-blush-100 text-ink-900"
                   : "border-cream-300 bg-cream-50 text-ink-700 hover:border-lavender-300 hover:bg-lavender-100/60"
               }`}
-              href={room.href}
+              href={embedded ? `/app/area?zone=room&room=${room.id}` : room.href}
               key={room.id}
             >
               <span className="flex items-center gap-2 text-sm font-black"><DoorOpen className="size-4" /> {room.name}</span>
-              <span className="mt-1 block text-xs font-bold">{room.capacity} friends | blank shell</span>
+              <span className="mt-1 block text-xs font-bold">{room.capacity} friends | move-in ready</span>
             </Link>
           ))}
         </div>
@@ -201,16 +227,23 @@ export function RoomClient() {
               <span className="rounded-full bg-cream-100 px-2.5 py-1 text-xs font-black text-ink-700">{roomDrawerItems.length}</span>
             </div>
             <div className="grid max-h-[460px] gap-2 overflow-y-auto pr-1">
-              {roomDrawerItems.map((item) => (
+              {roomDrawerItems.length === 0 && (
+                <div className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-3 text-sm font-bold text-ink-600">
+                  Your placeable inventory is empty. Buy room items in the shop or open daily gifts to stock this drawer.
+                </div>
+              )}
+              {roomDrawerItems.map((row) => (
                 <button
                   className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/70 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!canEditRoom}
-                  key={item.id}
-                  onClick={() => addRoomItem(item)}
+                  key={row.entry.id}
+                  onClick={() => addRoomItem(row.catalog)}
                   type="button"
                 >
-                  <span className="block text-sm font-black text-ink-900">{item.name}</span>
-                  <span className="mt-0.5 block text-xs font-bold text-ink-600">{item.category} | {item.placementType}</span>
+                  <span className="block text-sm font-black text-ink-900">{row.catalog.name}</span>
+                  <span className="mt-0.5 block text-xs font-bold text-ink-600">
+                    {row.catalog.category} | {row.catalog.placementType} | owned x{row.entry.quantity}
+                  </span>
                 </button>
               ))}
             </div>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Ban,
@@ -9,6 +10,7 @@ import {
   Flag,
   Gift,
   Inbox,
+  LinkIcon,
   Send,
   ShieldAlert,
   ShieldCheck,
@@ -41,12 +43,41 @@ export function FriendsClient() {
   const social = useSocial();
   const safety = useSafety();
   const inventory = useInventory();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [copied, setCopied] = useState(false);
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
   const [lookupInput, setLookupInput] = useState("");
-  const [lookupMessage, setLookupMessage] = useState<{ kind: "idle" | "ok" | "error"; message: string }>({ kind: "idle", message: "" });
+  const [lookupMessage, setLookupMessage] = useState<{ kind: "idle" | "ok" | "error"; message: string; linkToShare?: string }>({ kind: "idle", message: "" });
+  const [acceptInput, setAcceptInput] = useState("");
+  const [acceptMessage, setAcceptMessage] = useState<{ kind: "idle" | "ok" | "error"; message: string }>({ kind: "idle", message: "" });
   const [reportTarget, setReportTarget] = useState<{ code: FriendCode; displayName: string } | null>(null);
   const [giftTarget, setGiftTarget] = useState<{ code: FriendCode; displayName: string } | null>(null);
+
+  // Auto-redeem a `?accept=<token>` URL the sender pasted to the recipient.
+  // The redeem itself writes to localStorage, so we defer the React setState
+  // calls to a microtask to keep this effect a pure side-effect runner.
+  useEffect(() => {
+    if (!social.ready) return;
+    const token = searchParams.get("accept");
+    if (!token) return;
+    const result = social.redeemToken(token);
+    const reason = "reason" in result ? result.reason : undefined;
+    queueMicrotask(() => {
+      if (result.ok) {
+        setAcceptMessage({ kind: "ok", message: `Invite from ${result.invite.fromDisplayName} added to your inbox.` });
+      } else if (reason === "duplicate") {
+        setAcceptMessage({ kind: "ok", message: "That invite is already in your inbox." });
+      } else if (reason === "already-friends") {
+        setAcceptMessage({ kind: "ok", message: "You're already friends with that keeper." });
+      } else {
+        setAcceptMessage({ kind: "error", message: "That invite link couldn't be read." });
+      }
+    });
+    // Clear the query param so a refresh doesn't re-trigger.
+    router.replace("/app/friends");
+  }, [searchParams, social, router]);
 
   const pendingInbox = useMemo(
     () => social.inbox.filter((invite) => invite.status === "pending"),
@@ -81,37 +112,116 @@ export function FriendsClient() {
     if (!trimmed) return;
     const code = normalizeFriendCode(trimmed);
     if (!isFriendCodeShape(code)) {
-      setLookupMessage({ kind: "error", message: "That doesn't look like a friend code." });
+      setLookupMessage({ kind: "error", message: "Friend codes look like HH-XXXXX-NNN. Double-check the letters and digits." });
       return;
     }
     const target = social.lookup(code);
-    if (!target) {
-      // Friend codes are PRIVATE: a code only resolves if you've already played with that keeper.
-      setLookupMessage({
-        kind: "error",
-        message: "We can't find that keeper. Friend invites only go to people you've already played with — visit each other's rooms or gardens first.",
-      });
-      return;
-    }
-    if (target.relationship === "self") {
+    if (target?.relationship === "self") {
       setLookupMessage({ kind: "error", message: "That's your own code." });
       return;
     }
-    if (target.relationship === "friend") {
+    if (target?.relationship === "friend") {
       setLookupMessage({ kind: "ok", message: `${target.displayName} is already a friend.` });
       return;
     }
     const result = social.sendInvite(code, `${getCachedPublicUsername()} wants to be friends.`);
     if (result.ok) {
-      setLookupMessage({ kind: "ok", message: `Invite sent to ${target.displayName}.` });
+      const link = social.buildLink(result.invite);
+      const displayName = target?.displayName && target.relationship !== "stranger" ? target.displayName : code;
+      setLookupMessage({
+        kind: "ok",
+        message: `Invite ready for ${displayName}. Send them this link to accept.`,
+        linkToShare: link,
+      });
       setLookupInput("");
     } else {
       const msg =
         result.reason === "already-friends" ? "Already friends."
         : result.reason === "self" ? "That's your own code."
-        : result.reason === "invalid-code" ? "That doesn't look like a friend code."
-        : "You can only invite someone you've played with first.";
+        : "Friend codes look like HH-XXXXX-NNN.";
       setLookupMessage({ kind: "error", message: msg });
+    }
+  }
+
+  /**
+   * Accept an invite the recipient received out-of-band — they paste either
+   * a full invite URL (with `?accept=<token>`) or just the raw friend code
+   * of the person inviting them. Either way we drop a pending invite into
+   * the inbox so they can Accept/Decline like any other.
+   */
+  function redeemPastedInvite() {
+    const trimmed = acceptInput.trim();
+    if (!trimmed) return;
+
+    // 1. Try parsing as a URL with ?accept=<token> first.
+    try {
+      const url = new URL(trimmed);
+      const token = url.searchParams.get("accept");
+      if (token) {
+        const result = social.redeemToken(token);
+        if (result.ok) {
+          setAcceptMessage({ kind: "ok", message: `Invite from ${result.invite.fromDisplayName} added to your inbox.` });
+          setAcceptInput("");
+          return;
+        }
+        const reason = "reason" in result ? result.reason : undefined;
+        if (reason === "duplicate") {
+          setAcceptMessage({ kind: "ok", message: "That invite is already in your inbox." });
+          setAcceptInput("");
+        } else if (reason === "already-friends") {
+          setAcceptMessage({ kind: "ok", message: "You're already friends with that keeper." });
+          setAcceptInput("");
+        } else if (reason === "self") {
+          setAcceptMessage({ kind: "error", message: "That's your own invite link." });
+        } else {
+          setAcceptMessage({ kind: "error", message: "That invite link couldn't be read." });
+        }
+        return;
+      }
+      // URL with ?visit=...&room=... — navigate inline so the visit flow opens.
+      if (url.searchParams.get("visit")) {
+        const path = `${url.pathname}${url.search}` || "/app/area";
+        router.push(path);
+        setAcceptInput("");
+        return;
+      }
+    } catch {
+      // Not a URL — fall through to raw-code path.
+    }
+
+    // 2. Treat the input as a raw friend code (HH-XXXXX-NNN).
+    const code = normalizeFriendCode(trimmed);
+    if (!isFriendCodeShape(code)) {
+      setAcceptMessage({
+        kind: "error",
+        message: "Paste an invite link, or a friend code shaped like HH-XXXXX-NNN.",
+      });
+      return;
+    }
+    const result = social.redeemCode(code);
+    if (result.ok) {
+      setAcceptMessage({ kind: "ok", message: `Invite from ${result.invite.fromCode} added to your inbox.` });
+      setAcceptInput("");
+    } else if (result.reason === "duplicate") {
+      setAcceptMessage({ kind: "ok", message: "That invite is already in your inbox." });
+      setAcceptInput("");
+    } else if (result.reason === "already-friends") {
+      setAcceptMessage({ kind: "ok", message: "You're already friends with that keeper." });
+      setAcceptInput("");
+    } else if (result.reason === "self") {
+      setAcceptMessage({ kind: "error", message: "That's your own code." });
+    } else {
+      setAcceptMessage({ kind: "error", message: "That doesn't look like a friend code." });
+    }
+  }
+
+  async function copyShareLink(link: string, id: string) {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLinkId(id);
+      window.setTimeout(() => setCopiedLinkId((current) => (current === id ? null : current)), 2000);
+    } catch {
+      /* clipboard may fail in some browsers — keep the link visible so user can copy manually */
     }
   }
 
@@ -142,8 +252,8 @@ export function FriendsClient() {
             </Badge>
             <h1 className="mt-2 font-display text-4xl text-ink-900">Your circle, kept small and warm.</h1>
             <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-              Friend codes are private. You can only invite someone you&apos;ve already shared a room or garden visit
-              with — so spam never reaches your inbox.
+              Send an invite by friend code, then share the link with your friend. They accept on their end — you stay
+              in control of who joins your inbox.
             </p>
           </div>
           <div className="grid gap-2 text-right">
@@ -179,7 +289,8 @@ export function FriendsClient() {
           </div>
           {pendingInbox.length === 0 ? (
             <p className="mt-3 text-sm font-bold text-ink-500">
-              No invites yet. People you&apos;ve played with can send one — your inbox stays quiet otherwise.
+              No invites yet. When someone sends you a friend invite link, it shows up here for you to accept or
+              decline.
             </p>
           ) : (
             <div className="mt-3 grid gap-2">
@@ -226,7 +337,7 @@ export function FriendsClient() {
             <h2 className="font-display text-2xl text-ink-900">Send an invite</h2>
           </div>
           <p className="mt-1 text-xs font-bold text-ink-500">
-            Paste a friend code. It only resolves to a keeper you&apos;ve already played with.
+            Paste a friend code, hit Send, then DM the shareable link to your friend.
           </p>
           <div className="mt-3 flex gap-2">
             <input
@@ -253,30 +364,93 @@ export function FriendsClient() {
               {lookupMessage.message}
             </p>
           )}
+          {lookupMessage.linkToShare && (
+            <div className="mt-2 flex items-center gap-2 rounded-md border border-lavender-300/40 bg-lavender-100/60 p-2">
+              <LinkIcon className="size-4 shrink-0 text-lavender-600" />
+              <code className="min-w-0 flex-1 truncate font-mono text-xs text-ink-800">{lookupMessage.linkToShare}</code>
+              <CozyButton size="sm" variant="warm" onClick={() => copyShareLink(lookupMessage.linkToShare!, "lookup")}>
+                {copiedLinkId === "lookup" ? <ClipboardCheck /> : <Copy />}
+                {copiedLinkId === "lookup" ? "Copied" : "Copy"}
+              </CozyButton>
+            </div>
+          )}
 
           {pendingOutgoing.length > 0 && (
             <div className="mt-4">
               <p className="text-xs font-extrabold uppercase tracking-normal text-ink-500">Pending invites you sent</p>
-              <ul className="mt-2 grid gap-1">
-                {pendingOutgoing.map((invite) => (
-                  <li key={invite.id} className="flex items-center justify-between rounded-md border border-cream-300 bg-white/70 px-3 py-2 text-xs font-bold text-ink-700">
-                    <span>
-                      To <span className="font-mono">{invite.toCode}</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => social.cancelInvite(invite.id)}
-                      className="inline-flex items-center gap-1 text-ink-500 hover:text-blush-700"
-                    >
-                      <X className="size-3.5" /> Cancel
-                    </button>
-                  </li>
-                ))}
+              <ul className="mt-2 grid gap-2">
+                {pendingOutgoing.map((invite) => {
+                  const link = social.buildLink(invite);
+                  return (
+                    <li key={invite.id} className="rounded-md border border-cream-300 bg-white/70 px-3 py-2 text-xs font-bold text-ink-700">
+                      <div className="flex items-center justify-between gap-2">
+                        <span>
+                          To <span className="font-mono">{invite.toCode}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => social.cancelInvite(invite.id)}
+                          className="inline-flex items-center gap-1 text-ink-500 hover:text-blush-700"
+                        >
+                          <X className="size-3.5" /> Cancel
+                        </button>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <LinkIcon className="size-3.5 shrink-0 text-lavender-600" />
+                        <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-700">{link}</code>
+                        <button
+                          type="button"
+                          onClick={() => copyShareLink(link, invite.id)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-cream-300 bg-white/80 px-2 py-1 text-[11px] font-extrabold text-ink-700 hover:bg-blush-100"
+                        >
+                          {copiedLinkId === invite.id ? <ClipboardCheck className="size-3.5" /> : <Copy className="size-3.5" />}
+                          {copiedLinkId === invite.id ? "Copied" : "Copy link"}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
         </CozyCard>
       </section>
+
+      {/* Got an invite? — paste a link or code to add it to your inbox */}
+      <CozyCard className="p-5">
+        <div className="flex items-center gap-2">
+          <LinkIcon className="size-5 text-honey-700" />
+          <h2 className="font-display text-2xl text-ink-900">Got an invite?</h2>
+        </div>
+        <p className="mt-1 text-xs font-bold text-ink-500">
+          Paste the invite link a friend sent you, or their friend code. We&apos;ll drop the invite straight into your inbox so you can accept it.
+        </p>
+        <div className="mt-3 flex gap-2">
+          <input
+            value={acceptInput}
+            onChange={(event) => {
+              setAcceptInput(event.target.value);
+              if (acceptMessage.kind !== "idle") setAcceptMessage({ kind: "idle", message: "" });
+            }}
+            placeholder="Paste invite link or HH-XXXXX-NNN"
+            maxLength={400}
+            className="w-full rounded-md border border-cream-300 bg-white p-2.5 text-sm font-bold text-ink-900 placeholder:font-sans placeholder:font-normal focus:border-honey-500 focus:outline-none"
+          />
+          <CozyButton size="sm" variant="warm" onClick={redeemPastedInvite}>
+            <Inbox /> Add
+          </CozyButton>
+        </div>
+        {acceptMessage.message && (
+          <p
+            className={cn(
+              "mt-2 text-xs font-extrabold",
+              acceptMessage.kind === "error" ? "text-blush-700" : "text-garden-700",
+            )}
+          >
+            {acceptMessage.message}
+          </p>
+        )}
+      </CozyCard>
 
       {/* Friend list */}
       <CozyCard className="p-5">

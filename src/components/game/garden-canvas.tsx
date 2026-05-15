@@ -148,6 +148,24 @@ const parkWalkCircles: WalkCircle[] = [
   { x: 3140, y: 470, radius: 186 },
 ];
 
+/**
+ * Variant-aware starting position for the keeper. The previous default
+ * (420, 430) sat above the corridor on every variant, which meant the very
+ * first keypress yanked the avatar down onto the path. The new defaults
+ * land squarely inside the first walkable segment / circle for each
+ * variant, so movement feels stable from the first frame.
+ */
+function getAvatarStartPosition(variant: GardenCanvasProps["variant"]) {
+  if (variant === "park") {
+    // Inside the first park circle (540, 404, r=210) — center-of-path.
+    return { x: 540, y: 404 };
+  }
+  // Both `garden` and `partner` share the same walkable corridor. The first
+  // shared circle sits at (500, 570, r=190), which is the natural "you walk
+  // in from the path" entry point.
+  return { x: 500, y: 570 };
+}
+
 const gardenDecorItems: Array<{ kind: GardenDecorKind; label: string; description: string; href?: string }> = [
   { kind: "gazebo", label: "Gazebo", description: "Large meetup structure" },
   { kind: "swing", label: "Swing set", description: "A cozy two-seat swing" },
@@ -273,7 +291,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private target?: Phaser.Math.Vector2;
         private moveBroadcastTimer = 0;
         private footstepTimer = 0;
-        private lastSentPosition = { x: 420, y: 430 };
+        private lastSentPosition = getAvatarStartPosition(variant);
         private selectedDecor?: GardenDecorPlacement;
         private decorBubble?: Phaser.GameObjects.Container;
         private decorObjects = new Map<string, Phaser.GameObjects.Container>();
@@ -882,8 +900,9 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
         private createAvatar() {
           this.keeperCustomization = readKeeperCustomization();
-          this.avatarShadow = this.add.ellipse(420, 452, 50, 18, 0x3a2a2a, 0.18).setDepth(429);
-          this.avatar = this.add.container(420, 430).setDepth(430);
+          const start = getAvatarStartPosition(variant);
+          this.avatarShadow = this.add.ellipse(start.x, start.y + 22, 50, 18, 0x3a2a2a, 0.18).setDepth(start.y - 1);
+          this.avatar = this.add.container(start.x, start.y).setDepth(start.y);
           this.avatarSprite = this.add
             .sprite(
               0,
@@ -908,8 +927,13 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
         private createPet() {
           this.petCustomization = readPetCustomization();
-          this.petShadow = this.add.ellipse(486, 470, 44, 15, 0x3a2a2a, 0.15).setDepth(449);
-          this.pet = this.add.container(486, 450).setDepth(450);
+          const start = getAvatarStartPosition(variant);
+          // Pet starts a short stride to the right of the keeper, on the same
+          // y-row so it lands on the path too.
+          const px = start.x + 66;
+          const py = start.y + 20;
+          this.petShadow = this.add.ellipse(px, py + 20, 44, 15, 0x3a2a2a, 0.15).setDepth(py - 1);
+          this.pet = this.add.container(px, py).setDepth(py);
           this.petSprite = this.add
             .sprite(0, -40, "pet-animation-sheet", petFrame(this.petCustomization.speciesId, "idle"))
             .setDisplaySize(94, 106);
@@ -917,10 +941,12 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.petAccessorySprite = this.createPetAccessorySprite(this.petCustomization.accessory);
           this.pet.add([this.petSprite, this.petAccessorySprite]);
           this.pet.setSize(70, 70);
+          // A very gentle breathing motion. 0.6px over 3.2s reads as
+          // "alive" without making the pet feel restless or jittery.
           this.tweens.add({
             targets: this.pet,
-            y: this.pet.y - 1.2,
-            duration: 2300,
+            y: this.pet.y - 0.6,
+            duration: 3200,
             yoyo: true,
             repeat: -1,
             ease: "Sine.inOut",
@@ -1206,7 +1232,10 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private updatePet(delta: number) {
           if (!this.pet) return;
           this.petMoodTimer += delta;
-          if (this.petMoodTimer > 5200) {
+          // Long calm period before flipping mood — the previous 5.2s
+          // cycle made the companion feel like it was constantly twitching
+          // between idle and sit. ~14s feels lounging instead.
+          if (this.petMoodTimer > 14000) {
             this.petMoodTimer = 0;
             this.petMood = this.petMood === "idle" ? "sit" : "idle";
           }
@@ -1250,7 +1279,9 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               ? "happy"
               : idleMoodPose;
           this.applyPetLocomotion(petMoving, pose);
-          this.pet.setScale(1, this.petMood === "sit" ? 0.9 : 1);
+          // Subtle squish on sit — 0.96 reads as "settled" without making
+          // the pet jump shape between frames.
+          this.pet.setScale(1, this.petMood === "sit" ? 0.96 : 1);
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
           this.petShadow.setDepth(this.pet.y - 1);
         }

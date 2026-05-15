@@ -24,7 +24,8 @@ import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/publi
 type UseGardenRealtimeOptions = {
   gardenId: string;
   gardenName: string;
-  invitePath?: "/app/garden" | "/app/partner-garden" | "/app/park";
+  invitePath?: "/app/garden" | "/app/partner-garden" | "/app/park" | "/app/area";
+  inviteZone?: "garden" | "park";
 };
 
 type ConnectionState = "demo" | "connecting" | "connected" | "offline" | "error";
@@ -46,7 +47,12 @@ function normalizeFriendCode(code: string) {
   return code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
 }
 
-export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/garden" }: UseGardenRealtimeOptions) {
+export function useGardenRealtime({
+  gardenId,
+  gardenName,
+  invitePath = "/app/garden",
+  inviteZone,
+}: UseGardenRealtimeOptions) {
   const [players, setPlayers] = useState<RealtimeRoomPlayer[]>([]);
   const [messages, setMessages] = useState<GardenChatMessage[]>([]);
   const [approvedDecoratorCodes, setApprovedDecoratorCodes] = useState<string[]>([]);
@@ -61,12 +67,16 @@ export function useGardenRealtime({ gardenId, gardenName, invitePath = "/app/gar
   const normalizedGardenId = useMemo(() => normalizeGardenId(gardenId), [gardenId]);
 
   const inviteUrl = useMemo(() => {
-    if (typeof window === "undefined") return `${invitePath}?garden=${normalizedGardenId}`;
+    if (typeof window === "undefined") {
+      const zoneQuery = invitePath === "/app/area" && inviteZone ? `zone=${inviteZone}&` : "";
+      return `${invitePath}?${zoneQuery}garden=${normalizedGardenId}`;
+    }
     const url = new URL(invitePath, window.location.origin);
+    if (invitePath === "/app/area" && inviteZone) url.searchParams.set("zone", inviteZone);
     url.searchParams.set("garden", normalizedGardenId);
     url.searchParams.set("visit", getSocialState().selfCode);
     return url.toString();
-  }, [invitePath, normalizedGardenId]);
+  }, [invitePath, inviteZone, normalizedGardenId]);
 
   const gardenCode = useMemo(() => normalizedGardenId.toUpperCase(), [normalizedGardenId]);
 

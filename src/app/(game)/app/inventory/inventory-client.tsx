@@ -132,7 +132,9 @@ export function InventoryClient() {
                   {row.entry.equipped ? "Equipped" : "Equip"}
                 </CozyButton>
                 <CozyButton asChild size="sm" variant="ghost">
-                  <Link href={row.catalog.placementType === "garden_plot" ? "/app/garden" : "/app/room"}>Place</Link>
+                  <Link href={row.catalog.placementType === "garden_plot" ? "/app/area?zone=garden" : "/app/area?zone=room"}>
+                    Place
+                  </Link>
                 </CozyButton>
                 <CozyButton asChild size="sm" variant="ghost">
                   <Link href="/app/friends">
