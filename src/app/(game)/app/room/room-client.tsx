@@ -281,7 +281,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
           ))}
         </div>
       </section>
-      <section className="grid min-w-0 max-w-full gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+      <section className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
         <aside className="grid min-w-0 content-start gap-4 xl:sticky xl:top-4">
           <section className="rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
             <div className="mb-3 flex items-start justify-between gap-2">
@@ -341,18 +341,6 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               ))}
             </div>
           </section>
-          <RoomSocialPanel
-            approvedDecoratorCodes={realtime.approvedDecoratorCodes}
-            canManagePlacement={isHostRoom}
-            connectionState={realtime.connectionState}
-            inviteUrl={realtime.inviteUrl}
-            messages={realtime.messages}
-            onToggleDecorator={realtime.toggleDecoratorPermission}
-            players={realtime.players}
-            roomCode={realtime.roomCode}
-            sendChat={realtime.sendChat}
-            status={realtime.status}
-          />
         </aside>
         <div
           className="grid min-w-0 max-w-full content-start gap-3 overflow-hidden"
@@ -388,6 +376,18 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
             </p>
           )}
         </div>
+        <RoomSocialPanel
+          approvedDecoratorCodes={realtime.approvedDecoratorCodes}
+          canManagePlacement={isHostRoom}
+          connectionState={realtime.connectionState}
+          inviteUrl={realtime.inviteUrl}
+          messages={realtime.messages}
+          onToggleDecorator={realtime.toggleDecoratorPermission}
+          players={realtime.players}
+          roomCode={realtime.roomCode}
+          sendChat={realtime.sendChat}
+          status={realtime.status}
+        />
       </section>
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-lavender-500" />

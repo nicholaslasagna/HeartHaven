@@ -77,7 +77,7 @@ export const PET_SPECIES: Array<{ id: PetSpeciesId; label: string; frameRow: num
   { id: "bunny", label: "Moonberry Bunny", frameRow: 1 },
   { id: "bear", label: "Honey Bear", frameRow: 2 },
   { id: "duck", label: "Sky Duck", frameRow: 3 },
-  { id: "kitten", label: "Garden Kitten", frameRow: 4 },
+  { id: "kitten", label: "Casper Cat", frameRow: 4 },
 ];
 
 export const PET_TONES: Array<{ id: PetToneId; label: string; color: string }> = [
@@ -216,10 +216,10 @@ export function writeKeeperCustomization(customization: KeeperCustomization) {
 }
 
 export function readPetCustomization(): PetCustomization {
-  if (typeof window === "undefined") return { speciesId: "fox", toneId: "cream", accessory: "moonberry-bow" };
-  const speciesId = normalizePetSpecies(window.localStorage.getItem("hearthaven:pet-species-id") ?? window.localStorage.getItem("hearthaven:pet-type"));
-  const toneId = normalizePetTone(window.localStorage.getItem("hearthaven:pet-tone-id") ?? window.localStorage.getItem("hearthaven:pet-tone"));
-  const accessory = normalizePetAccessory(window.localStorage.getItem("hearthaven:pet-accessory"));
+  if (typeof window === "undefined") return { speciesId: "kitten", toneId: "cream", accessory: "moonberry-bow" };
+  const speciesId = normalizePetSpecies(window.localStorage.getItem("hearthaven:pet-species-id") ?? window.localStorage.getItem("hearthaven:pet-type") ?? "kitten");
+  const toneId = normalizePetTone(window.localStorage.getItem("hearthaven:pet-tone-id") ?? window.localStorage.getItem("hearthaven:pet-tone") ?? "cream");
+  const accessory = normalizePetAccessory(window.localStorage.getItem("hearthaven:pet-accessory") ?? "moonberry-bow");
   return { speciesId, toneId, accessory };
 }
 
@@ -304,7 +304,7 @@ export function normalizeRemoteCustomization(player: RealtimeRoomPlayer): {
   const hairColorId = normalizeKeeperHairColor(player.hairColorId);
   const petSpeciesId: PetSpeciesId = PET_SPECIES.some((species) => species.id === player.petSpeciesId)
     ? (player.petSpeciesId as PetSpeciesId)
-    : "fox";
+    : "kitten";
   const petToneId: PetToneId = PET_TONES.some((tone) => tone.id === player.petToneId)
     ? (player.petToneId as PetToneId)
     : "cream";
@@ -353,7 +353,7 @@ function normalizeKeeperOutfit(value: string | null): KeeperOutfitId {
 }
 
 export function normalizePetSpecies(value: string | null | undefined): PetSpeciesId {
-  return PET_SPECIES.some((species) => species.id === value) ? (value as PetSpeciesId) : "fox";
+  return PET_SPECIES.some((species) => species.id === value) ? (value as PetSpeciesId) : "kitten";
 }
 
 export function normalizePetTone(value: string | null | undefined): PetToneId {

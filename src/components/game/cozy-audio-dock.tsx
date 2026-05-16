@@ -3,10 +3,12 @@
 import { Music2, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
-  getCozyVolume,
+  getCozyMusicVolume,
+  getCozySfxVolume,
   isCozyAudioEnabled,
   playCozyCue,
-  setCozyVolume,
+  setCozyMusicVolume,
+  setCozySfxVolume,
   startCozyAudio,
   stopCozyAudio,
 } from "@/lib/game/cozy-audio";
@@ -18,7 +20,8 @@ export function CozyAudioDock() {
   const [enabled, setEnabled] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [readyLabel, setReadyLabel] = useState("Sound off");
-  const [volume, setVolumeState] = useState(0.74);
+  const [musicVolume, setMusicVolumeState] = useState(0.72);
+  const [sfxVolume, setSfxVolumeState] = useState(0.82);
   const [open, setOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
@@ -29,7 +32,8 @@ export function CozyAudioDock() {
       const shouldResume = window.localStorage.getItem(AUDIO_STORAGE_KEY) === "true";
       setEnabled(isCozyAudioEnabled());
       setReadyLabel(shouldResume ? "Tap to resume" : "Sound off");
-      setVolumeState(getCozyVolume());
+      setMusicVolumeState(getCozyMusicVolume());
+      setSfxVolumeState(getCozySfxVolume());
       setMounted(true);
     });
 
@@ -84,9 +88,14 @@ export function CozyAudioDock() {
     setOpen(true);
   }
 
-  function handleVolume(value: number) {
-    setVolumeState(value);
-    setCozyVolume(value);
+  function handleMusicVolume(value: number) {
+    setMusicVolumeState(value);
+    setCozyMusicVolume(value);
+  }
+
+  function handleSfxVolume(value: number) {
+    setSfxVolumeState(value);
+    setCozySfxVolume(value);
   }
 
   return (
@@ -100,7 +109,7 @@ export function CozyAudioDock() {
         variant={enabled ? "warm" : "secondary"}
       >
         {enabled ? <Volume2 /> : <VolumeX />}
-        <span className="hidden sm:inline">{enabled ? "Music on" : mounted ? readyLabel : "Sound off"}</span>
+        <span className="hidden sm:inline">{enabled ? "Audio on" : mounted ? readyLabel : "Sound off"}</span>
         <Music2 className="hidden size-3.5 sm:block" />
       </Button>
       {open && enabled && (
@@ -109,20 +118,36 @@ export function CozyAudioDock() {
           className="absolute right-0 top-[calc(100%+8px)] z-50 w-56 rounded-lg border border-cream-300 bg-cream-50 p-3 shadow-[0_18px_40px_-18px_rgba(91,63,63,0.28)]"
           role="dialog"
         >
-          <p className="text-[11px] font-extrabold uppercase tracking-normal text-ink-500">Volume</p>
+          <p className="text-[11px] font-extrabold uppercase tracking-normal text-ink-500">Music</p>
           <input
-            aria-label="Master volume"
+            aria-label="Music volume"
             className="mt-2 w-full accent-blush-500"
             max={1}
             min={0}
-            onChange={(event) => handleVolume(parseFloat(event.target.value))}
+            onChange={(event) => handleMusicVolume(parseFloat(event.target.value))}
             step={0.02}
             type="range"
-            value={volume}
+            value={musicVolume}
           />
           <div className="mt-1 flex items-center justify-between text-[11px] font-bold text-ink-600">
             <span>0%</span>
-            <span>{Math.round(volume * 100)}%</span>
+            <span>{Math.round(musicVolume * 100)}%</span>
+            <span>100%</span>
+          </div>
+          <p className="mt-3 text-[11px] font-extrabold uppercase tracking-normal text-ink-500">SFX</p>
+          <input
+            aria-label="Sound effects volume"
+            className="mt-2 w-full accent-lavender-500"
+            max={1}
+            min={0}
+            onChange={(event) => handleSfxVolume(parseFloat(event.target.value))}
+            step={0.02}
+            type="range"
+            value={sfxVolume}
+          />
+          <div className="mt-1 flex items-center justify-between text-[11px] font-bold text-ink-600">
+            <span>0%</span>
+            <span>{Math.round(sfxVolume * 100)}%</span>
             <span>100%</span>
           </div>
           <button
@@ -130,7 +155,7 @@ export function CozyAudioDock() {
             onClick={toggleAudio}
             type="button"
           >
-            Turn music off
+            Turn audio off
           </button>
         </div>
       )}

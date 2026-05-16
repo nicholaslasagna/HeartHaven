@@ -60,7 +60,7 @@ function formatCooldown(ms: number): string {
 export function PetCarePanel({ compact = false }: { compact?: boolean }) {
   const { vitals, mood, neediest, cooldowns, care, ready } = usePetCare();
   const [petName, setPetName] = useState("Casper");
-  const [speciesId, setSpeciesId] = useState<ReturnType<typeof readPetCustomization>["speciesId"]>("fox");
+  const [speciesId, setSpeciesId] = useState<ReturnType<typeof readPetCustomization>["speciesId"]>("kitten");
   const [toneId, setToneId] = useState<ReturnType<typeof readPetCustomization>["toneId"]>("cream");
   const [floatHeart, setFloatHeart] = useState(0);
 

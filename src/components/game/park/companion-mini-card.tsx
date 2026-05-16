@@ -55,7 +55,7 @@ export function CompanionMiniCard() {
         <h3 className="hh-display text-2xl text-ink-900">{companion?.name ?? "Casper"}</h3>
       </div>
       <p className="text-xs font-bold text-ink-500">
-        {companion?.speciesId ? companion.speciesId.replace(/-/g, " ") : "Cloud fox"}
+        {companion?.speciesId ? companion.speciesId.replace(/-/g, " ") : "Casper cat"}
       </p>
       <div className="mt-3 grid gap-2">
         {stats.map((stat) => (

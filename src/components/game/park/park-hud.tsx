@@ -183,21 +183,23 @@ export function ParkHud({ playerName, companionName }: { playerName: string; com
         <LiveCard active={mode === "companion"} who="companion" hint={companionHint} name={companionName} />
       </div>
 
-      {/* Action bar centered along the bottom */}
-      <div className="pointer-events-auto absolute bottom-3 left-1/2 -translate-x-1/2">
-        <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-full border border-cream-300/80 bg-white/95 px-2 py-1.5 shadow-md">
+      {/* Action rail: kept off the canvas center/bottom so decor dragging has a clear runway. */}
+      <div className="pointer-events-auto absolute right-4 top-1/2 max-w-[168px] -translate-y-1/2">
+        <div className="grid gap-1.5 rounded-2xl border border-cream-300/80 bg-white/94 p-2 shadow-md backdrop-blur">
           {actions.map((action) => {
             const Icon = action.icon;
             return (
               <button
                 aria-label={`${action.label} (${action.hotkey})`}
-                className={`flex items-center gap-1.5 rounded-full border ${action.tint.ring} ${action.tint.bg} px-2.5 py-1.5 text-[11px] font-extrabold uppercase tracking-normal ${action.tint.text} shadow-sm transition hover:-translate-y-0.5`}
+                className={`flex items-center justify-between gap-1.5 rounded-xl border ${action.tint.ring} ${action.tint.bg} px-2.5 py-1.5 text-[11px] font-extrabold uppercase tracking-normal ${action.tint.text} shadow-sm transition hover:-translate-y-0.5`}
                 key={action.id}
                 onClick={action.fire}
                 type="button"
               >
-                <Icon className="size-3.5" />
-                <span>{action.label}</span>
+                <span className="flex items-center gap-1.5">
+                  <Icon className="size-3.5" />
+                  <span>{action.label}</span>
+                </span>
                 <span className="hidden rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-black tracking-normal text-ink-700 sm:inline">
                   {action.hotkey}
                 </span>

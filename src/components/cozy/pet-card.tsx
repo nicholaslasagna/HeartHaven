@@ -33,7 +33,7 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
   const [currentHappiness, setCurrentHappiness] = useState(happiness);
   const [currentHunger, setCurrentHunger] = useState(hunger);
   const [mood, setMood] = useState("Calm");
-  const [petType, setPetType] = useState<PetSpeciesId>("fox");
+  const [petType, setPetType] = useState<PetSpeciesId>("kitten");
   const [petTone, setPetTone] = useState<PetToneId>("cream");
   const [accessory, setAccessory] = useState<PetAccessoryId>("moonberry-bow");
   const selectedSpecies = getPetSpecies(petType);

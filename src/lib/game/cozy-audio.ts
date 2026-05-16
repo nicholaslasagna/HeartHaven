@@ -67,16 +67,20 @@ const COZY_MELODIES: number[][] = [
 ];
 
 const VOLUME_STORAGE_KEY = "hearthaven:audio-volume";
+const MUSIC_VOLUME_STORAGE_KEY = "hearthaven:music-volume";
+const SFX_VOLUME_STORAGE_KEY = "hearthaven:sfx-volume";
+const MUSIC_GAIN_SCALE = 0.16;
+const SFX_GAIN_SCALE = 0.38;
 
 function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
-function readStoredVolume() {
-  if (typeof window === "undefined") return 0.74;
-  const raw = window.localStorage.getItem(VOLUME_STORAGE_KEY);
+function readStoredVolume(key = VOLUME_STORAGE_KEY, fallback = 0.74) {
+  if (typeof window === "undefined") return fallback;
+  const raw = window.localStorage.getItem(key) ?? (key === VOLUME_STORAGE_KEY ? null : window.localStorage.getItem(VOLUME_STORAGE_KEY));
   const parsed = raw === null ? NaN : parseFloat(raw);
-  return Number.isFinite(parsed) ? clamp01(parsed) : 0.74;
+  return Number.isFinite(parsed) ? clamp01(parsed) : fallback;
 }
 
 function getState(): CozyAudioState | null {
@@ -104,15 +108,15 @@ function ensureAudioGraph() {
     state.context = new AudioContextClass();
 
     state.masterGain = state.context.createGain();
-    state.masterGain.gain.value = readStoredVolume();
+    state.masterGain.gain.value = 1;
     state.masterGain.connect(state.context.destination);
 
     state.musicGain = state.context.createGain();
-    state.musicGain.gain.value = 0.12;
+    state.musicGain.gain.value = readStoredVolume(MUSIC_VOLUME_STORAGE_KEY, 0.72) * MUSIC_GAIN_SCALE;
     state.musicGain.connect(state.masterGain);
 
     state.effectsGain = state.context.createGain();
-    state.effectsGain.gain.value = 0.34;
+    state.effectsGain.gain.value = readStoredVolume(SFX_VOLUME_STORAGE_KEY, 0.82) * SFX_GAIN_SCALE;
     state.effectsGain.connect(state.masterGain);
   }
 
@@ -150,6 +154,14 @@ export function getCozyVolume(): number {
   return readStoredVolume();
 }
 
+export function getCozyMusicVolume(): number {
+  return readStoredVolume(MUSIC_VOLUME_STORAGE_KEY, 0.72);
+}
+
+export function getCozySfxVolume(): number {
+  return readStoredVolume(SFX_VOLUME_STORAGE_KEY, 0.82);
+}
+
 /**
  * Adjust the master volume in real time. Persisted to localStorage so the
  * keeper's preferred level survives a reload. Set to 0 to mute without
@@ -160,9 +172,29 @@ export function setCozyVolume(next: number) {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(VOLUME_STORAGE_KEY, String(value));
   }
+  setCozyMusicVolume(value);
+  setCozySfxVolume(value);
+}
+
+export function setCozyMusicVolume(next: number) {
+  const value = clamp01(next);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(MUSIC_VOLUME_STORAGE_KEY, String(value));
+  }
   const state = getState();
-  if (state?.masterGain) {
-    state.masterGain.gain.value = value;
+  if (state?.musicGain) {
+    state.musicGain.gain.value = value * MUSIC_GAIN_SCALE;
+  }
+}
+
+export function setCozySfxVolume(next: number) {
+  const value = clamp01(next);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(SFX_VOLUME_STORAGE_KEY, String(value));
+  }
+  const state = getState();
+  if (state?.effectsGain) {
+    state.effectsGain.gain.value = value * SFX_GAIN_SCALE;
   }
 }
 

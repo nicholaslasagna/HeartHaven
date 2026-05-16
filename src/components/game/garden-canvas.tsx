@@ -39,6 +39,7 @@ import {
 import { recordActivity } from "@/lib/game/activity";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import { PET_VITALS_EVENT, getPetMood, getPetVitals, type PetMood } from "@/lib/game/pet-state";
+import { ZONE_DISCOVERIES, isItemFound, markDiscoveryFound, nearestHidden } from "@/lib/game/discoveries-store";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import { getGardenDecorArt } from "@/lib/game/item-art";
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
@@ -500,6 +501,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private parkActionHandler?: (event: Event) => void;
         private swapRequestHandler?: (event: Event) => void;
         private positionBroadcastTimer = 0;
+        private sniffCooldownUntil = 0;
 
         constructor() {
           super("HeartHavenGarden");
@@ -1142,49 +1144,45 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
          */
         private drawDiscoveryGlowPatches() {
           const zone = variant === "park" ? "park" : "garden";
-          // Lazy-imported to keep Phaser independent of the React store.
-          import("@/lib/game/discoveries-store").then(({ ZONE_DISCOVERIES, isItemFound }) => {
-            const items = ZONE_DISCOVERIES[zone];
-            items.forEach((item) => {
-              if (isItemFound(zone, item.id)) return;
-              const worldX = (item.x / 100) * GARDEN_WORLD_WIDTH;
-              const worldY = (item.y / 100) * GARDEN_WORLD_HEIGHT;
-              // Group every visual for this patch into one container so
-              // we can fade-and-destroy them together when sniff succeeds.
-              const patchGroup = this.add.container(0, 0).setDepth(2);
-              patchGroup.setName(`discovery-patch-${item.id}`);
-              const glow = this.add.circle(worldX, worldY, 36, 0xfae3a8, 0.32);
-              this.tweens.add({
-                targets: glow,
-                radius: 48,
-                alpha: 0.18,
-                duration: 1400,
-                yoyo: true,
-                repeat: -1,
-                ease: "Sine.inOut",
-              });
-              const halo = this.add.circle(worldX, worldY, 24, 0xfffcf3, 0.55);
-              this.tweens.add({
-                targets: halo,
-                scaleX: 1.18,
-                scaleY: 1.18,
-                duration: 1800,
-                yoyo: true,
-                repeat: -1,
-                ease: "Sine.inOut",
-              });
-              const tag = this.add
-                .text(worldX, worldY + 36, "🐾 Sniff me", {
-                  color: "#5B3F76",
-                  fontFamily: "Nunito, sans-serif",
-                  fontSize: "11px",
-                  fontStyle: "900",
-                  backgroundColor: "#EFE6F7",
-                  padding: { x: 8, y: 3 },
-                })
-                .setOrigin(0.5, 0);
-              patchGroup.add([glow, halo, tag]);
+          ZONE_DISCOVERIES[zone].forEach((item) => {
+            if (isItemFound(zone, item.id)) return;
+            const worldX = (item.x / 100) * GARDEN_WORLD_WIDTH;
+            const worldY = (item.y / 100) * GARDEN_WORLD_HEIGHT;
+            // Group every visual for this patch into one container so
+            // we can fade-and-destroy them together when sniff succeeds.
+            const patchGroup = this.add.container(0, 0).setDepth(2);
+            patchGroup.setName(`discovery-patch-${item.id}`);
+            const glow = this.add.circle(worldX, worldY, 36, 0xfae3a8, 0.32);
+            this.tweens.add({
+              targets: glow,
+              radius: 48,
+              alpha: 0.18,
+              duration: 1400,
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
             });
+            const halo = this.add.circle(worldX, worldY, 24, 0xfffcf3, 0.55);
+            this.tweens.add({
+              targets: halo,
+              scaleX: 1.18,
+              scaleY: 1.18,
+              duration: 1800,
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
+            });
+            const tag = this.add
+              .text(worldX, worldY + 36, "Sniff me", {
+                color: "#5B3F76",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "11px",
+                fontStyle: "900",
+                backgroundColor: "#EFE6F7",
+                padding: { x: 8, y: 3 },
+              })
+              .setOrigin(0.5, 0);
+            patchGroup.add([glow, halo, tag]);
           });
 
           // When a sniff reveals an item, fade out and destroy the matching
@@ -1440,26 +1438,30 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             setStatus("Swap to your companion first — sniffing is a pet ability.");
             return;
           }
-          // Lazy-import to keep Phaser bundles unaware of the React-side store.
-          import("@/lib/game/discoveries-store").then(({ nearestHidden, markDiscoveryFound }) => {
-            const zone = variant === "park" ? "park" : "garden";
-            const pos = this.companionScenePercent();
-            const target = nearestHidden(zone, pos, 12);
-            if (!target) {
-              setStatus("Your companion sniffs the air — nothing nearby this time.");
-              return;
-            }
-            const found = markDiscoveryFound(zone, target.id);
-            if (!found) {
-              setStatus("Already discovered around here.");
-              return;
-            }
-            playCozyCue("score");
-            setStatus(`Sniffed up ${target.name}! ${target.hint}`);
-            window.dispatchEvent(new CustomEvent("hearthaven:discovery-revealed", {
-              detail: { id: target.id, name: target.name, emoji: target.emoji },
-            }));
-          });
+          if (this.time.now < this.sniffCooldownUntil) return;
+          this.sniffCooldownUntil = this.time.now + 650;
+          const zone = variant === "park" ? "park" : "garden";
+          const pos = this.companionScenePercent();
+          const target = nearestHidden(zone, pos, 12);
+          this.petMood = "happy";
+          this.petMoodTimer = 0;
+          this.spawnSparkleBurst(this.pet.x, this.pet.y - 64, 0xc0a8dc, 10);
+          if (!target) {
+            playCozyCue("petPurr");
+            setStatus("Your companion sniffs the air — nothing nearby this time.");
+            return;
+          }
+          const found = markDiscoveryFound(zone, target.id);
+          if (!found) {
+            setStatus("Already discovered around here.");
+            return;
+          }
+          playCozyCue("score");
+          setStatus(`Sniffed up ${target.name}! ${target.hint}`);
+          this.showLocalBubble(`${target.name} found.`);
+          window.dispatchEvent(new CustomEvent("hearthaven:discovery-revealed", {
+            detail: { id: target.id, name: target.name, emoji: target.emoji },
+          }));
         }
 
         /**
