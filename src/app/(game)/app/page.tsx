@@ -81,12 +81,12 @@ export default function DashboardPage() {
           <h1 className="mt-4 font-display text-5xl leading-tight text-ink-900">Good to see you, Keeper.</h1>
           <p className="mt-3 max-w-2xl text-base font-semibold leading-7 text-ink-700">
             Your companion&apos;s vitals drifted a little while you were away — claim today&apos;s gift, run your daily
-            tasks, and tend to your friend. Your room, gardens, and games are all warmed up.
+            tasks, customize your keeper, and tend to your friend. Your room, gardens, and games are all warmed up.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <CozyButton asChild>
               <Link href="/app/pet">
-                Tend to companion <Heart />
+                Open studio <Heart />
               </Link>
             </CozyButton>
             <CozyButton asChild variant="warm">

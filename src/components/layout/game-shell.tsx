@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/app/area", label: "World", icon: Home },
-  { href: "/app/pet", label: "Companion", icon: PawPrint },
+  { href: "/app/pet", label: "Studio", icon: PawPrint },
   { href: "/app/partner-garden", label: "Partner", icon: HeartHandshake },
   { href: "/app/friends", label: "Friends", icon: Users },
   { href: "/app/games", label: "Games", icon: Gamepad2 },
@@ -45,8 +45,8 @@ export function GameShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <div className="mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:px-8 xl:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="xl:sticky xl:top-24 xl:h-[calc(100vh-7rem)]">
-          <nav className="flex gap-2 overflow-x-auto rounded-lg border border-cream-300/70 bg-white/60 p-2 shadow-sm xl:flex-col xl:overflow-visible">
+        <aside className="min-w-0 xl:sticky xl:top-24 xl:h-[calc(100vh-7rem)]">
+          <nav className="flex max-w-full gap-2 overflow-x-auto rounded-lg border border-cream-300/70 bg-white/60 p-2 shadow-sm xl:flex-col xl:overflow-visible">
             {navItems.map((item) => (
               <Link
                 href={item.href}

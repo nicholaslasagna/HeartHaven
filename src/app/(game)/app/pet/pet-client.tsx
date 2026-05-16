@@ -2,6 +2,7 @@
 
 import { Heart, Sparkles } from "lucide-react";
 import { CompanionRosterPanel } from "@/components/cozy/companion-roster-panel";
+import { KeeperCustomizerCard } from "@/components/cozy/keeper-customizer-card";
 import { PetCarePanel } from "@/components/cozy/pet-care-panel";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { AchievementsPanel } from "@/components/game/achievements-panel";
@@ -17,19 +18,23 @@ export function PetClient() {
     <div className="grid gap-5">
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-cream-300 bg-white/64 p-5 shadow-sm md:flex-row md:items-center">
         <div>
-          <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Companion</p>
-          <h1 className="mt-1 font-display text-4xl text-ink-900">Tend to your companion</h1>
+          <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Keeper studio</p>
+          <h1 className="mt-1 font-display text-4xl text-ink-900">Customize your keeper and companion</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            Feed, play, pamper, and rest your companion to keep their vitals up. Their needs drift down in real time —
-            even while you&apos;re away — so a little daily care goes a long way.
+            Design the human avatar everyone sees in the world, choose the companion who walks with you, then care for
+            them so the whole haven feels alive.
           </p>
         </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+        <KeeperCustomizerCard />
+        <CompanionRosterPanel />
       </section>
 
       <section className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
         <PetCarePanel />
         <div className="grid gap-5">
-          <CompanionRosterPanel />
           <CasperWishPanel compact />
           <CozyCard className="p-5">
             <div className="flex items-center gap-2">
