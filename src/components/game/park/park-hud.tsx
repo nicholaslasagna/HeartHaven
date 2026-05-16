@@ -159,7 +159,16 @@ export function ParkHud({ playerName, companionName }: { playerName: string; com
   const actions = mode === "companion" ? companionActions : keeperActions;
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-30">
+    <div
+      // The whole HUD is layered over the Phaser canvas. Phaser's
+      // `disableContextMenu` only kicks in for clicks landing directly on
+      // the canvas — right-clicks on HUD chips would otherwise pop the
+      // browser context menu and steal the swap. We swallow them here.
+      className="pointer-events-none absolute inset-0 z-30"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent("hearthaven:request-play-mode-swap"));
+      }}>
       {/* Up-next nudge in the top-right of the canvas */}
       <div className="absolute right-4 top-4 max-w-[240px] rounded-lg bg-white/92 px-3 py-2 text-xs font-bold text-ink-700 shadow-sm">
         <p className="hh-eyebrow text-garden-700 flex items-center gap-1">

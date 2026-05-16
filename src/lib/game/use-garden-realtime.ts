@@ -5,6 +5,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { moderateChatMessage, type ChatModerationResult, type GardenChatMessage } from "@/lib/game/chat-moderation";
+import { hardenIncomingChat, hardenRealtimePlayer } from "@/lib/game/realtime-hardening";
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
 import {
   KEEPER_CUSTOMIZATION_EVENT,
@@ -59,6 +60,13 @@ export function useGardenRealtime({
   const [localFriendCode, setLocalFriendCode] = useState(() =>
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
+  // Refresh local friend code state on regenerate so the invite URL +
+  // any local filters that depend on it update without a reload.
+  useEffect(() => {
+    const sync = () => setLocalFriendCode(getSocialState().selfCode);
+    window.addEventListener("hearthaven:friend-code-regenerated", sync);
+    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+  }, []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("demo");
   const [status, setStatus] = useState("Solo garden mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -74,9 +82,12 @@ export function useGardenRealtime({
     const url = new URL(invitePath, window.location.origin);
     if (invitePath === "/app/area" && inviteZone) url.searchParams.set("zone", inviteZone);
     url.searchParams.set("garden", normalizedGardenId);
-    url.searchParams.set("visit", getSocialState().selfCode);
+    // Use the stateful `localFriendCode` (not a fresh `getSocialState()`
+    // read) so the URL refreshes automatically when the keeper regenerates
+    // their friend code on the Account page.
+    url.searchParams.set("visit", localFriendCode || getSocialState().selfCode);
     return url.toString();
-  }, [invitePath, inviteZone, normalizedGardenId]);
+  }, [invitePath, inviteZone, normalizedGardenId, localFriendCode]);
 
   const gardenCode = useMemo(() => normalizedGardenId.toUpperCase(), [normalizedGardenId]);
 
@@ -147,8 +158,11 @@ export function useGardenRealtime({
 
         function syncPresence() {
           const state = channel.presenceState<RealtimeRoomPlayer>();
+          // Every payload is untrusted — sanitize before render.
           const remotePlayers = Object.values(state)
             .flat()
+            .map((player) => hardenRealtimePlayer(player))
+            .filter((player): player is RealtimeRoomPlayer => Boolean(player))
             .filter((player) => player.id !== localId)
             .filter((player) => !player.friendCode || !isBlocked(player.friendCode))
             .sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -169,8 +183,8 @@ export function useGardenRealtime({
           .on("presence", { event: "join" }, syncPresence)
           .on("presence", { event: "leave" }, syncPresence)
           .on("broadcast", { event: "garden_move" }, ({ payload }) => {
-            const player = payload as RealtimeRoomPlayer;
-            if (!player?.id || player.id === localId) return;
+            const player = hardenRealtimePlayer(payload);
+            if (!player || player.id === localId) return;
             if (player.friendCode && isBlocked(player.friendCode)) return;
             if (player.friendCode) {
               recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: gardenName });
@@ -178,8 +192,8 @@ export function useGardenRealtime({
             setPlayers((current) => upsertPlayer(current, player));
           })
           .on("broadcast", { event: "garden_chat" }, ({ payload }) => {
-            const message = payload as GardenChatMessage;
-            if (!message?.id || message.playerId === localId) return;
+            const message = hardenIncomingChat(payload);
+            if (!message || message.playerId === localId) return;
             if (message.friendCode && isBlocked(message.friendCode)) return;
             appendMessage(message);
             window.dispatchEvent(new CustomEvent("hearthaven:garden-chat-bubble", { detail: message }));
@@ -225,9 +239,13 @@ export function useGardenRealtime({
         };
         window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, rebroadcastCustomization);
         window.addEventListener(PET_CUSTOMIZATION_EVENT, rebroadcastCustomization);
+        // Username changes are presence-affecting too — without re-broadcasting
+        // here, other visitors keep seeing the keeper's old display name.
+        window.addEventListener("hearthaven:public-username-changed", rebroadcastCustomization);
         customizationCleanup = () => {
           window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, rebroadcastCustomization);
           window.removeEventListener(PET_CUSTOMIZATION_EVENT, rebroadcastCustomization);
+          window.removeEventListener("hearthaven:public-username-changed", rebroadcastCustomization);
         };
       } catch (error) {
         setConnectionState("error");
@@ -251,7 +269,15 @@ export function useGardenRealtime({
     };
   }, [appendMessage, gardenCode, gardenName, normalizedGardenId]);
 
-  const sendMove = useCallback((position: { x: number; y: number; facing?: FacingDirection }) => {
+  const sendMove = useCallback((position: {
+    x: number;
+    y: number;
+    facing?: FacingDirection;
+    petX?: number;
+    petY?: number;
+    petFacing?: FacingDirection;
+    controlMode?: "keeper" | "companion";
+  }) => {
     const localPlayer = localPlayerRef.current;
     if (!localPlayer) return;
 
@@ -260,6 +286,10 @@ export function useGardenRealtime({
       x: Math.round(position.x),
       y: Math.round(position.y),
       facing: position.facing ?? localPlayer.facing,
+      petX: position.petX === undefined ? localPlayer.petX : Math.round(position.petX),
+      petY: position.petY === undefined ? localPlayer.petY : Math.round(position.petY),
+      petFacing: position.petFacing ?? localPlayer.petFacing,
+      controlMode: position.controlMode ?? localPlayer.controlMode ?? "keeper",
       updatedAt: Date.now(),
     };
 

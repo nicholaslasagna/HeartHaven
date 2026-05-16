@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Copy, MessageCircle, Radio, Send, UserCheck, UsersRound } from "lucide-react";
+import { SOCIAL_EVENT, getSocialState } from "@/lib/game/social";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,19 @@ export function RoomSocialPanel({
 }: RoomSocialPanelProps) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState("Room chat is moderated and rate-limited.");
+  // Host's public friend code — what visitors should share to friend you.
+  // `roomCode` (the scene id like "MOONLIT-LOFT") is useless for that.
+  const [hostFriendCode, setHostFriendCode] = useState("HH-XXXXX-XXX");
+  useEffect(() => {
+    const sync = () => setHostFriendCode(getSocialState().selfCode || "HH-XXXXX-XXX");
+    sync();
+    window.addEventListener(SOCIAL_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(SOCIAL_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
   const decorators = new Set(approvedDecoratorCodes);
   const approvablePlayers = players.filter((player) => Boolean(player.friendCode));
 
@@ -53,6 +67,11 @@ export function RoomSocialPanel({
 
   function submitMessage() {
     const result = sendChat(input);
+    // Only fire the speech cue when the message ACTUALLY broadcasts.
+    // Moderated / rate-limited rejections should be silent.
+    if (result.ok) {
+      window.dispatchEvent(new CustomEvent("hearthaven:chat-spoke"));
+    }
     if (!result.ok) {
       setNotice(result.reason);
       return;
@@ -90,10 +109,31 @@ export function RoomSocialPanel({
         </Badge>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <CozyButton onClick={copyInvite} size="sm" variant="warm">
-          <Copy /> Invite
-        </CozyButton>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          aria-label={`Copy your friend code ${hostFriendCode}`}
+          className="inline-flex items-center gap-2 rounded-full border border-cream-300 bg-white/90 px-3 py-1 text-xs font-extrabold text-ink-800 shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(hostFriendCode);
+              setNotice(`Copied ${hostFriendCode}. Send it to a friend so they can add you on the Friends page.`);
+            } catch {
+              setNotice(hostFriendCode);
+            }
+          }}
+          type="button"
+        >
+          <Copy className="size-3.5" /> Share code
+          <span className="font-mono text-[11px] text-ink-600">{hostFriendCode}</span>
+        </button>
+        <button
+          aria-label="Copy visit URL"
+          className="inline-flex items-center gap-1 rounded-full border border-cream-300 bg-white/70 px-3 py-1 text-[11px] font-extrabold text-ink-600 transition hover:bg-cream-200"
+          onClick={copyInvite}
+          type="button"
+        >
+          Visit link
+        </button>
         <Badge variant="garden">{players.length} visiting</Badge>
       </div>
 

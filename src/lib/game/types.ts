@@ -83,6 +83,22 @@ export type RealtimeRoomPlayer = {
   facing: FacingDirection;
   x: number;
   y: number;
+  /**
+   * Optional companion world position. When the host swaps to the
+   * companion (right-click), they drive the pet directly — without these
+   * fields, other players would still see the pet auto-following a
+   * frozen keeper. Sending the pet's actual position keeps the multiplayer
+   * view in sync.
+   */
+  petX?: number;
+  petY?: number;
+  petFacing?: FacingDirection;
+  /**
+   * Which sprite the player is currently driving. `companion` highlights
+   * the pet aura and dims the keeper on remote screens — the same
+   * "playing as" affordance that the local HUD shows.
+   */
+  controlMode?: "keeper" | "companion";
   emote?: RoomEmote;
   updatedAt: number;
 };

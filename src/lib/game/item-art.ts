@@ -60,7 +60,12 @@ export function getCatalogItemArt(item: CatalogItem) {
 }
 
 export function getCatalogItemArtFit(item: CatalogItem): "cover" | "contain" {
-  return item.category === "room" ? "cover" : "contain";
+  // Every catalog tile now uses `object-contain` so the source PNG never
+  // gets up-scaled past its natural pixel size. The previous "cover" path
+  // for room items zoomed shop thumbnails enormously when their source
+  // was a small icon. Containing keeps every tile uniform.
+  void item;
+  return "contain";
 }
 
 export function getGardenDecorArt(kind: string) {

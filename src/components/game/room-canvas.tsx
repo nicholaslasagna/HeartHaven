@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
   getKeeperHairColor,
+  getKeeperPalette,
   getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
@@ -48,7 +49,15 @@ type RoomCanvasProps = {
   /** When false, the keeper is a VISITOR — they can walk + emote but can't
    *  drag, face, or re-layer furniture. Defaults to true (own room). */
   canEditRoom?: boolean;
-  onAvatarMove?: (position: { x: number; y: number; facing: FacingDirection }) => void;
+  onAvatarMove?: (position: {
+    x: number;
+    y: number;
+    facing: FacingDirection;
+    petX?: number;
+    petY?: number;
+    petFacing?: FacingDirection;
+    controlMode?: "keeper" | "companion";
+  }) => void;
   onRoomEmote?: (emote: RoomEmote) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
@@ -97,6 +106,10 @@ type RemoteAvatarObject = {
   petToneId: PetToneId;
   petAccessoryId: PetAccessoryId;
   facing: FacingDirection;
+  /** Pet facing (decoupled from keeper facing for companion mode). */
+  petFacing: FacingDirection;
+  /** Whose body the remote keeper is currently driving. */
+  controlMode: "keeper" | "companion";
   movingUntil: number;
 };
 
@@ -212,6 +225,7 @@ export function RoomCanvas({
         private moveBroadcastTimer = 0;
         private footstepTimer = 0;
         private lastSentPosition = { x: 390, y: 374 };
+        private lastSentPetPosition: { x: number; y: number } | null = null;
         /**
          * Which character WASD is currently driving. Right-click on the room
          * canvas toggles between keeper and companion (the pet). Hold right-
@@ -223,6 +237,8 @@ export function RoomCanvas({
         private rightButtonDownAt = 0;
         private rightHoldFired = false;
         private playModeBadge?: Phaser.GameObjects.Container;
+        /** Idle pet breathing tween. Paused while controlling the companion. */
+        private petBobTween?: Phaser.Tweens.Tween;
 
         constructor() {
           super("HeartHavenRoom");
@@ -725,8 +741,11 @@ export function RoomCanvas({
           this.pet.setSize(70, 70);
 
           // A very gentle breathing motion. 0.6px over 3.2s reads as
-          // "alive" without making the pet feel restless or jittery.
-          this.tweens.add({
+          // "alive" without making the pet feel restless or jittery. Held
+          // in a field so we can pause it when the player swaps to control
+          // the companion — otherwise the yoyo lerps Y back every frame
+          // and vertical movement looks broken.
+          this.petBobTween = this.tweens.add({
             targets: this.pet,
             y: this.pet.y - 0.6,
             duration: 3200,
@@ -783,9 +802,14 @@ export function RoomCanvas({
             this.petMood = "idle";
             setStatus("Playing as your companion. Right-click to swap back.");
             playCozyCue("petChirp");
+            // Pause the breathing yoyo so vertical input isn't immediately
+            // overwritten — this is the bug that made the companion feel
+            // like it could only move sideways.
+            this.petBobTween?.pause();
           } else {
             setStatus("Back in your keeper. Right-click to swap to your companion.");
             playCozyCue("score");
+            this.petBobTween?.resume();
           }
           this.updatePlayModeBadge();
         }
@@ -904,6 +928,10 @@ export function RoomCanvas({
             if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
             if (this.companionMoodHandler) window.removeEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
             if (this.textInputFocusHandler) window.removeEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
+            // Stop the pet breathing tween so the scene can be garbage
+            // collected without a dangling tween targeting destroyed sprites.
+            this.petBobTween?.stop();
+            this.petBobTween = undefined;
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
@@ -920,8 +948,29 @@ export function RoomCanvas({
         private applyKeeperLayerTints() {
           const skinTone = getKeeperSkinTone(this.keeperCustomization.skinId);
           const hairColor = getKeeperHairColor(this.keeperCustomization.hairColorId);
-          this.avatarSkinSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color);
-          this.avatarHairSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color);
+          const palette = getKeeperPalette(this.keeperCustomization.paletteId);
+          // Skin tint applies to the skin mask AND, multiplied softly, to the
+          // outfit layer so the face/hand pixels that bleed onto the outfit
+          // frame don't show the wrong base hue. The previous code only
+          // tinted the skin-mask sprite, which left the face on the outfit
+          // frame untouched — that was the "skin color not changing all over"
+          // bug.
+          const skinColor = PhaserModule.Display.Color.HexStringToColor(skinTone.color).color;
+          this.avatarSkinSprite?.setTint(skinColor).setAlpha(1);
+          this.avatarSprite?.setAlpha(1);
+          // Palette tint on the outfit base — gives the "signature palette"
+          // selection a visible effect even when the outfit sheet doesn't
+          // ship a per-palette frame variant.
+          const paletteColor = PhaserModule.Display.Color.HexStringToColor(palette.color).color;
+          this.avatarSprite?.setTint(paletteColor);
+          // Force the hair layer fully opaque + on top — the "transparent /
+          // glitched hair" reports were the hair sprite being drawn behind
+          // the outfit (depth same as outfit, draw order undefined) and at
+          // varying alpha because of a tween that targeted siblings.
+          this.avatarHairSprite
+            ?.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color)
+            .setAlpha(1)
+            .setDepth((this.avatarSprite?.depth ?? 0) + 1);
         }
 
         private setKeeperLayerFlip(facing: FacingDirection) {
@@ -1179,8 +1228,17 @@ export function RoomCanvas({
         private applyRemoteKeeperTints(remote: RemoteAvatarObject) {
           const skinTone = getKeeperSkinTone(remote.skinId);
           const hairColor = getKeeperHairColor(remote.hairColorId);
-          remote.skinSprite.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color);
-          remote.hairSprite.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color);
+          const palette = getKeeperPalette(remote.paletteId);
+          remote.skinSprite.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color).setAlpha(1);
+          // Apply the signature palette tint to remote outfits too — so
+          // visitors see each other's chosen palette, not just the local
+          // keeper's. Without this, every remote keeper appeared identical
+          // regardless of their palette pick.
+          remote.sprite.setTint(PhaserModule.Display.Color.HexStringToColor(palette.color).color).setAlpha(1);
+          remote.hairSprite
+            .setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color)
+            .setAlpha(1)
+            .setDepth(remote.sprite.depth + 1);
         }
 
         private showChatBubble(message: GardenChatMessage) {
@@ -1275,8 +1333,14 @@ export function RoomCanvas({
               if (Math.abs(dx) > 2) facingLeft = dx < 0;
               existing.facing = facingLeft ? "left" : "right";
               existing.movingUntil = distance > 2 ? this.time.now + 280 : this.time.now;
-              const petX = player.x + (facingLeft ? 54 : -54);
-              const petY = player.y + 14;
+              // Honor broadcast pet position when present — companion-mode
+              // movement only updates `petX`/`petY`, not the keeper's
+              // coords. Fall back to the auto-trailing offset for clients
+              // that don't broadcast pet position.
+              const petX = typeof player.petX === "number" ? player.petX : player.x + (facingLeft ? 54 : -54);
+              const petY = typeof player.petY === "number" ? player.petY : player.y + 14;
+              existing.petFacing = (player.petFacing ?? player.facing) as FacingDirection;
+              existing.controlMode = player.controlMode ?? "keeper";
               const changed =
                 existing.bodyId !== custom.bodyId ||
                 existing.skinId !== custom.skinId ||
@@ -1324,8 +1388,8 @@ export function RoomCanvas({
               return;
             }
 
-            const petX = player.x + (facingLeft ? 54 : -54);
-            const petY = player.y + 14;
+            const petX = typeof player.petX === "number" ? player.petX : player.x + (facingLeft ? 54 : -54);
+            const petY = typeof player.petY === "number" ? player.petY : player.y + 14;
 
             // --- new visiting keeper ---
             const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
@@ -1395,6 +1459,8 @@ export function RoomCanvas({
               petToneId: custom.petToneId,
               petAccessoryId: custom.petAccessoryId,
               facing: facingLeft ? "left" : "right",
+              petFacing: (player.petFacing ?? player.facing) as FacingDirection,
+              controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
             });
           });
@@ -1573,7 +1639,14 @@ export function RoomCanvas({
           if (hasMoved && this.moveBroadcastTimer > 110) {
             this.moveBroadcastTimer = 0;
             this.lastSentPosition = { x: this.avatar.x, y: this.avatar.y };
-            onAvatarMove?.({ ...this.lastSentPosition, facing: this.avatarFacing });
+            onAvatarMove?.({
+              ...this.lastSentPosition,
+              facing: this.avatarFacing,
+              petX: this.pet?.x,
+              petY: this.pet?.y,
+              petFacing: this.petFacing,
+              controlMode: this.playMode,
+            });
           }
         }
 
@@ -1625,7 +1698,31 @@ export function RoomCanvas({
             this.pet.setDepth(this.pet.y);
             this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
             this.petShadow.setDepth(this.pet.y - 1);
-            this.applyPetLocomotion(petMoving, "walk1");
+            // Standing still shows the idle frame (not a frozen walk1 — that
+            // looked like the companion was permanently mid-step). When the
+            // companion actually moves, applyPetLocomotion swaps to the
+            // alternating walk1/walk2 cycle automatically.
+            this.applyPetLocomotion(petMoving, "idle");
+
+            // Broadcast pet movement so remote viewers see the companion
+            // actually move while we're driving it (the keeper stays put,
+            // so `updateAvatar` never fires its own broadcast in this mode).
+            this.moveBroadcastTimer += delta;
+            const lastPet = this.lastSentPetPosition;
+            const petHasMoved = !lastPet || PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, lastPet.x, lastPet.y) > 3;
+            if (petHasMoved && this.moveBroadcastTimer > 110) {
+              this.moveBroadcastTimer = 0;
+              this.lastSentPetPosition = { x: this.pet.x, y: this.pet.y };
+              onAvatarMove?.({
+                x: this.avatar.x,
+                y: this.avatar.y,
+                facing: this.avatarFacing,
+                petX: this.pet.x,
+                petY: this.pet.y,
+                petFacing: this.petFacing,
+                controlMode: "companion",
+              });
+            }
             return;
           }
 
@@ -1942,7 +2039,7 @@ export function RoomCanvas({
   }, [activeEvent, canEditRoom, onAvatarMove, onPlacementsChange, onRoomEmote, placements, roomName, roomTheme]);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">
+    <section className="block w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cream-300/70 bg-white/68 px-4 py-3">
         <div>
           <p className="text-xs font-extrabold uppercase tracking-normal text-blush-500">Playable 2.5D room</p>
@@ -1962,14 +2059,14 @@ export function RoomCanvas({
       <div
         ref={mountRef}
         aria-label="Interactive 2.5D room canvas with player movement, Casper, and draggable furniture"
-        className="mx-auto block overflow-hidden bg-cream-100"
+        className="mx-auto block w-full min-w-0 max-w-full overflow-hidden bg-cream-100"
         role="application"
         style={{
-          // Bounded box: never wider than the room's native 960px, never
-          // taller than the viewport minus page chrome. Phaser's Scale.FIT
-          // fits the game inside this box, so the avatar/pet/furniture stay
-          // proportional instead of ballooning on wide screens.
-          width: "min(100%, calc((100dvh - 330px) * 1.6), 960px)",
+          // Take 100% of whatever column we land in, capped at the native
+          // 960px the scene was painted for. `min-w-0` + `max-width: 100%`
+          // up the chain protects us from the canvas pushing the page wider
+          // than the viewport. Phaser's Scale.FIT handles the rest.
+          maxWidth: 960,
           aspectRatio: "960 / 600",
         }}
         tabIndex={0}

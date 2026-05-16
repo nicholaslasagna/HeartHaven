@@ -378,3 +378,46 @@ select {
 @keyframes hh-drift    { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(12px); } }
 @keyframes hh-pulse    { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 @keyframes hh-twinkle  { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
+
+/* ============================================================
+ * Dark-theme overrides for the hh-* design language.
+ * The light tokens have white-tinted cards + tan text that
+ * read fine on cream but go washed-out on the dark palette.
+ * Re-tone surfaces + headlines so dark mode stays readable.
+ * ============================================================ */
+:root[data-hearthaven-theme="dark"] .hh-card {
+  background: rgba(46, 35, 52, 0.92);
+  border: 1px solid rgba(246, 207, 210, 0.18);
+  color: #fff7ed;
+}
+
+:root[data-hearthaven-theme="dark"] .hh-chip {
+  background: rgba(58, 44, 66, 0.85);
+  color: #f1ded6;
+  border-color: rgba(246, 207, 210, 0.22);
+}
+
+:root[data-hearthaven-theme="dark"] .hh-btn-soft {
+  background: #3b2e49;
+  color: #fff7ed;
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.5), inset 0 -2px 0 rgba(255, 255, 255, 0.04);
+}
+
+:root[data-hearthaven-theme="dark"] .hh-eyebrow {
+  color: #d6c4bc;
+}
+
+/* Background gradients are too bright over dark — dim them down. */
+:root[data-hearthaven-theme="dark"] .hh-bg-paper,
+:root[data-hearthaven-theme="dark"] .hh-bg-meadow,
+:root[data-hearthaven-theme="dark"] .hh-bg-garden {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(143, 96, 134, 0.25), transparent 45%),
+    radial-gradient(circle at 80% 80%, rgba(98, 132, 165, 0.22), transparent 45%),
+    linear-gradient(180deg, #271f2d 0%, #2c2335 100%);
+}
+
+:root[data-hearthaven-theme="dark"] .hh-grain::after {
+  opacity: 0.18;
+  mix-blend-mode: screen;
+}

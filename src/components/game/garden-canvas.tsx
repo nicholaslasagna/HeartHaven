@@ -58,7 +58,15 @@ type GardenCanvasProps = {
   variant: "personal" | "partner" | "park";
   plots: GardenPlotState[];
   canEditGarden?: boolean;
-  onAvatarMove?: (position: { x: number; y: number; facing: FacingDirection }) => void;
+  onAvatarMove?: (position: {
+    x: number;
+    y: number;
+    facing: FacingDirection;
+    petX?: number;
+    petY?: number;
+    petFacing?: FacingDirection;
+    controlMode?: "keeper" | "companion";
+  }) => void;
 };
 
 type GardenDecorKind =
@@ -108,6 +116,13 @@ type RemoteGardenAvatarObject = {
   petToneId: PetToneId;
   petAccessoryId: PetAccessoryId;
   facing: FacingDirection;
+  /** Remote pet facing — independent of the keeper facing now that the
+   *  pet can be driven separately in companion mode. */
+  petFacing: FacingDirection;
+  /** Whether the remote keeper is currently driving themselves or their
+   *  pet. Used to dim the inactive sprite so the viewer can tell at a
+   *  glance who's actually being controlled. */
+  controlMode: "keeper" | "companion";
   movingUntil: number;
 };
 
@@ -189,6 +204,85 @@ const parkWalkCircles: WalkCircle[] = [
   { x: 2580, y: 618, radius: 138 },
   { x: 2860, y: 590, radius: 138 },
   { x: 3140, y: 470, radius: 132 },
+];
+
+/**
+ * Expanded walkable footprints used only for movement clamping — the painted
+ * park has landmarks (swings, sakura, claw machine, conservatory, rose arch)
+ * spread across the whole world, but the visible cream-coloured corridor
+ * above only covers the lower band. These extra circles give the keeper
+ * AND the companion free range across the whole painted scene without
+ * changing the look of the path overlay.
+ *
+ * Coordinates roughly match the percent positions used by `screens-v6.jsx`
+ * in the design package, converted to the 3400×1133 world space.
+ */
+const parkWalkableExtensions: WalkCircle[] = [
+  // Top band — near swings, rose arch, claw machine, sakura
+  { x: 612, y: 220, radius: 240 },
+  { x: 1530, y: 220, radius: 240 },
+  { x: 1904, y: 280, radius: 220 },
+  { x: 2788, y: 220, radius: 240 },
+  // Upper-middle band — picnic, stage, conservatory
+  { x: 220, y: 380, radius: 240 },
+  { x: 1020, y: 380, radius: 260 },
+  { x: 2312, y: 380, radius: 240 },
+  // Wider open lawns connecting plots laterally
+  { x: 800, y: 460, radius: 240 },
+  { x: 1340, y: 460, radius: 240 },
+  { x: 1860, y: 450, radius: 240 },
+  { x: 2520, y: 460, radius: 240 },
+  // Lower band — gazebo, flower cart, bowling, the bottom strip
+  { x: 380, y: 720, radius: 220 },
+  { x: 720, y: 720, radius: 220 },
+  { x: 2080, y: 740, radius: 220 },
+  { x: 2780, y: 720, radius: 220 },
+  // Discovery glow-patch positions — derived from ZONE_DISCOVERIES.park
+  // coordinates (0–100 % of the painted scene, projected onto the 3400×1133
+  // world). Each has a generous walkable bubble so the companion can step
+  // onto the "Sniff me" marker directly even when it sits off the main
+  // road overlay.
+  { x: 816, y: 884, radius: 200 },   // acorn pile near swings
+  { x: 1768, y: 929, radius: 200 },  // iridescent feather near cave
+  { x: 2720, y: 951, radius: 200 },  // wild strawberries near picnic path
+  { x: 2992, y: 249, radius: 220 },  // firefly jar near lantern arch
+];
+
+/**
+ * Vertical connectors between the bands so the keeper can walk straight up
+ * from a lower path to an upper one — the painted park shows ribbons of
+ * road between every plot column.
+ */
+const parkWalkableConnectors: WalkSegment[] = [
+  { x1: 540, y1: 220, x2: 540, y2: 720, radius: 100 },
+  { x1: 1020, y1: 220, x2: 1020, y2: 700, radius: 100 },
+  { x1: 1560, y1: 220, x2: 1560, y2: 700, radius: 100 },
+  { x1: 1900, y1: 220, x2: 1900, y2: 720, radius: 100 },
+  { x1: 2312, y1: 220, x2: 2312, y2: 700, radius: 100 },
+  { x1: 2788, y1: 220, x2: 2788, y2: 700, radius: 100 },
+];
+
+/**
+ * Garden equivalent — the personal and partner gardens are a single zig-zag
+ * corridor along the bottom. Add a wider band on either side so the keeper
+ * can step off-path to reach planters and decor.
+ */
+const sharedWalkableExtensions: WalkCircle[] = [
+  { x: 400, y: 380, radius: 200 },
+  { x: 900, y: 360, radius: 220 },
+  { x: 1400, y: 380, radius: 200 },
+  { x: 1900, y: 400, radius: 220 },
+  { x: 2400, y: 380, radius: 220 },
+  { x: 2900, y: 400, radius: 200 },
+  { x: 700, y: 800, radius: 200 },
+  { x: 1500, y: 800, radius: 220 },
+  { x: 2300, y: 800, radius: 200 },
+  { x: 3000, y: 800, radius: 200 },
+  // Garden discovery patches — derived from ZONE_DISCOVERIES.garden coords
+  // so the "Sniff me" markers always sit inside a walkable bubble.
+  { x: 1088, y: 793, radius: 200 },  // moonberry clutch
+  { x: 2176, y: 861, radius: 200 },  // pressed flower
+  { x: 2584, y: 680, radius: 200 },  // tin soldier
 ];
 
 /**
@@ -359,12 +453,19 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private petMood: GardenPetMood = "idle";
         private petMoodTimer = 0;
         private petFacing: FacingDirection = "right";
+        /**
+         * Idle breathing tween on the pet. We pause it while the player is
+         * driving the companion — otherwise the yoyo motion fights every
+         * vertical keypress and the companion only seems to move on X.
+         */
+        private petBobTween?: Phaser.Tweens.Tween;
         private companionMood: PetMood = getPetMood(getPetVitals());
         private companionMoodHandler?: (event: Event) => void;
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
         private wasd?: Record<"up" | "left" | "down" | "right" | "rotate", Phaser.Input.Keyboard.Key>;
         private target?: Phaser.Math.Vector2;
         private moveBroadcastTimer = 0;
+        private lastSentPetPosition: { x: number; y: number } | null = null;
         private footstepTimer = 0;
         private lastSentPosition = getAvatarStartPosition(variant);
         private selectedDecor?: GardenDecorPlacement;
@@ -543,6 +644,26 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private drawRoadNetwork() {
           const segments = variant === "park" ? parkWalkSegments : sharedWalkSegments;
           const circles = variant === "park" ? parkWalkCircles : sharedWalkCircles;
+          // Include the broader walkable extensions in a faint wash so the
+          // painted scene visually advertises every area the keeper /
+          // companion can actually step into. Without this, players see a
+          // narrow cream ribbon but can walk into "grass" off it — the
+          // mismatch reads as buggy. The extensions are painted at a much
+          // lower opacity than the main path so they read as "open lawn"
+          // rather than "road".
+          const extensionCircles = variant === "park" ? parkWalkableExtensions : sharedWalkableExtensions;
+          const extensionSegments = variant === "park" ? parkWalkableConnectors : [];
+
+          const lawn = this.add.graphics().setDepth(-4);
+          lawn.fillStyle(0xfae3a8, 0.07);
+          extensionCircles.forEach((circle) => {
+            lawn.fillCircle(circle.x, circle.y, circle.radius);
+          });
+          lawn.fillStyle(0xfae3a8, 0.06);
+          extensionSegments.forEach((segment) => {
+            lawn.lineStyle(segment.radius * 2, 0xfae3a8, 0.05);
+            lawn.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+          });
 
           // 1. Visible walkable corridor — a soft cream "road" laid down on top
           //    of the background art so the painted ground and the corridor the
@@ -1028,7 +1149,11 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               if (isItemFound(zone, item.id)) return;
               const worldX = (item.x / 100) * GARDEN_WORLD_WIDTH;
               const worldY = (item.y / 100) * GARDEN_WORLD_HEIGHT;
-              const glow = this.add.circle(worldX, worldY, 36, 0xfae3a8, 0.32).setDepth(2);
+              // Group every visual for this patch into one container so
+              // we can fade-and-destroy them together when sniff succeeds.
+              const patchGroup = this.add.container(0, 0).setDepth(2);
+              patchGroup.setName(`discovery-patch-${item.id}`);
+              const glow = this.add.circle(worldX, worldY, 36, 0xfae3a8, 0.32);
               this.tweens.add({
                 targets: glow,
                 radius: 48,
@@ -1038,7 +1163,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
                 repeat: -1,
                 ease: "Sine.inOut",
               });
-              const halo = this.add.circle(worldX, worldY, 24, 0xfffcf3, 0.55).setDepth(3);
+              const halo = this.add.circle(worldX, worldY, 24, 0xfffcf3, 0.55);
               this.tweens.add({
                 targets: halo,
                 scaleX: 1.18,
@@ -1057,11 +1182,30 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
                   backgroundColor: "#EFE6F7",
                   padding: { x: 8, y: 3 },
                 })
-                .setOrigin(0.5, 0)
-                .setDepth(4);
-              tag.setName(`discovery-tag-${item.id}`);
+                .setOrigin(0.5, 0);
+              patchGroup.add([glow, halo, tag]);
             });
           });
+
+          // When a sniff reveals an item, fade out and destroy the matching
+          // patch. Previously the glow + "Sniff me" tag lingered forever,
+          // even after the discovery was logged.
+          const reveal = (event: Event) => {
+            const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+            if (!id) return;
+            const patch = this.children.getByName(`discovery-patch-${id}`) as Phaser.GameObjects.Container | null;
+            if (!patch) return;
+            this.tweens.add({
+              targets: patch,
+              alpha: 0,
+              duration: 700,
+              ease: "Sine.out",
+              onComplete: () => patch.destroy(true),
+            });
+          };
+          window.addEventListener("hearthaven:discovery-revealed", reveal);
+          this.events.once("shutdown", () => window.removeEventListener("hearthaven:discovery-revealed", reveal));
+          this.events.once("destroy", () => window.removeEventListener("hearthaven:discovery-revealed", reveal));
         }
 
         private drawFireflies() {
@@ -1143,7 +1287,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.pet.setSize(70, 70);
           // A very gentle breathing motion. 0.6px over 3.2s reads as
           // "alive" without making the pet feel restless or jittery.
-          this.tweens.add({
+          this.petBobTween = this.tweens.add({
             targets: this.pet,
             y: this.pet.y - 0.6,
             duration: 3200,
@@ -1384,10 +1528,15 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             this.cameras.main.startFollow(this.pet, true, 0.08, 0.08);
             setStatus("Playing as your companion. They're faster and can sniff for hidden items. Right-click to swap back.");
             playCozyCue("petChirp");
+            // Suspend the breathing tween so vertical keypresses aren't
+            // immediately yoyo'd back. This was the "companion can only
+            // move on X" bug.
+            this.petBobTween?.pause();
           } else {
             this.cameras.main.startFollow(this.avatar, true, 0.08, 0.08);
             setStatus("Back in your keeper. Right-click to swap to your companion.");
             playCozyCue("score");
+            this.petBobTween?.resume();
           }
           this.updatePlayModeBadge();
           // Mirror the canvas-side play mode out to React so the HUD, the
@@ -1528,6 +1677,10 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             if (this.textInputFocusHandler) window.removeEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
             if (this.swapRequestHandler) window.removeEventListener("hearthaven:request-play-mode-swap", this.swapRequestHandler);
             if (this.parkActionHandler) window.removeEventListener("hearthaven:park-action", this.parkActionHandler);
+            // Stop the breathing tween so the GC can collect the pet
+            // container after the scene tears down.
+            this.petBobTween?.stop();
+            this.petBobTween = undefined;
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
@@ -1960,7 +2113,18 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           if (hasMoved && this.moveBroadcastTimer > 120) {
             this.moveBroadcastTimer = 0;
             this.lastSentPosition = { x: this.avatar.x, y: this.avatar.y };
-            onAvatarMove?.({ ...this.lastSentPosition, facing: this.avatarFacing });
+            // Include the pet's world position + the control mode so remote
+            // viewers can render BOTH the keeper and the companion in their
+            // actual locations — without this, players controlling their
+            // companion would appear frozen to anyone else in the scene.
+            onAvatarMove?.({
+              ...this.lastSentPosition,
+              facing: this.avatarFacing,
+              petX: this.pet?.x,
+              petY: this.pet?.y,
+              petFacing: this.petFacing,
+              controlMode: this.playMode,
+            });
           }
         }
 
@@ -2009,6 +2173,29 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.applyPetLocomotion(petMoving, "idle");
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
           this.petShadow.setDepth(this.pet.y - 1);
+
+          // Broadcast the pet's new position to multiplayer. The keeper
+          // stays put in companion mode, so `updateAvatar`'s broadcast
+          // never fires — without this branch, remote keepers see our pet
+          // glued to the spot where we swapped. Throttled at the same
+          // 120 ms cadence as the keeper broadcast to keep the channel
+          // chatter constant.
+          this.moveBroadcastTimer += delta;
+          const lastPet = this.lastSentPetPosition;
+          const petHasMoved = !lastPet || PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, lastPet.x, lastPet.y) > 3;
+          if (petHasMoved && this.moveBroadcastTimer > 120) {
+            this.moveBroadcastTimer = 0;
+            this.lastSentPetPosition = { x: this.pet.x, y: this.pet.y };
+            onAvatarMove?.({
+              x: this.avatar.x,
+              y: this.avatar.y,
+              facing: this.avatarFacing,
+              petX: this.pet.x,
+              petY: this.pet.y,
+              petFacing: this.petFacing,
+              controlMode: "companion",
+            });
+          }
         }
 
         private companionFollowTarget() {
@@ -2105,16 +2292,31 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private constrainToWorldBounds(x: number, y: number) {
+          // The min-y was 250, which blocked the keeper from ever reaching
+          // the top band of the painted park (swings, claw, sakura, rose
+          // arch — all at y ≈ 130–280). 110 lets them walk all the way up
+          // while still keeping the camera off the sky-decor border.
           return {
             x: PhaserModule.Math.Clamp(x, 120, GARDEN_WORLD_WIDTH - 120),
-            y: PhaserModule.Math.Clamp(y, 250, GARDEN_WORLD_HEIGHT - 120),
+            y: PhaserModule.Math.Clamp(y, 110, GARDEN_WORLD_HEIGHT - 120),
           };
         }
 
         private constrainAvatarToWalkable(x: number, y: number) {
           const bounded = this.constrainToWorldBounds(x, y);
-          const segments = variant === "park" ? parkWalkSegments : sharedWalkSegments;
-          const circles = variant === "park" ? parkWalkCircles : sharedWalkCircles;
+          // Movement clamping uses the *expanded* walkable set so the keeper
+          // and companion get free range across the painted scene. The
+          // original `parkWalkSegments` / `parkWalkCircles` arrays stay in
+          // use for the cream-coloured *visual* path overlay only — they
+          // don't gate where you can step anymore.
+          const segments =
+            variant === "park"
+              ? [...parkWalkSegments, ...parkWalkableConnectors]
+              : sharedWalkSegments;
+          const circles =
+            variant === "park"
+              ? [...parkWalkCircles, ...parkWalkableExtensions]
+              : [...sharedWalkCircles, ...sharedWalkableExtensions];
           let best = { ...bounded };
           let bestDistance = Number.POSITIVE_INFINITY;
 
@@ -2193,8 +2395,15 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               if (Math.abs(dx) > 2) facingLeft = dx < 0;
               existing.facing = facingLeft ? "left" : "right";
               existing.movingUntil = distance > 2 ? this.time.now + 280 : this.time.now;
-              const petX = player.x + (facingLeft ? 58 : -58);
-              const petY = player.y + 18;
+              // Prefer the broadcast pet position when the sender includes
+              // it — that's the path that fixes "multiplayer companion
+              // doesn't appear to move". Fall back to the auto-trailing
+              // offset for legacy clients that don't include `petX`/`petY`.
+              const petFacingLeft = (player.petFacing ?? player.facing) === "left";
+              const petX = typeof player.petX === "number" ? player.petX : player.x + (facingLeft ? 58 : -58);
+              const petY = typeof player.petY === "number" ? player.petY : player.y + 18;
+              existing.petFacing = petFacingLeft ? "left" : "right";
+              existing.controlMode = player.controlMode ?? "keeper";
               const changed =
                 existing.bodyId !== custom.bodyId ||
                 existing.skinId !== custom.skinId ||
@@ -2242,8 +2451,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               return;
             }
 
-            const petX = player.x + (facingLeft ? 58 : -58);
-            const petY = player.y + 18;
+            const petX = typeof player.petX === "number" ? player.petX : player.x + (facingLeft ? 58 : -58);
+            const petY = typeof player.petY === "number" ? player.petY : player.y + 18;
 
             // --- new visiting keeper ---
             const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
@@ -2313,6 +2522,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               petToneId: custom.petToneId,
               petAccessoryId: custom.petAccessoryId,
               facing: facingLeft ? "left" : "right",
+              petFacing: (player.petFacing ?? player.facing) as FacingDirection,
+              controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
             });
           });
@@ -3021,12 +3232,14 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               ? "Scrollable interactive park canvas with avatar movement, chat bubbles, roads, picnic areas, a fashion stage, and clickable game kiosks"
               : "Scrollable interactive garden canvas with avatar movement, animated plots, water effects, lanterns, and butterflies"
         }
-        className="mx-auto block overflow-hidden bg-garden-100"
+        className="mx-auto block w-full min-w-0 max-w-full overflow-hidden bg-garden-100"
         role="application"
         style={{
-          // Viewport-bounded box; Phaser Scale.FIT fits the 960x620 game
-          // (camera scrolls the larger world) inside it.
-          width: "min(100%, calc((100dvh - 320px) * 1.5484), 960px)",
+          // Take 100% of the column we're in, capped at the native 960px so
+          // we never balloon past the painted assets' resolution. `min-w-0`
+          // up the chain protects against the canvas pushing the page wider
+          // than the viewport.
+          maxWidth: 960,
           aspectRatio: "960 / 620",
         }}
         tabIndex={0}

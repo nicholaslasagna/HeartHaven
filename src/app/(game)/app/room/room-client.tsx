@@ -355,7 +355,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
           />
         </aside>
         <div
-          className="grid min-w-0 content-start gap-3"
+          className="grid min-w-0 max-w-full content-start gap-3 overflow-hidden"
           onDragOver={(event) => {
             if (!canEditRoom) return;
             event.preventDefault();
@@ -364,7 +364,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
           onDrop={handleRoomDrop}
           ref={roomDropRef}
         >
-          <div className="relative">
+          <div className="relative min-w-0 max-w-full overflow-hidden">
             {canEditRoom && (
               <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-white/70 bg-white/82 px-3 py-1 text-xs font-black text-ink-700 shadow-sm backdrop-blur">
                 Drop furniture here

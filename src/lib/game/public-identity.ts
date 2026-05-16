@@ -63,13 +63,18 @@ export async function resolvePublicUsername(user?: User | null) {
       .eq("id", activeUser.id)
       .maybeSingle();
 
-    const username = normalizePublicUsername(
-      typeof data?.username === "string" ? data.username : usernameFromUser(activeUser),
-    );
+    // Precedence: server username > LOCAL cache > derived-from-user.
+    // Falling straight to `usernameFromUser` (email prefix) was the bug —
+    // a just-saved local value got clobbered by the email prefix whenever
+    // the server returned null (e.g. signups without a profile row yet).
+    const serverUsername = typeof data?.username === "string" ? data.username.trim() : "";
+    const cached = getCachedPublicUsername();
+    const candidate = serverUsername || (cached && cached !== "Keeper" ? cached : usernameFromUser(activeUser));
+    const username = normalizePublicUsername(candidate);
     setCachedPublicUsername(username);
     return username;
   } catch {
-    const fallback = usernameFromUser(user);
+    const fallback = usernameFromUser(user) || getCachedPublicUsername();
     setCachedPublicUsername(fallback);
     return fallback;
   }

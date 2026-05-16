@@ -5,6 +5,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { moderateChatMessage, type ChatModerationResult, type GardenChatMessage } from "@/lib/game/chat-moderation";
+import { hardenIncomingChat, hardenRealtimePlayer } from "@/lib/game/realtime-hardening";
 import type { FacingDirection, RealtimeRoomPlayer, RoomEmote } from "@/lib/game/types";
 import {
   KEEPER_CUSTOMIZATION_EVENT,
@@ -47,6 +48,13 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
   const [localFriendCode, setLocalFriendCode] = useState(() =>
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
+  // Pick up friend-code regenerates so the invite URL + visitor-side
+  // filters refresh without a reload.
+  useEffect(() => {
+    const sync = () => setLocalFriendCode(getSocialState().selfCode);
+    window.addEventListener("hearthaven:friend-code-regenerated", sync);
+    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+  }, []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("demo");
   const [status, setStatus] = useState("Solo room mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -59,9 +67,11 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
     const url = new URL("/app/area", window.location.origin);
     url.searchParams.set("zone", "room");
     url.searchParams.set("room", normalizedRoomId);
-    url.searchParams.set("visit", getSocialState().selfCode);
+    // Pull from the stateful friend-code state, not a fresh read, so the
+    // URL refreshes when the keeper regenerates their friend code.
+    url.searchParams.set("visit", localFriendCode || getSocialState().selfCode);
     return url.toString();
-  }, [normalizedRoomId]);
+  }, [normalizedRoomId, localFriendCode]);
 
   const roomCode = useMemo(() => normalizedRoomId.toUpperCase(), [normalizedRoomId]);
 
@@ -134,8 +144,13 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
 
         function syncPresence() {
           const state = channel.presenceState<RealtimeRoomPlayer>();
+          // Every realtime payload is untrusted — clamp coords, scrub
+          // display names, drop ones missing required fields. Then filter
+          // out self + blocked.
           const remotePlayers = Object.values(state)
             .flat()
+            .map((player) => hardenRealtimePlayer(player))
+            .filter((player): player is RealtimeRoomPlayer => Boolean(player))
             .filter((player) => player.id !== localId)
             .filter((player) => !player.friendCode || !isBlocked(player.friendCode))
             .sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -156,8 +171,8 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
           .on("presence", { event: "join" }, syncPresence)
           .on("presence", { event: "leave" }, syncPresence)
           .on("broadcast", { event: "avatar_move" }, ({ payload }) => {
-            const player = payload as RealtimeRoomPlayer;
-            if (!player?.id || player.id === localId) return;
+            const player = hardenRealtimePlayer(payload);
+            if (!player || player.id === localId) return;
             if (player.friendCode && isBlocked(player.friendCode)) return;
             if (player.friendCode) {
               recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
@@ -165,8 +180,8 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
             setPlayers((current) => upsertPlayer(current, player));
           })
           .on("broadcast", { event: "room_emote" }, ({ payload }) => {
-            const player = payload as RealtimeRoomPlayer;
-            if (!player?.id || player.id === localId) return;
+            const player = hardenRealtimePlayer(payload);
+            if (!player || player.id === localId) return;
             if (player.friendCode && isBlocked(player.friendCode)) return;
             if (player.friendCode) {
               recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
@@ -175,8 +190,8 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
             window.dispatchEvent(new CustomEvent("hearthaven:remote-emote", { detail: player }));
           })
           .on("broadcast", { event: "room_chat" }, ({ payload }) => {
-            const message = payload as GardenChatMessage;
-            if (!message?.id || message.playerId === localId) return;
+            const message = hardenIncomingChat(payload);
+            if (!message || message.playerId === localId) return;
             if (message.friendCode && isBlocked(message.friendCode)) return;
             appendMessage(message);
             window.dispatchEvent(new CustomEvent("hearthaven:room-chat-bubble", { detail: message }));
@@ -223,9 +238,14 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
         };
         window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, rebroadcastCustomization);
         window.addEventListener(PET_CUSTOMIZATION_EVENT, rebroadcastCustomization);
+        // Username changes need the same treatment — otherwise other
+        // visitors keep seeing the keeper's old display name above their
+        // sprite until they reload.
+        window.addEventListener("hearthaven:public-username-changed", rebroadcastCustomization);
         customizationCleanup = () => {
           window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, rebroadcastCustomization);
           window.removeEventListener(PET_CUSTOMIZATION_EVENT, rebroadcastCustomization);
+          window.removeEventListener("hearthaven:public-username-changed", rebroadcastCustomization);
         };
       } catch (error) {
         setConnectionState("error");
@@ -249,7 +269,15 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
     };
   }, [appendMessage, normalizedRoomId, roomCode, roomName]);
 
-  const sendMove = useCallback((position: { x: number; y: number; facing?: FacingDirection }) => {
+  const sendMove = useCallback((position: {
+    x: number;
+    y: number;
+    facing?: FacingDirection;
+    petX?: number;
+    petY?: number;
+    petFacing?: FacingDirection;
+    controlMode?: "keeper" | "companion";
+  }) => {
     const channel = channelRef.current;
     const localPlayer = localPlayerRef.current;
     if (!channel || !localPlayer) return;
@@ -259,6 +287,10 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
       x: Math.round(position.x),
       y: Math.round(position.y),
       facing: position.facing ?? localPlayer.facing,
+      petX: position.petX === undefined ? localPlayer.petX : Math.round(position.petX),
+      petY: position.petY === undefined ? localPlayer.petY : Math.round(position.petY),
+      petFacing: position.petFacing ?? localPlayer.petFacing,
+      controlMode: position.controlMode ?? localPlayer.controlMode ?? "keeper",
       updatedAt: Date.now(),
     };
 

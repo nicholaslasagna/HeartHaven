@@ -114,12 +114,16 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       </section>
 
-      {/* Three-column hub: left sidebar · canvas · right sidebar */}
-      <section className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_300px]">
-        <div className="flex flex-col gap-4">
+      {/* Three-column hub: left sidebar · canvas · right sidebar
+          Below xl the columns stack so the canvas keeps a full-width row.
+          The side columns are intentionally narrower than the MeandGi mock
+          (220 + 260 vs 260 + 300) so the center canvas keeps painted-scene
+          breathing room on 1440px viewports. */}
+      <section className="grid min-w-0 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_260px]">
+        <div className="grid gap-4 sm:grid-cols-2 xl:flex xl:flex-col">
           <ParkControlCard playerName={playerName} companionName={companionName} />
           <CompanionMiniCard />
-          <section className="hh-card border-lavender-300/40 p-4">
+          <section className="hh-card border-lavender-300/40 p-4 sm:col-span-2 xl:col-span-1">
             <p className="hh-eyebrow text-lavender-500">Companion abilities</p>
             <ul className="mt-2 grid gap-1.5 text-xs font-bold text-ink-700">
               <li className="flex items-center justify-between rounded-md bg-lavender-100/60 px-2 py-1">
@@ -142,7 +146,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
           </section>
         </div>
 
-        <div className="relative overflow-hidden rounded-lg border border-cream-300 bg-cream-50 shadow-sm">
+        <div className="relative min-w-0 overflow-hidden rounded-lg border border-cream-300 bg-cream-50 shadow-sm">
           <GardenCanvasLoader
             canEditGarden={canEditGarden}
             onAvatarMove={realtime.sendMove}
@@ -153,7 +157,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
           <ParkHud playerName={playerName} companionName={companionName} />
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:flex xl:flex-col">
           <ParkMinimap />
           <ParkDiscoveries />
           <ParkCoOpNudge />

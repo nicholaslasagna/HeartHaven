@@ -23,6 +23,7 @@ import {
 } from "@/lib/game/social";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
 import {
+  cancelSupabaseOutgoingInvite,
   ensureInviteRealtime,
   pushInviteToSupabase,
   setSupabaseInviteStatus,
@@ -77,6 +78,15 @@ export function useSocial() {
     declineFriendInvite(inviteId);
     if (invite) void setSupabaseInviteStatus(invite.fromCode, "declined");
   }, []);
+  const cancelInvite = useCallback((inviteId: string) => {
+    // Find the outgoing record so we can tell Supabase to mark the row
+    // cancelled — that's what triggers the recipient's UPDATE channel
+    // to remove the pending invite from their inbox.
+    const state = getSocialState();
+    const invite = state.outgoing.find((entry) => entry.id === inviteId);
+    cancelOutgoingInvite(inviteId);
+    if (invite) void cancelSupabaseOutgoingInvite(invite.toCode);
+  }, []);
   const markInviteBlockedSynced = useCallback((inviteId: string) => {
     const state = getSocialState();
     const invite = state.inbox.find((entry) => entry.id === inviteId);
@@ -109,7 +119,7 @@ export function useSocial() {
       buildLink,
       redeemToken,
       redeemCode: acceptInviteFromCode,
-      cancelInvite: cancelOutgoingInvite,
+      cancelInvite,
       acceptInvite,
       declineInvite,
       markInviteBlocked: markInviteBlockedSynced,
@@ -117,6 +127,6 @@ export function useSocial() {
       recordPlayedWith,
       setSelfDisplayName,
     }),
-    [state, lookup, canLookup, sendInvite, buildLink, redeemToken, acceptInvite, declineInvite, markInviteBlockedSynced],
+    [state, lookup, canLookup, sendInvite, buildLink, redeemToken, acceptInvite, declineInvite, cancelInvite, markInviteBlockedSynced],
   );
 }

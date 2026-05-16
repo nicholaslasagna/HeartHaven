@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Map as MapIcon } from "lucide-react";
 import type { ParkPlayMode } from "@/components/game/park/park-control-card";
+import { useDiscoveries } from "@/lib/game/use-discoveries";
 
 type Marker = { x: number; y: number };
 
@@ -24,6 +25,7 @@ export function ParkMinimap() {
   const [mode, setMode] = useState<ParkPlayMode>("keeper");
   const [keeper, setKeeper] = useState<Marker>({ x: 40, y: 58 });
   const [companion, setCompanion] = useState<Marker>({ x: 50, y: 64 });
+  const { hidden: hiddenDiscoveries } = useDiscoveries("park");
 
   useEffect(() => {
     const onPosition = (event: Event) => {
@@ -73,6 +75,15 @@ export function ParkMinimap() {
           >
             {pin.label}
           </span>
+        ))}
+        {hiddenDiscoveries.map((item) => (
+          <span
+            key={item.id}
+            aria-label={`Hidden discovery near ${item.name}`}
+            className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/70 bg-lavender-300/85 shadow-sm"
+            style={{ left: `${item.x}%`, top: `${item.y}%`, animation: "hh-pulse 2.4s ease-in-out infinite" }}
+            title={`Sniff somewhere around here — ${item.name}`}
+          />
         ))}
         <span
           className="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-sky-500 shadow-md transition-all"

@@ -124,6 +124,23 @@ function readCachedPublicDisplayName(fallback = "Keeper") {
   return normalizePublicDisplayName(window.localStorage.getItem(PUBLIC_USERNAME_STORAGE_KEY) ?? fallback);
 }
 
+/**
+ * Lazy block-list check that avoids importing `safety.ts` (which would
+ * create a require cycle, since safety also imports from this module).
+ * Reads localStorage directly. Safe to call from anywhere in social.ts.
+ */
+function isCodeBlocked(code: FriendCode): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem("hearthaven:safety-state");
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { blocks?: Array<{ code?: string }> };
+    return Array.isArray(parsed.blocks) && parsed.blocks.some((entry) => entry?.code === code);
+  } catch {
+    return false;
+  }
+}
+
 function rawRead(): SocialState {
   if (typeof window === "undefined") return freshState();
   try {
@@ -177,6 +194,17 @@ export function regenerateFriendCode(): FriendCode {
   const state = rawRead();
   const next = generateFriendCode();
   rawWrite({ ...state, selfCode: next });
+  // Fire a dedicated event so the realtime bridge can:
+  //   1. push the new code onto `profiles.friend_code`,
+  //   2. re-subscribe to the realtime channel filtered on the new code,
+  //   3. cancel any in-flight outgoing invites attributed to the OLD code.
+  // Without this, regenerating a code would silently break inbound
+  // realtime delivery until the next full page reload.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("hearthaven:friend-code-regenerated", { detail: { code: next } }),
+    );
+  }
   return next;
 }
 
@@ -189,6 +217,9 @@ export function recordPlayedWith(entry: { code: FriendCode; displayName: string;
   const state = rawRead();
   const code = normalizeFriendCode(entry.code);
   if (code === state.selfCode) return;
+  // A blocked keeper visiting our scene should never reappear in the
+  // played-with suggestions strip. The block list is authoritative here.
+  if (isCodeBlocked(code)) return;
   const now = new Date().toISOString();
   const existingIndex = state.playedWith.findIndex((played) => played.code === code);
   const next: PlayedWithEntry = {
@@ -248,17 +279,55 @@ export function lookupFriendCode(code: FriendCode, state: SocialState = rawRead(
  * to the recipient out-of-band (text, DM, room visit). This matches how
  * Webkinz-style "invite by code" works in practice.
  */
+/**
+ * Rolling-window cap on how many invites a keeper can send. Keeps a single
+ * burst at a reasonable level (5/min, 30/hour) — the actual UX rarely
+ * exceeds this; tripping the cap usually means automated abuse.
+ */
+const INVITE_BURST_WINDOW_MS = 60_000;
+const INVITE_BURST_LIMIT = 5;
+const INVITE_HOUR_WINDOW_MS = 60 * 60_000;
+const INVITE_HOUR_LIMIT = 30;
+
+function checkInviteRateLimit(state: SocialState): { ok: true } | { ok: false; reason: "rate-limited" } {
+  const now = Date.now();
+  // We can't rely on the outgoing slice alone — only sliced to 40 entries —
+  // so we count anything within each window from `sentAt`.
+  let burst = 0;
+  let hourly = 0;
+  for (const invite of state.outgoing) {
+    const t = Date.parse(invite.sentAt);
+    if (!Number.isFinite(t)) continue;
+    if (now - t <= INVITE_BURST_WINDOW_MS) burst += 1;
+    if (now - t <= INVITE_HOUR_WINDOW_MS) hourly += 1;
+  }
+  if (burst >= INVITE_BURST_LIMIT || hourly >= INVITE_HOUR_LIMIT) return { ok: false, reason: "rate-limited" };
+  return { ok: true };
+}
+
 export function sendFriendInvite(
   toCode: FriendCode,
   message?: string,
 ):
   | { ok: true; invite: FriendInvite }
-  | { ok: false; reason: "already-friends" | "self" | "invalid-code" } {
+  | { ok: false; reason: "already-friends" | "self" | "invalid-code" | "already-pending" | "rate-limited" | "blocked" } {
   const state = rawRead();
   const code = normalizeFriendCode(toCode);
   if (!isFriendCodeShape(code)) return { ok: false, reason: "invalid-code" };
   if (code === state.selfCode) return { ok: false, reason: "self" };
   if (state.friends.some((friend) => friend.code === code)) return { ok: false, reason: "already-friends" };
+  // Refuse to send to a keeper we've blocked — the recipient-side filters
+  // would silently drop it anyway, but failing early gives the user a
+  // clearer message AND keeps the database from accruing dead-letter rows.
+  if (isCodeBlocked(code)) return { ok: false, reason: "blocked" };
+  // Anti-spam: if we already have a pending outgoing invite to this
+  // recipient, return that instead of creating a second row. The UI
+  // shows the existing pending entry.
+  const existing = state.outgoing.find((entry) => entry.toCode === code && entry.status === "pending");
+  if (existing) return { ok: false, reason: "already-pending" };
+  // Rolling-window rate limit — same UX guard the chat layer uses.
+  const limit = checkInviteRateLimit(state);
+  if (!limit.ok) return { ok: false, reason: limit.reason };
 
   const invite: FriendInvite = {
     id: `inv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -365,7 +434,7 @@ export function acceptInviteFromCode(
   fromCode: FriendCode,
   fromDisplayName?: string,
   message?: string,
-): { ok: true; invite: FriendInvite } | { ok: false; reason: "self" | "already-friends" | "invalid-code" | "duplicate" } {
+): { ok: true; invite: FriendInvite } | { ok: false; reason: "self" | "already-friends" | "invalid-code" | "duplicate" | "blocked" } {
   const state = rawRead();
   const code = normalizeFriendCode(fromCode);
   if (!isFriendCodeShape(code)) return { ok: false, reason: "invalid-code" };
@@ -373,6 +442,12 @@ export function acceptInviteFromCode(
   if (state.friends.some((friend) => friend.code === code)) return { ok: false, reason: "already-friends" };
   if (state.inbox.some((entry) => entry.fromCode === code && entry.status === "pending")) {
     return { ok: false, reason: "duplicate" };
+  }
+  // Last line of defense: a blocked keeper must never land back in the inbox
+  // via paste, realtime backfill, or URL token redemption. The block list is
+  // re-read each call so an unblock takes effect without a reload.
+  if (isCodeBlocked(code)) {
+    return { ok: false, reason: "blocked" };
   }
   const invite: FriendInvite = {
     id: `inv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -445,6 +520,35 @@ export function declineFriendInvite(inviteId: string) {
     ...state,
     inbox: state.inbox.map((entry) => (entry.id === inviteId ? { ...entry, status: "declined" } : entry)),
   });
+}
+
+/**
+ * Add a Friend record directly — used when the sender's realtime subscription
+ * sees the recipient accept their invite. Bypasses the inbox lookup that
+ * `acceptFriendInvite` does, because the sender never had a local invite row
+ * to begin with (they only had the outgoing record).
+ */
+export function addFriendDirectly(entry: { code: FriendCode; displayName: string }): Friend {
+  const state = rawRead();
+  const code = normalizeFriendCode(entry.code);
+  if (code === state.selfCode) {
+    return { code, displayName: entry.displayName, acceptedAt: new Date().toISOString() };
+  }
+  const existing = state.friends.find((friend) => friend.code === code);
+  if (existing) return existing;
+  const friend: Friend = {
+    code,
+    displayName: entry.displayName || "Keeper",
+    acceptedAt: new Date().toISOString(),
+  };
+  rawWrite({
+    ...state,
+    friends: [friend, ...state.friends].slice(0, 200),
+    playedWith: state.playedWith.some((played) => played.code === code)
+      ? state.playedWith
+      : [{ code, displayName: friend.displayName, context: "friend-accept", lastPlayedAt: new Date().toISOString() }, ...state.playedWith].slice(0, 60),
+  });
+  return friend;
 }
 
 /** Remove a friend from the friend list. */

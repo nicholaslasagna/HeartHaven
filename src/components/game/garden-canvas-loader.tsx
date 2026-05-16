@@ -26,7 +26,15 @@ type GardenCanvasLoaderProps = {
   variant: "personal" | "partner" | "park";
   plots: GardenPlotState[];
   canEditGarden?: boolean;
-  onAvatarMove?: (position: { x: number; y: number; facing: "left" | "right" }) => void;
+  onAvatarMove?: (position: {
+    x: number;
+    y: number;
+    facing: "left" | "right";
+    petX?: number;
+    petY?: number;
+    petFacing?: "left" | "right";
+    controlMode?: "keeper" | "companion";
+  }) => void;
 };
 
 export function GardenCanvasLoader({ canEditGarden, onAvatarMove, remotePlayers, variant, plots }: GardenCanvasLoaderProps) {

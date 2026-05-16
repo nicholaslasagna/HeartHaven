@@ -115,6 +115,25 @@ export function blockKeeper(code: FriendCode, displayName: string) {
     ...state,
     blocks: [{ code, displayName, blockedAt: new Date().toISOString() }, ...state.blocks].slice(0, 200),
   });
+  // Belt-and-braces: also strip the blocked keeper out of the friend list
+  // + any pending inbox/outgoing invites + the played-with suggestions.
+  // The UI used to do this itself in some places; centralising means a
+  // keeper who gets blocked can never reappear via a path the UI forgot.
+  void hardenBlock(code).catch(() => {
+    /* best-effort — the block itself has already been written above */
+  });
+}
+
+async function hardenBlock(code: FriendCode) {
+  if (typeof window === "undefined") return;
+  // Lazy-import to avoid a require cycle between safety <-> social.
+  const social = await import("@/lib/game/social");
+  social.removeFriend(code);
+  const state = social.getSocialState();
+  const inboxFromBlocked = state.inbox.find((entry) => entry.fromCode === code && entry.status === "pending");
+  if (inboxFromBlocked) social.markInviteBlocked(inboxFromBlocked.id);
+  const outgoingToBlocked = state.outgoing.find((entry) => entry.toCode === code && entry.status === "pending");
+  if (outgoingToBlocked) social.cancelOutgoingInvite(outgoingToBlocked.id);
 }
 
 export function unblockKeeper(code: FriendCode) {

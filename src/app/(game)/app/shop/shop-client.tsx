@@ -149,7 +149,10 @@ export function ShopClient({ items }: ShopClientProps) {
                   >
                     <Image
                       alt={`${item.name} preview`}
-                      className={`h-full w-full ${getCatalogItemArtFit(item) === "cover" ? "object-cover" : "object-contain p-3"} drop-shadow-[0_16px_18px_rgba(91,63,63,0.2)]`}
+                      // Always contain-fit so tile thumbnails never blow up
+                      // past their tile. The h/w props are the source's
+                      // intrinsic size; the className constrains the render.
+                      className="block h-full max-h-[110px] w-full max-w-full object-contain p-3 drop-shadow-[0_16px_18px_rgba(91,63,63,0.2)]"
                       height={160}
                       src={getCatalogItemArt(item)}
                       width={220}

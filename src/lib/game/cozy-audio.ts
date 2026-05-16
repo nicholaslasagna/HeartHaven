@@ -27,7 +27,9 @@ export type CozyCue =
   | "miss"
   | "lantern"
   | "heart"
-  | "emote";
+  | "emote"
+  /** New: short, soft chime when a chat message is sent or received. */
+  | "speech";
 
 type CozyAudioState = {
   context: AudioContext | null;
@@ -45,7 +47,37 @@ declare global {
   }
 }
 
-const MUSIC_NOTES = [261.63, 329.63, 392, 493.88, 587.33, 493.88, 392, 329.63];
+/**
+ * A small library of cozy melodies. We rotate between them on each music
+ * loop so the keeper isn't listening to the same eight notes forever.
+ * Each melody is just a sequence of frequencies (Hz) — the sine/triangle
+ * synth in `startMusicLoop` picks them up and plays one note per beat.
+ */
+const COZY_MELODIES: number[][] = [
+  // Cozy major-pentatonic — the original loop, kept as the morning vibe.
+  [261.63, 329.63, 392, 493.88, 587.33, 493.88, 392, 329.63],
+  // Twilight lullaby — descending phrase with a soft lift at the end.
+  [392, 349.23, 329.63, 293.66, 261.63, 293.66, 329.63, 392],
+  // Garden waltz — three-feel built from D major arpeggios.
+  [293.66, 369.99, 440, 369.99, 293.66, 246.94, 293.66, 369.99],
+  // Lantern hum — slow, two-note motif that feels like dusk.
+  [220, 261.63, 220, 196, 220, 261.63, 329.63, 261.63],
+  // Friend visit — bright pentatonic for the moment a guest arrives.
+  [523.25, 587.33, 659.25, 587.33, 523.25, 440, 523.25, 587.33],
+];
+
+const VOLUME_STORAGE_KEY = "hearthaven:audio-volume";
+
+function clamp01(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function readStoredVolume() {
+  if (typeof window === "undefined") return 0.74;
+  const raw = window.localStorage.getItem(VOLUME_STORAGE_KEY);
+  const parsed = raw === null ? NaN : parseFloat(raw);
+  return Number.isFinite(parsed) ? clamp01(parsed) : 0.74;
+}
 
 function getState(): CozyAudioState | null {
   if (typeof window === "undefined") return null;
@@ -72,7 +104,7 @@ function ensureAudioGraph() {
     state.context = new AudioContextClass();
 
     state.masterGain = state.context.createGain();
-    state.masterGain.gain.value = 0.74;
+    state.masterGain.gain.value = readStoredVolume();
     state.masterGain.connect(state.context.destination);
 
     state.musicGain = state.context.createGain();
@@ -111,6 +143,27 @@ export function stopCozyAudio() {
 
 export function isCozyAudioEnabled() {
   return Boolean(getState()?.enabled);
+}
+
+/** Read the current master volume (0–1). Persists across reloads. */
+export function getCozyVolume(): number {
+  return readStoredVolume();
+}
+
+/**
+ * Adjust the master volume in real time. Persisted to localStorage so the
+ * keeper's preferred level survives a reload. Set to 0 to mute without
+ * killing the loop — handy for the sound-on toggle.
+ */
+export function setCozyVolume(next: number) {
+  const value = clamp01(next);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(VOLUME_STORAGE_KEY, String(value));
+  }
+  const state = getState();
+  if (state?.masterGain) {
+    state.masterGain.gain.value = value;
+  }
 }
 
 export function playCozyCue(cue: CozyCue) {
@@ -215,6 +268,12 @@ export function playCozyCue(cue: CozyCue) {
       playTone(state, 659.25, now, 0.07, "triangle", 0.08);
       playTone(state, 987.77, now + 0.07, 0.16, "sine", 0.07);
       break;
+    case "speech":
+      // Two soft pings — a "speech bubble" cue. Triangle at low volume so
+      // it never grates when chat is busy.
+      playTone(state, 587.33, now, 0.05, "triangle", 0.05);
+      playTone(state, 783.99, now + 0.06, 0.08, "sine", 0.045);
+      break;
     case "reward":
       playTone(state, 392, now, 0.1, "triangle", 0.08);
       playTone(state, 523.25, now + 0.09, 0.11, "triangle", 0.08);
@@ -231,14 +290,28 @@ export function playCozyCue(cue: CozyCue) {
 function startMusicLoop(state: CozyAudioState) {
   if (!state.context || !state.musicGain || state.musicTimer) return;
 
+  // Pick a melody to start on; rotate to a fresh one every full bar so the
+  // background music doesn't feel like a single eight-note loop.
+  let melodyIndex = Math.floor(Math.random() * COZY_MELODIES.length);
+
   const playStep = () => {
     if (!state.enabled || !state.context || !state.musicGain) return;
+    const melody = COZY_MELODIES[melodyIndex % COZY_MELODIES.length];
     const now = state.context.currentTime;
-    const note = MUSIC_NOTES[state.musicStep % MUSIC_NOTES.length];
-    const harmony = MUSIC_NOTES[(state.musicStep + 2) % MUSIC_NOTES.length] / 2;
+    const note = melody[state.musicStep % melody.length];
+    const harmony = melody[(state.musicStep + 2) % melody.length] / 2;
     playTone(state, note, now, 0.34, "sine", 0.09, state.musicGain);
     playTone(state, harmony, now + 0.02, 0.48, "triangle", 0.045, state.musicGain);
     state.musicStep += 1;
+    // When we finish the melody, swap to a different one for variety.
+    if (state.musicStep % melody.length === 0) {
+      let next = melodyIndex;
+      // Avoid replaying the same melody back-to-back.
+      while (next === melodyIndex && COZY_MELODIES.length > 1) {
+        next = Math.floor(Math.random() * COZY_MELODIES.length);
+      }
+      melodyIndex = next;
+    }
   };
 
   playStep();

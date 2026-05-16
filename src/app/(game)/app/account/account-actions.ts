@@ -117,19 +117,25 @@ export async function updateUsernameAction(formData: FormData) {
 
   const nextHistory = [new Date(now).toISOString(), ...history].slice(0, USERNAME_CHANGE_LIMIT * 2);
 
+  // Use UPSERT — fresh signups may not have a profile row yet, and a plain
+  // UPDATE silently does nothing. The previous bug ("says saved but doesn't
+  // show") was exactly this: update succeeded with 0 rows touched, and on
+  // the next read `profiles.username` was still null, so we fell back to
+  // the email prefix and clobbered the locally-cached value.
   const { error: updateError } = await supabase
     .from("profiles")
-    .update({ username: requested, username_changes: nextHistory })
-    .eq("id", user.id);
+    .upsert(
+      { id: user.id, username: requested, username_changes: nextHistory },
+      { onConflict: "id" },
+    );
 
   if (updateError) {
-    // If the column `username_changes` isn't deployed yet, fall back to just
-    // updating the username. The local-side policy still enforces the limit.
+    // If the column `username_changes` isn't deployed yet, retry without it.
+    // The local-side policy still enforces the per-year limit.
     if (/column .*username_changes/i.test(updateError.message)) {
       const { error: retryError } = await supabase
         .from("profiles")
-        .update({ username: requested })
-        .eq("id", user.id);
+        .upsert({ id: user.id, username: requested }, { onConflict: "id" });
       if (retryError) {
         redirectAccount(`Could not save your username: ${retryError.message}`);
       }

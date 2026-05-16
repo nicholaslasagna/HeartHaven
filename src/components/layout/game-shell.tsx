@@ -26,7 +26,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-paper text-foreground">
       <header className="sticky top-0 z-40 border-b border-cream-300/60 bg-cream-50/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-[1480px] items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           <Logo />
           <div className="hidden items-center gap-2 xl:flex">
             <SeasonalEventPill />
@@ -44,7 +44,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <div className="mx-auto grid max-w-7xl gap-5 overflow-hidden px-4 py-5 sm:px-6 lg:px-8 xl:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="mx-auto grid max-w-[1480px] gap-5 overflow-hidden px-4 py-5 sm:px-6 lg:px-8 xl:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="min-w-0 xl:sticky xl:top-24 xl:h-[calc(100vh-7rem)]">
           <nav className="flex max-w-full gap-2 overflow-x-auto rounded-lg border border-cream-300/70 bg-white/60 p-2 shadow-sm xl:flex-col xl:overflow-visible">
             {navItems.map((item) => (
