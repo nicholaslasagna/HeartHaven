@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShieldAlert, X } from "lucide-react";
+import { Ban, CheckCircle2, ShieldAlert, X } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { useSafety } from "@/lib/game/use-safety";
 import type { FriendCode } from "@/lib/game/social";
@@ -38,11 +38,20 @@ type ReportDialogProps = {
  * (email, last-seen IP, user-agent) when responding to a legitimate legal
  * process — but we never auto-exfiltrate that PII to the client.
  */
+type ReportPhase = "compose" | "submitted-offer-block" | "blocked";
+
 export function ReportDialog({ open, onClose, offender, scene, chatExcerpt, reporterCode }: ReportDialogProps) {
   const safety = useSafety();
   const [reason, setReason] = useState<ReportReason>("harassment");
   const [details, setDetails] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const [phase, setPhase] = useState<ReportPhase>("compose");
+
+  function closeAndReset() {
+    setPhase("compose");
+    setReason("harassment");
+    setDetails("");
+    onClose();
+  }
 
   function submit() {
     safety.submitReport({
@@ -55,13 +64,15 @@ export function ReportDialog({ open, onClose, offender, scene, chatExcerpt, repo
       scene,
       autoFlagged: false,
     });
-    setSubmitted(true);
-    window.setTimeout(() => {
-      setSubmitted(false);
-      setReason("harassment");
-      setDetails("");
-      onClose();
-    }, 1600);
+    // Move into the "want to block them too?" step instead of auto-closing.
+    // This is the most consistently-useful follow-up after a report.
+    setPhase("submitted-offer-block");
+  }
+
+  function blockNow() {
+    safety.blockKeeper(offender.code, offender.displayName);
+    setPhase("blocked");
+    window.setTimeout(closeAndReset, 1200);
   }
 
   return (
@@ -86,60 +97,95 @@ export function ReportDialog({ open, onClose, offender, scene, chatExcerpt, repo
             aria-modal="true"
             aria-label={`Report ${offender.displayName}`}
           >
-            <div className="flex items-start justify-between gap-3">
+            {phase === "compose" && (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="size-5 text-blush-500" />
+                    <h2 className="font-display text-xl text-ink-900">Report {offender.displayName}</h2>
+                  </div>
+                  <button
+                    onClick={closeAndReset}
+                    className="grid size-8 place-items-center rounded-full text-ink-500 transition-colors hover:bg-cream-200"
+                    aria-label="Close"
+                    type="button"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+                <p className="mt-1 text-xs font-bold text-ink-500">
+                  Reports go to our moderation queue with your friend code, the offender&apos;s code, the scene, and (when
+                  available) the chat snippet. Severe auto-flagged content already restricts the sender; human review
+                  extends or clears the action.
+                </p>
+
+                <div className="mt-4 grid gap-2">
+                  {REASONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setReason(option.value)}
+                      className={cn(
+                        "rounded-md border px-3 py-2 text-left transition-colors",
+                        reason === option.value
+                          ? "border-blush-300 bg-blush-100 text-ink-900"
+                          : "border-cream-300 bg-white/70 text-ink-700 hover:border-blush-300/60 hover:bg-blush-100/40",
+                      )}
+                    >
+                      <span className="block text-sm font-extrabold">{option.label}</span>
+                      <span className="block text-xs font-bold text-ink-500">{option.help}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  value={details}
+                  onChange={(event) => setDetails(event.target.value)}
+                  placeholder="Anything else our moderation team should know? (optional)"
+                  maxLength={500}
+                  className="mt-4 h-24 w-full resize-none rounded-md border border-cream-300 bg-white p-3 text-sm font-bold text-ink-900 focus:border-blush-300 focus:outline-none"
+                />
+
+                <div className="mt-4 flex justify-end gap-2">
+                  <CozyButton variant="warm" size="sm" onClick={closeAndReset}>
+                    Cancel
+                  </CozyButton>
+                  <CozyButton size="sm" onClick={submit}>
+                    Submit report
+                  </CozyButton>
+                </div>
+              </>
+            )}
+
+            {phase === "submitted-offer-block" && (
+              <>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-5 text-garden-700" />
+                  <h2 className="font-display text-xl text-ink-900">Report sent</h2>
+                </div>
+                <p className="mt-2 text-sm font-bold leading-5 text-ink-700">
+                  Thanks — our moderation team will review it. Do you want to <b>block {offender.displayName}</b> too?
+                  Blocking hides their chat, invites, and presence from you everywhere in HeartHaven.
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <CozyButton variant="warm" size="sm" onClick={closeAndReset}>
+                    No, just close
+                  </CozyButton>
+                  <CozyButton size="sm" onClick={blockNow}>
+                    <Ban /> Yes, block them
+                  </CozyButton>
+                </div>
+              </>
+            )}
+
+            {phase === "blocked" && (
               <div className="flex items-center gap-2">
-                <ShieldAlert className="size-5 text-blush-500" />
-                <h2 className="font-display text-xl text-ink-900">Report {offender.displayName}</h2>
+                <Ban className="size-5 text-blush-500" />
+                <p className="text-sm font-extrabold text-ink-800">
+                  Blocked. {offender.displayName} won&apos;t reach you anymore.
+                </p>
               </div>
-              <button
-                onClick={onClose}
-                className="grid size-8 place-items-center rounded-full text-ink-500 transition-colors hover:bg-cream-200"
-                aria-label="Close"
-                type="button"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            <p className="mt-1 text-xs font-bold text-ink-500">
-              Reports go to the moderation queue. Auto-flagged severe content already restricts the sender; a human review
-              extends or clears the action.
-            </p>
-
-            <div className="mt-4 grid gap-2">
-              {REASONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setReason(option.value)}
-                  className={cn(
-                    "rounded-md border px-3 py-2 text-left transition-colors",
-                    reason === option.value
-                      ? "border-blush-300 bg-blush-100 text-ink-900"
-                      : "border-cream-300 bg-white/70 text-ink-700 hover:border-blush-300/60 hover:bg-blush-100/40",
-                  )}
-                >
-                  <span className="block text-sm font-extrabold">{option.label}</span>
-                  <span className="block text-xs font-bold text-ink-500">{option.help}</span>
-                </button>
-              ))}
-            </div>
-
-            <textarea
-              value={details}
-              onChange={(event) => setDetails(event.target.value)}
-              placeholder="Anything else our moderation team should know? (optional)"
-              maxLength={500}
-              className="mt-4 h-24 w-full resize-none rounded-md border border-cream-300 bg-white p-3 text-sm font-bold text-ink-900 focus:border-blush-300 focus:outline-none"
-            />
-
-            <div className="mt-4 flex justify-end gap-2">
-              <CozyButton variant="warm" size="sm" onClick={onClose} disabled={submitted}>
-                Cancel
-              </CozyButton>
-              <CozyButton size="sm" onClick={submit} disabled={submitted}>
-                {submitted ? "Sent to moderation" : "Submit report"}
-              </CozyButton>
-            </div>
+            )}
           </motion.div>
         </motion.div>
       )}

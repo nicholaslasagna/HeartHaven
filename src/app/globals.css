@@ -260,3 +260,121 @@ select {
     opacity: 0.8;
   }
 }
+
+/* ============================================================
+ * MeandGi design tokens — adopted from /Users/Nicholas/Downloads/MeandGi/styles/tokens.css
+ *
+ * These are the building blocks the redesign uses everywhere: shared
+ * background gradients, atmospheric grain, painted-card surfaces, chip
+ * + button shapes, and the floating-motion keyframes that drive
+ * critters and petals. Existing Tailwind classes still work — these
+ * are additive, intended for pages and panels we explicitly refresh.
+ * ============================================================ */
+
+.hh-display { font-family: var(--font-display, "Caprasimo", "Cormorant Garamond", Georgia, serif); font-weight: 400; letter-spacing: -0.01em; }
+.hh-serif   { font-family: var(--font-serif, "Cormorant Garamond", Georgia, serif); }
+.hh-mono    { font-family: "JetBrains Mono", "IBM Plex Mono", monospace; }
+
+.hh-bg-meadow {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(244, 184, 194, 0.45), transparent 35%),
+    radial-gradient(circle at 88% 18%, rgba(200, 182, 226, 0.45), transparent 38%),
+    radial-gradient(circle at 80% 92%, rgba(184, 216, 232, 0.45), transparent 36%),
+    radial-gradient(circle at 14% 88%, rgba(204, 222, 181, 0.55), transparent 38%),
+    linear-gradient(180deg, #fdf8ee 0%, #fbe9d6 100%);
+}
+.hh-bg-sunset {
+  background:
+    radial-gradient(ellipse at 50% 85%, rgba(255, 221, 180, 0.7), transparent 60%),
+    radial-gradient(circle at 50% 30%, rgba(255, 200, 210, 0.55), transparent 60%),
+    linear-gradient(180deg, #f8d4d8 0%, #efc2c9 35%, #e1afb8 70%, #c99cb0 100%);
+}
+.hh-bg-twilight {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 230, 180, 0.4), transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(180, 150, 210, 0.5), transparent 45%),
+    linear-gradient(180deg, #2c1f47 0%, #3f2c5c 40%, #5b3f76 80%, #7b5a95 100%);
+}
+.hh-bg-paper {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 230, 180, 0.5), transparent 40%),
+    linear-gradient(180deg, #fdf8ee 0%, #f8ebd2 100%);
+}
+.hh-bg-garden {
+  background:
+    radial-gradient(ellipse at 50% 110%, rgba(110, 150, 81, 0.4), transparent 50%),
+    radial-gradient(circle at 12% 12%, rgba(255, 235, 190, 0.55), transparent 40%),
+    linear-gradient(180deg, #dce9c5 0%, #b8d29a 60%, #99ba76 100%);
+}
+
+.hh-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.4  0 0 0 0 0.25  0 0 0 0 0.2  0 0 0 0.08 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
+}
+
+.hh-btn {
+  font-family: var(--font-body, "Nunito", system-ui, sans-serif);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 11px 22px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.01em;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.hh-btn-primary {
+  background: linear-gradient(180deg, #f4b5be 0%, #e08894 100%);
+  color: #fff;
+  box-shadow: 0 4px 0 #b66672, 0 10px 22px -8px rgba(180, 80, 90, 0.5);
+  text-shadow: 0 1px 0 rgba(140, 60, 70, 0.3);
+}
+.hh-btn-primary:hover { transform: translateY(-1px); }
+.hh-btn-soft {
+  background: #fff;
+  color: #3a2a2a;
+  box-shadow: 0 8px 24px -10px rgba(105, 70, 55, 0.18), inset 0 -2px 0 rgba(105, 70, 55, 0.08);
+}
+.hh-btn-ghost { background: transparent; color: #5b3f3f; }
+
+.hh-card {
+  background: rgba(255, 252, 244, 0.92);
+  border-radius: 24px;
+  box-shadow: 0 18px 40px -18px rgba(105, 70, 55, 0.28), 0 2px 8px rgba(105, 70, 55, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+}
+
+.hh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  font-weight: 700;
+  color: #5b3f3f;
+  border: 1px solid rgba(180, 158, 148, 0.25);
+}
+
+.hh-eyebrow {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #84675f;
+}
+
+@keyframes hh-float-up { from { transform: translateY(0) rotate(0); opacity: 0; } 10%, 90% { opacity: 1; } to { transform: translateY(-140px) rotate(180deg); opacity: 0; } }
+@keyframes hh-drift    { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(12px); } }
+@keyframes hh-pulse    { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+@keyframes hh-twinkle  { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }

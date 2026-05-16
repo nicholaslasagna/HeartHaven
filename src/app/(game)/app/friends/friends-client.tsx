@@ -19,6 +19,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/cozy/confirm-dialog";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { GiftDialog } from "@/components/cozy/gift-dialog";
@@ -54,6 +55,56 @@ export function FriendsClient() {
   const [acceptMessage, setAcceptMessage] = useState<{ kind: "idle" | "ok" | "error"; message: string }>({ kind: "idle", message: "" });
   const [reportTarget, setReportTarget] = useState<{ code: FriendCode; displayName: string } | null>(null);
   const [giftTarget, setGiftTarget] = useState<{ code: FriendCode; displayName: string } | null>(null);
+  /**
+   * Target of a pending Yes/No confirmation. `kind` selects which destructive
+   * action the user is being asked to confirm — every block call now routes
+   * through this dialog instead of firing instantly, so no one gets blocked
+   * by an accidental click.
+   */
+  const [confirmTarget, setConfirmTarget] = useState<
+    | { kind: "block-friend"; code: FriendCode; displayName: string }
+    | { kind: "block-invite"; invite: { id: string; fromCode: FriendCode; fromDisplayName: string } }
+    | { kind: "block-played"; code: FriendCode; displayName: string }
+    | { kind: "remove-friend"; code: FriendCode; displayName: string }
+    | null
+  >(null);
+
+  function performConfirmed() {
+    if (!confirmTarget) return;
+    if (confirmTarget.kind === "block-friend") {
+      safety.blockKeeper(confirmTarget.code, confirmTarget.displayName);
+      social.removeFriend(confirmTarget.code);
+    } else if (confirmTarget.kind === "block-invite") {
+      safety.blockKeeper(confirmTarget.invite.fromCode, confirmTarget.invite.fromDisplayName);
+      social.markInviteBlocked(confirmTarget.invite.id);
+    } else if (confirmTarget.kind === "block-played") {
+      safety.blockKeeper(confirmTarget.code, confirmTarget.displayName);
+    } else if (confirmTarget.kind === "remove-friend") {
+      social.removeFriend(confirmTarget.code);
+    }
+    setConfirmTarget(null);
+  }
+
+  function confirmCopy() {
+    if (!confirmTarget) return { title: "", description: "" };
+    const target =
+      confirmTarget.kind === "block-invite"
+        ? { displayName: confirmTarget.invite.fromDisplayName, code: confirmTarget.invite.fromCode }
+        : { displayName: confirmTarget.displayName, code: confirmTarget.code };
+    if (confirmTarget.kind === "remove-friend") {
+      return {
+        title: `Remove ${target.displayName} from your friends?`,
+        description: "They won't be able to send you invites or gifts. You can re-add them later if you want.",
+        confirmLabel: "Yes, remove",
+      };
+    }
+    return {
+      title: `Block ${target.displayName}?`,
+      description:
+        "Blocking hides their chat, invites, gifts, and presence from you everywhere in HeartHaven. You can unblock them from this page later.",
+      confirmLabel: "Yes, block",
+    };
+  }
 
   // Auto-redeem a `?accept=<token>` URL the sender pasted to the recipient.
   // The redeem itself writes to localStorage, so we defer the React setState
@@ -233,8 +284,7 @@ export function FriendsClient() {
   }
 
   function blockAndDecline(invite: { id: string; fromCode: FriendCode; fromDisplayName: string }) {
-    safety.blockKeeper(invite.fromCode, invite.fromDisplayName);
-    social.markInviteBlocked(invite.id);
+    setConfirmTarget({ kind: "block-invite", invite });
   }
 
   function unblock(code: FriendCode) {
@@ -243,17 +293,18 @@ export function FriendsClient() {
 
   return (
     <div className="grid gap-5">
-      <section className="rounded-lg border border-cream-300 bg-cream-50/75 p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <section className="hh-card relative overflow-hidden p-5">
+        <div className="pointer-events-none absolute inset-0 hh-bg-paper opacity-40" aria-hidden />
+        <div className="relative flex flex-wrap items-start justify-between gap-3">
           <div>
             <Badge variant="garden">
               <Users className="size-3.5" />
               Friends
             </Badge>
-            <h1 className="mt-2 font-display text-4xl text-ink-900">Your circle, kept small and warm.</h1>
+            <h1 className="hh-display mt-2 text-4xl text-ink-900">Your circle, kept small and warm.</h1>
             <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-              Send an invite by friend code, then share the link with your friend. They accept on their end — you stay
-              in control of who joins your inbox.
+              Send an invite by friend code and your friend sees it instantly in their inbox. If you&apos;re offline
+              first, share the link below — either way, you stay in control of who joins.
             </p>
           </div>
           <div className="grid gap-2 text-right">
@@ -365,9 +416,14 @@ export function FriendsClient() {
             </p>
           )}
           {lookupMessage.linkToShare && (
-            <div className="mt-2 flex items-center gap-2 rounded-md border border-lavender-300/40 bg-lavender-100/60 p-2">
+            <div className="mt-2 flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-lavender-300/40 bg-lavender-100/60 p-2">
               <LinkIcon className="size-4 shrink-0 text-lavender-600" />
-              <code className="min-w-0 flex-1 truncate font-mono text-xs text-ink-800">{lookupMessage.linkToShare}</code>
+              <code
+                className="block min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs text-ink-800"
+                title={lookupMessage.linkToShare}
+              >
+                {lookupMessage.linkToShare}
+              </code>
               <CozyButton size="sm" variant="warm" onClick={() => copyShareLink(lookupMessage.linkToShare!, "lookup")}>
                 {copiedLinkId === "lookup" ? <ClipboardCheck /> : <Copy />}
                 {copiedLinkId === "lookup" ? "Copied" : "Copy"}
@@ -378,11 +434,11 @@ export function FriendsClient() {
           {pendingOutgoing.length > 0 && (
             <div className="mt-4">
               <p className="text-xs font-extrabold uppercase tracking-normal text-ink-500">Pending invites you sent</p>
-              <ul className="mt-2 grid gap-2">
+              <ul className="mt-2 grid gap-2 overflow-hidden">
                 {pendingOutgoing.map((invite) => {
                   const link = social.buildLink(invite);
                   return (
-                    <li key={invite.id} className="rounded-md border border-cream-300 bg-white/70 px-3 py-2 text-xs font-bold text-ink-700">
+                    <li key={invite.id} className="min-w-0 overflow-hidden rounded-md border border-cream-300 bg-white/70 px-3 py-2 text-xs font-bold text-ink-700">
                       <div className="flex items-center justify-between gap-2">
                         <span>
                           To <span className="font-mono">{invite.toCode}</span>
@@ -390,14 +446,19 @@ export function FriendsClient() {
                         <button
                           type="button"
                           onClick={() => social.cancelInvite(invite.id)}
-                          className="inline-flex items-center gap-1 text-ink-500 hover:text-blush-700"
+                          className="inline-flex shrink-0 items-center gap-1 text-ink-500 hover:text-blush-700"
                         >
                           <X className="size-3.5" /> Cancel
                         </button>
                       </div>
-                      <div className="mt-2 flex items-center gap-2">
+                      <div className="mt-2 flex min-w-0 items-center gap-2 overflow-hidden">
                         <LinkIcon className="size-3.5 shrink-0 text-lavender-600" />
-                        <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-700">{link}</code>
+                        <code
+                          className="block min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] text-ink-700"
+                          title={link}
+                        >
+                          {link}
+                        </code>
                         <button
                           type="button"
                           onClick={() => copyShareLink(link, invite.id)}
@@ -490,17 +551,18 @@ export function FriendsClient() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      safety.blockKeeper(friend.code, friend.displayName);
-                      social.removeFriend(friend.code);
-                    }}
+                    onClick={() =>
+                      setConfirmTarget({ kind: "block-friend", code: friend.code, displayName: friend.displayName })
+                    }
                     className="inline-flex items-center gap-1 rounded-full border border-blush-300/50 bg-white/70 px-3 py-1 text-xs font-extrabold text-blush-700 hover:bg-blush-100"
                   >
                     <Ban className="size-3.5" /> Block
                   </button>
                   <button
                     type="button"
-                    onClick={() => social.removeFriend(friend.code)}
+                    onClick={() =>
+                      setConfirmTarget({ kind: "remove-friend", code: friend.code, displayName: friend.displayName })
+                    }
                     className="inline-flex items-center gap-1 rounded-full border border-cream-300 bg-white/70 px-3 py-1 text-xs font-extrabold text-ink-500 hover:bg-cream-200"
                   >
                     <Trash2 className="size-3.5" /> Remove
@@ -558,7 +620,9 @@ export function FriendsClient() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => safety.blockKeeper(entry.code, entry.displayName)}
+                    onClick={() =>
+                      setConfirmTarget({ kind: "block-played", code: entry.code, displayName: entry.displayName })
+                    }
                     className="inline-flex items-center gap-1 rounded-full border border-blush-300/50 bg-white/70 px-3 py-1 text-xs font-extrabold text-blush-700 hover:bg-blush-100"
                   >
                     <Ban className="size-3.5" /> Block
@@ -638,6 +702,13 @@ export function FriendsClient() {
           recipient={giftTarget}
         />
       )}
+      <ConfirmDialog
+        open={Boolean(confirmTarget)}
+        onClose={() => setConfirmTarget(null)}
+        onConfirm={performConfirmed}
+        tone={confirmTarget?.kind === "remove-friend" ? "warm" : "danger"}
+        {...confirmCopy()}
+      />
     </div>
   );
 }

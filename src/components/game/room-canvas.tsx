@@ -61,6 +61,8 @@ type FurnitureObject = {
   container: Phaser.GameObjects.Container;
   glow: Phaser.GameObjects.Graphics;
   baseY: number;
+  /** Reference to the breathing bob tween so we can pause/resume it during drag. */
+  bobTween?: Phaser.Tweens.Tween;
 };
 
 type PetMood = "idle" | "follow" | "sit" | "sleep" | "react";
@@ -189,6 +191,17 @@ export function RoomCanvas({
         private moveBroadcastTimer = 0;
         private footstepTimer = 0;
         private lastSentPosition = { x: 390, y: 374 };
+        /**
+         * Which character WASD is currently driving. Right-click on the room
+         * canvas toggles between keeper and companion (the pet). Hold right-
+         * click ≥500ms to recall the companion to the keeper. Same mechanic
+         * as the garden canvas — the two scenes share the model so the
+         * player builds the muscle memory once.
+         */
+        private playMode: "keeper" | "companion" = "keeper";
+        private rightButtonDownAt = 0;
+        private rightHoldFired = false;
+        private playModeBadge?: Phaser.GameObjects.Container;
 
         constructor() {
           super("HeartHavenRoom");
@@ -254,6 +267,7 @@ export function RoomCanvas({
         }
 
         update(_time: number, delta: number) {
+          this.checkRightHold();
           this.updateAvatar(delta);
           this.updatePet(delta);
           this.updateRemoteAvatarAnimation();
@@ -510,9 +524,12 @@ export function RoomCanvas({
           container.add(glow);
 
           drawFurnitureShape(this, container, placement);
-          // Only the room's host can rearrange furniture. Visitors keep hover
-          // affordances (they can click to interact) but cannot drag.
-          const canDrag = Boolean(canEditRoom && placement.floorLocked);
+          // Hosts and approved decorators can rearrange both floor AND wall
+          // items. Visitors still get the hover affordance (so they can see
+          // labels) but cannot drag. The previous code gated drag on
+          // `floorLocked`, which meant wall items (windows, shelves) were
+          // impossible to move — that's the "only x-axis works" bug.
+          const canDrag = Boolean(canEditRoom);
           container.setInteractive({ draggable: canDrag, useHandCursor: true });
           if (canDrag) {
             this.input.setDraggable(container);
@@ -543,23 +560,49 @@ export function RoomCanvas({
             this.selectFurniture(furniture);
           });
 
+          container.on("dragstart", () => {
+            // Kill the breathing tween while the player is moving the piece
+            // — otherwise the tween keeps lerping the container's y back
+            // toward its captured baseline, which is why drag previously
+            // only seemed to work on the x-axis.
+            if (furniture.bobTween) {
+              furniture.bobTween.stop();
+              furniture.bobTween = undefined;
+            }
+          });
+
           container.on("drag", (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
             this.dragStarted = true;
-            const snapped = this.constrainToFloor(dragX, dragY);
+            const snapped = this.constrainForPlacement(placement, dragX, dragY);
             container.setPosition(snapped.x, snapped.y);
             furniture.placement.x = Math.round(snapped.x);
             furniture.placement.y = Math.round(snapped.y);
+            // Update depth live so closer-to-camera pieces correctly occlude
+            // farther-back ones during the drag (the 2.5D occlusion fix).
+            container.setDepth(furniture.placement.floorLocked ? snapped.y + furniture.placement.zIndex * 10 : 130 + furniture.placement.zIndex * 10);
             this.moveBubbleToSelection();
           });
 
           container.on("dragend", () => {
             if (this.dragStarted) {
+              furniture.baseY = furniture.placement.y;
               setStatus(`${placement.label} moved to x ${Math.round(container.x)}, y ${Math.round(container.y)}.`);
               onPlacementsChange?.(this.exportPlacements());
+              // Restart the breathing tween relative to the new resting y so
+              // the bob continues to feel "alive" without snapping the piece
+              // back to its old position.
+              furniture.bobTween = this.tweens.add({
+                targets: container,
+                y: placement.kind === "lantern" ? furniture.baseY - 4 : furniture.baseY,
+                duration: 1800,
+                yoyo: true,
+                repeat: -1,
+                ease: "Sine.inOut",
+              });
             }
           });
 
-          this.tweens.add({
+          furniture.bobTween = this.tweens.add({
             targets: container,
             y: placement.kind === "lantern" ? placement.y - 4 : placement.y,
             duration: 1800,
@@ -569,6 +612,26 @@ export function RoomCanvas({
           });
 
           return furniture;
+        }
+
+        /**
+         * Drag-clamp that respects whether the placement is a floor item or a
+         * wall item. Floor items use the existing floor polygon. Wall items
+         * are kept within the upper wall band so a window can't end up on
+         * the rug, but they can slide freely across the back wall horizontally.
+         */
+        private constrainForPlacement(
+          placement: PlayablePlacement,
+          x: number,
+          y: number,
+        ): Phaser.Math.Vector2 {
+          if (placement.floorLocked) {
+            return this.constrainToFloor(x, y);
+          }
+          return new PhaserModule.Math.Vector2(
+            PhaserModule.Math.Clamp(x, 140, 820),
+            PhaserModule.Math.Clamp(y, 100, 220),
+          );
         }
 
         private createAvatar() {
@@ -628,6 +691,7 @@ export function RoomCanvas({
 
         private createInput() {
           this.input.keyboard?.disableGlobalCapture();
+          this.input.mouse?.disableContextMenu();
           this.cursors = this.input.keyboard?.createCursorKeys();
           this.wasd = this.input.keyboard?.addKeys({
             up: PhaserModule.Input.Keyboard.KeyCodes.W,
@@ -640,13 +704,101 @@ export function RoomCanvas({
           }) as Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown", Phaser.Input.Keyboard.Key> | undefined;
 
           this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            if (pointer.rightButtonDown()) {
+              this.rightButtonDownAt = this.time.now;
+              this.rightHoldFired = false;
+              return;
+            }
             if (pointer.y < 198 || this.dragStarted) return;
             const target = this.constrainToFloor(pointer.x, pointer.y);
             this.target = new PhaserModule.Math.Vector2(target.x, target.y);
-            this.petMood = "follow";
+            if (this.playMode !== "companion") this.petMood = "follow";
             playCozyCue("move");
             setStatus(`Walking to x ${Math.round(target.x)}, y ${Math.round(target.y)}.`);
           });
+
+          this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
+            if (pointer.button !== 2) return;
+            if (this.rightHoldFired) {
+              this.rightHoldFired = false;
+              return;
+            }
+            this.togglePlayMode();
+          });
+
+          this.drawPlayModeBadge();
+        }
+
+        private togglePlayMode() {
+          this.playMode = this.playMode === "keeper" ? "companion" : "keeper";
+          this.target = undefined;
+          if (this.playMode === "companion") {
+            this.petMood = "idle";
+            setStatus("Playing as your companion. Right-click to swap back.");
+            playCozyCue("petChirp");
+          } else {
+            setStatus("Back in your keeper. Right-click to swap to your companion.");
+            playCozyCue("score");
+          }
+          this.updatePlayModeBadge();
+        }
+
+        private recallCompanion() {
+          if (!this.pet || !this.avatar) return;
+          this.pet.setPosition(this.avatar.x + 54, this.avatar.y + 24);
+          this.petMood = "follow";
+          this.petMoodTimer = 0;
+          playCozyCue("petChirp");
+          setStatus("Whistled the companion back to you.");
+        }
+
+        private drawPlayModeBadge() {
+          const badge = this.add.container(20, 88).setScrollFactor(0).setDepth(10000);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.95);
+          bg.fillRoundedRect(0, 0, 220, 36, 18);
+          bg.lineStyle(2, 0xc0a8dc, 0.85);
+          bg.strokeRoundedRect(0, 0, 220, 36, 18);
+          const label = this.add.text(14, 8, "PLAYING AS", {
+            color: "#8E70BD",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "10px",
+            fontStyle: "900",
+          });
+          const value = this.add
+            .text(86, 6, "Keeper", {
+              color: "#3A2A2A",
+              fontFamily: "Caprasimo, Georgia, serif",
+              fontSize: "14px",
+            })
+            .setName("playmode-value");
+          const hint = this.add.text(14, 22, "Right-click to swap · hold to recall", {
+            color: "#84675F",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "10px",
+            fontStyle: "800",
+          });
+          badge.add([bg, label, value, hint]);
+          this.playModeBadge = badge;
+        }
+
+        private updatePlayModeBadge() {
+          if (!this.playModeBadge) return;
+          const value = this.playModeBadge.getByName("playmode-value") as Phaser.GameObjects.Text | undefined;
+          if (value) value.setText(this.playMode === "companion" ? "Companion" : "Keeper");
+        }
+
+        private checkRightHold() {
+          if (this.rightHoldFired) return;
+          if (this.rightButtonDownAt === 0) return;
+          if (!this.input.activePointer.rightButtonDown()) {
+            this.rightButtonDownAt = 0;
+            return;
+          }
+          if (this.time.now - this.rightButtonDownAt >= 500) {
+            this.rightHoldFired = true;
+            this.recallCompanion();
+          }
         }
 
         private createRealtimeBridge() {
@@ -1066,6 +1218,18 @@ export function RoomCanvas({
         }
 
         private updateAvatar(delta: number) {
+          // While the player is driving the companion, the keeper holds still.
+          // We keep its facing pointed toward the pet so the keeper "watches"
+          // their companion rather than going limp.
+          if (this.playMode === "companion") {
+            this.avatarFacing = this.pet?.x && this.pet.x < this.avatar.x ? "left" : "right";
+            this.avatarSprite.setFlipX(this.avatarFacing === "left");
+            this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
+            this.avatarShadow.setDepth(this.avatar.y - 1);
+            this.applyKeeperLocomotion(false);
+            return;
+          }
+
           const keyboard = this.readKeyboard();
           const speed = 0.23 * delta;
           let moving = false;
@@ -1171,6 +1335,30 @@ export function RoomCanvas({
             this.blinkTimer = 0;
             this.petEyes.forEach((eye) => eye.setScale(1, 0.12));
             this.time.delayedCall(120, () => this.petEyes.forEach((eye) => eye.setScale(1, 1)));
+          }
+
+          // Companion-controlled branch — WASD drives the pet directly at
+          // ×1.6 speed and the auto-follow is suspended.
+          if (this.playMode === "companion") {
+            const keyboard = this.readKeyboard();
+            const ctlSpeed = 0.23 * 1.6 * delta;
+            const prevX = this.pet.x;
+            let petMoving = false;
+            if (keyboard.x !== 0 || keyboard.y !== 0) {
+              const next = this.constrainToFloor(this.pet.x + keyboard.x * ctlSpeed, this.pet.y + keyboard.y * ctlSpeed);
+              this.pet.setPosition(next.x, next.y);
+              petMoving = true;
+            }
+            if (petMoving && this.pet.x !== prevX) {
+              this.petFacing = this.pet.x < prevX ? "left" : "right";
+            }
+            this.petSprite.setFlipX(this.petFacing === "left");
+            this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+            this.pet.setDepth(this.pet.y);
+            this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
+            this.petShadow.setDepth(this.pet.y - 1);
+            this.applyPetLocomotion(petMoving, "walk1");
+            return;
           }
 
           // Settled lounging cycle — 14 seconds between idle/sit

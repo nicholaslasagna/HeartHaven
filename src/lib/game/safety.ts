@@ -32,6 +32,8 @@
  */
 
 import type { FriendCode } from "@/lib/game/social";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export const SAFETY_STATE_KEY = "hearthaven:safety-state";
 export const SAFETY_EVENT = "hearthaven:safety-changed";
@@ -154,10 +156,41 @@ export function submitReport(input: SubmitReportInput): ReportRecord {
   };
   const state = readSafetyState();
   writeState({ ...state, reports: [record, ...state.reports].slice(0, 200) });
-  // TODO: mirror to Supabase `reports` table (service-role admin readable).
-  // The admin tooling joins this against `auth.users` to recover IP / email /
-  // user-agent when responding to a legitimate legal request.
+  // Mirror to Supabase `moderator_reports` so it lands in the admin queue.
+  // RLS on that table is INSERT-only for authenticated keepers — only the
+  // service-role admin can SELECT, which is where the moderator joins the
+  // row against `auth.users` to recover the offender's auth metadata (IP,
+  // user-agent, email) for legitimate legal-process responses.
+  void mirrorReportToSupabase(record);
   return record;
+}
+
+async function mirrorReportToSupabase(record: ReportRecord) {
+  if (!isSupabaseConfigured() || typeof window === "undefined") return;
+  try {
+    const supabase = getSupabaseBrowserClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return; // anonymous report can't be attributed; admin won't be able to act on it anyway
+    await supabase.from("moderator_reports").insert({
+      reporter_profile_id: user.id,
+      reporter_code: record.reporterCode,
+      offender_code: record.offenderCode,
+      offender_display_name: record.offenderDisplayName,
+      reason: record.reason,
+      details: record.details ?? null,
+      chat_excerpt: record.chatExcerpt ?? null,
+      scene: record.scene ?? null,
+      auto_flagged: record.autoFlagged,
+      client_user_agent: window.navigator?.userAgent ?? null,
+      // Do NOT collect IP here — Supabase records the request IP automatically
+      // on the auth.users row, which is the right legal-process surface.
+    });
+  } catch (error) {
+    // Reports are queued locally regardless. A failed mirror just means the
+    // admin won't see it in the dashboard — local state has the canonical
+    // record and a retry path can sweep this up later.
+    console.warn("[hearthaven safety] could not mirror report to Supabase:", error);
+  }
 }
 
 /* ----------------------------------------------------------------

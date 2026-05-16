@@ -22,6 +22,12 @@ import {
   type SocialState,
 } from "@/lib/game/social";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
+import {
+  ensureInviteRealtime,
+  pushInviteToSupabase,
+  setSupabaseInviteStatus,
+  teardownInviteRealtime,
+} from "@/lib/game/invite-bridge";
 
 /**
  * useSocial — React view of the friend graph. Auto-syncs across tabs via
@@ -35,9 +41,14 @@ export function useSocial() {
     sync();
     window.addEventListener(SOCIAL_EVENT, sync);
     window.addEventListener("storage", sync);
+    // Boot the Supabase realtime subscription so any invite addressed to us
+    // — past or live — lands in the local inbox without the recipient
+    // needing to click a shareable URL.
+    void ensureInviteRealtime();
     return () => {
       window.removeEventListener(SOCIAL_EVENT, sync);
       window.removeEventListener("storage", sync);
+      void teardownInviteRealtime();
     };
   }, []);
 
@@ -46,7 +57,31 @@ export function useSocial() {
   const sendInvite = useCallback((code: FriendCode, message?: string) => {
     const username = getCachedPublicUsername();
     setSelfDisplayName(username);
-    return sendFriendInvite(code, message);
+    const result = sendFriendInvite(code, message);
+    // Fire-and-forget the Supabase push so the recipient gets the invite in
+    // their inbox the moment their realtime subscription sees the INSERT —
+    // no shareable URL hand-off needed when both keepers are signed in.
+    if (result.ok) void pushInviteToSupabase(result.invite);
+    return result;
+  }, []);
+  const acceptInvite = useCallback((inviteId: string) => {
+    const state = getSocialState();
+    const invite = state.inbox.find((entry) => entry.id === inviteId);
+    const friend = acceptFriendInvite(inviteId);
+    if (friend && invite) void setSupabaseInviteStatus(invite.fromCode, "accepted");
+    return friend;
+  }, []);
+  const declineInvite = useCallback((inviteId: string) => {
+    const state = getSocialState();
+    const invite = state.inbox.find((entry) => entry.id === inviteId);
+    declineFriendInvite(inviteId);
+    if (invite) void setSupabaseInviteStatus(invite.fromCode, "declined");
+  }, []);
+  const markInviteBlockedSynced = useCallback((inviteId: string) => {
+    const state = getSocialState();
+    const invite = state.inbox.find((entry) => entry.id === inviteId);
+    markInviteBlocked(inviteId);
+    if (invite) void setSupabaseInviteStatus(invite.fromCode, "blocked");
   }, []);
   const buildLink = useCallback((invite: FriendInvite) => {
     const origin = typeof window !== "undefined" ? window.location.origin : "https://realfiction.store";
@@ -75,13 +110,13 @@ export function useSocial() {
       redeemToken,
       redeemCode: acceptInviteFromCode,
       cancelInvite: cancelOutgoingInvite,
-      acceptInvite: acceptFriendInvite,
-      declineInvite: declineFriendInvite,
-      markInviteBlocked,
+      acceptInvite,
+      declineInvite,
+      markInviteBlocked: markInviteBlockedSynced,
       removeFriend,
       recordPlayedWith,
       setSelfDisplayName,
     }),
-    [state, lookup, canLookup, sendInvite, buildLink, redeemToken],
+    [state, lookup, canLookup, sendInvite, buildLink, redeemToken, acceptInvite, declineInvite, markInviteBlockedSynced],
   );
 }

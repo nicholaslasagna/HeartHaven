@@ -230,6 +230,10 @@ function isFacingLeft(rotation: number) {
   return normalized >= 90 && normalized < 270;
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function facingRotation(facing: FacingDirection) {
   return facing === "left" ? 180 : 0;
 }
@@ -306,6 +310,19 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private textInputFocusHandler?: (event: Event) => void;
         private timeOverlay?: Phaser.GameObjects.Rectangle;
         private decorDragging = false;
+        /**
+         * Which character the player is actively driving with WASD / arrows.
+         * Right-click toggles between them; holding right-click recalls the
+         * companion to the keeper. The companion is faster (×1.6) and can
+         * roam farther from the keeper than the auto-follow normally allows.
+         */
+        private playMode: "keeper" | "companion" = "keeper";
+        private rightButtonDownAt = 0;
+        private rightHoldFired = false;
+        private playModeBadge?: Phaser.GameObjects.Container;
+        private parkActionHandler?: (event: Event) => void;
+        private swapRequestHandler?: (event: Event) => void;
+        private positionBroadcastTimer = 0;
 
         constructor() {
           super("HeartHavenGarden");
@@ -363,6 +380,10 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.drawButterflies();
           this.drawFireflies();
           this.drawSeasonalGardenDecor();
+          // Glow patches mark sniff-able hidden item spots — only useful
+          // while in companion mode but drawn in either, so the player
+          // knows what they're aiming for after swapping.
+          this.drawDiscoveryGlowPatches();
           this.createDecorations(initialDecor);
           this.createAvatar();
           this.createPet();
@@ -378,9 +399,18 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         update(_time: number, delta: number) {
+          this.checkRightHold();
           this.updateAvatar(delta);
           this.updatePet(delta);
           this.updateRemoteAvatarAnimation();
+          // Broadcast keeper + companion positions to the HUD/minimap at
+          // ~6 Hz — frequent enough for the markers to feel live but cheap
+          // for React listeners.
+          this.positionBroadcastTimer += delta;
+          if (this.positionBroadcastTimer > 165) {
+            this.positionBroadcastTimer = 0;
+            this.broadcastParkPosition();
+          }
           this.butterflies.forEach((butterfly, index) => {
             butterfly.x += Math.sin((this.time.now + index * 400) * 0.0012) * 0.34;
             butterfly.y += Math.cos((this.time.now + index * 300) * 0.001) * 0.18;
@@ -882,6 +912,58 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           }
         }
 
+        /**
+         * Lay down soft pulsing radial gradients on the floor at every
+         * still-hidden discovery position. They pulse with a Sine ease so
+         * the patches read as "alive" without bordering on flashing. Each
+         * patch has a paw-print pill above it that says "Sniff me" so the
+         * mechanic discovers itself.
+         */
+        private drawDiscoveryGlowPatches() {
+          const zone = variant === "park" ? "park" : "garden";
+          // Lazy-imported to keep Phaser independent of the React store.
+          import("@/lib/game/discoveries-store").then(({ ZONE_DISCOVERIES, isItemFound }) => {
+            const items = ZONE_DISCOVERIES[zone];
+            items.forEach((item) => {
+              if (isItemFound(zone, item.id)) return;
+              const worldX = (item.x / 100) * GARDEN_WORLD_WIDTH;
+              const worldY = (item.y / 100) * GARDEN_WORLD_HEIGHT;
+              const glow = this.add.circle(worldX, worldY, 36, 0xfae3a8, 0.32).setDepth(2);
+              this.tweens.add({
+                targets: glow,
+                radius: 48,
+                alpha: 0.18,
+                duration: 1400,
+                yoyo: true,
+                repeat: -1,
+                ease: "Sine.inOut",
+              });
+              const halo = this.add.circle(worldX, worldY, 24, 0xfffcf3, 0.55).setDepth(3);
+              this.tweens.add({
+                targets: halo,
+                scaleX: 1.18,
+                scaleY: 1.18,
+                duration: 1800,
+                yoyo: true,
+                repeat: -1,
+                ease: "Sine.inOut",
+              });
+              const tag = this.add
+                .text(worldX, worldY + 36, "🐾 Sniff me", {
+                  color: "#5B3F76",
+                  fontFamily: "Nunito, sans-serif",
+                  fontSize: "11px",
+                  fontStyle: "900",
+                  backgroundColor: "#EFE6F7",
+                  padding: { x: 8, y: 3 },
+                })
+                .setOrigin(0.5, 0)
+                .setDepth(4);
+              tag.setName(`discovery-tag-${item.id}`);
+            });
+          });
+        }
+
         private drawFireflies() {
           for (let index = 0; index < 28; index += 1) {
             const firefly = this.add
@@ -955,6 +1037,10 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
         private createInput() {
           this.input.keyboard?.disableGlobalCapture();
+          // The right mouse button drives the swap mechanic — suppress the
+          // browser's context menu so right-click on the canvas registers as
+          // a game action and not a system menu.
+          this.input.mouse?.disableContextMenu();
           this.cursors = this.input.keyboard?.createCursorKeys();
           this.wasd = this.input.keyboard?.addKeys({
             up: PhaserModule.Input.Keyboard.KeyCodes.W,
@@ -964,13 +1050,266 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             rotate: PhaserModule.Input.Keyboard.KeyCodes.R,
           }) as Record<"up" | "left" | "down" | "right" | "rotate", Phaser.Input.Keyboard.Key> | undefined;
 
+          // Q triggers Sniff while in companion mode — same path as the HUD
+          // button. We use the raw keyboard event (not a `wasd` slot) so we
+          // can listen alongside the chat-focus guard.
+          this.input.keyboard?.on("keydown-Q", () => {
+            if (this.textInputFocused || isTextInputFocused()) return;
+            if (this.playMode === "companion") this.trySniff();
+          });
+
           this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            // Right click — start a swap-or-recall timer. A short tap toggles
+            // play mode (keeper ↔ companion); holding ≥500ms recalls the
+            // companion back to the keeper without changing modes.
+            if (pointer.rightButtonDown()) {
+              this.rightButtonDownAt = this.time.now;
+              this.rightHoldFired = false;
+              return;
+            }
+            // Left click — click-to-move for whichever sprite is being
+            // driven right now.
             if (pointer.y < 112) return;
             const target = this.constrainAvatarToWalkable(pointer.worldX, pointer.worldY);
             this.target = new PhaserModule.Math.Vector2(target.x, target.y);
             playCozyCue("move");
             setStatus(`Walking along the paved path to x ${Math.round(target.x)}, y ${Math.round(target.y)}.`);
           });
+
+          this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
+            if (pointer.button !== 2) return;
+            if (this.rightHoldFired) {
+              // The hold already fired (recall). Don't also toggle modes.
+              this.rightHoldFired = false;
+              return;
+            }
+            this.togglePlayMode();
+          });
+
+          this.drawPlayModeBadge();
+          // The HUD's swap button + action chips drive the canvas through
+          // these two events. Mounting the listeners here keeps them paired
+          // with the keyboard/mouse bindings they shadow.
+          this.swapRequestHandler = () => this.togglePlayMode();
+          window.addEventListener("hearthaven:request-play-mode-swap", this.swapRequestHandler);
+          this.parkActionHandler = (event: Event) => {
+            const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+            if (!action) return;
+            this.handleParkAction(action);
+          };
+          window.addEventListener("hearthaven:park-action", this.parkActionHandler);
+          // Broadcast a starting position so the minimap doesn't show the
+          // default placeholder before the first move tick.
+          this.broadcastParkPosition();
+        }
+
+        /**
+         * Translate HUD action chips into the same code paths the keyboard
+         * fires. The keeper has a small emote/treat/whistle palette; the
+         * companion handles sniff/squeeze/dig/fetch on top of WASD.
+         */
+        private handleParkAction(action: string) {
+          if (action === "sniff") {
+            this.trySniff();
+            return;
+          }
+          if (action === "whistle" || action === "fetch") {
+            this.recallCompanion();
+            return;
+          }
+          if (action === "wave") {
+            playCozyCue("score");
+            setStatus("You waved at the park.");
+            return;
+          }
+          if (action === "treat") {
+            playCozyCue("petChirp");
+            setStatus("You tossed a treat for the companion.");
+            return;
+          }
+          if (action === "note") {
+            playCozyCue("score");
+            setStatus("Note dropped — friends in the park can pick it up.");
+            return;
+          }
+          if (action === "squeeze" || action === "dig") {
+            playCozyCue("petChirp");
+            setStatus(action === "squeeze"
+              ? "Snuck through the squeeze gap — only your companion fits."
+              : "Pawed at the dirt — nothing buried here yet.");
+            return;
+          }
+        }
+
+        /**
+         * When the companion is on (or right next to) a hidden glow patch,
+         * pressing the Sniff action reveals the item, writes it to the
+         * discoveries store, and fires a toast + a discovery-revealed event
+         * for the HUD to pick up.
+         */
+        private trySniff() {
+          if (this.playMode !== "companion") {
+            setStatus("Swap to your companion first — sniffing is a pet ability.");
+            return;
+          }
+          // Lazy-import to keep Phaser bundles unaware of the React-side store.
+          import("@/lib/game/discoveries-store").then(({ nearestHidden, markDiscoveryFound }) => {
+            const zone = variant === "park" ? "park" : "garden";
+            const pos = this.companionScenePercent();
+            const target = nearestHidden(zone, pos, 12);
+            if (!target) {
+              setStatus("Your companion sniffs the air — nothing nearby this time.");
+              return;
+            }
+            const found = markDiscoveryFound(zone, target.id);
+            if (!found) {
+              setStatus("Already discovered around here.");
+              return;
+            }
+            playCozyCue("score");
+            setStatus(`Sniffed up ${target.name}! ${target.hint}`);
+            window.dispatchEvent(new CustomEvent("hearthaven:discovery-revealed", {
+              detail: { id: target.id, name: target.name, emoji: target.emoji },
+            }));
+          });
+        }
+
+        /**
+         * Companion world position as 0–100 percent of the scene, so it
+         * lines up with the `ZONE_DISCOVERIES` coordinates without anybody
+         * needing to know about Phaser world coordinates.
+         */
+        private companionScenePercent() {
+          const x = (this.pet?.x ?? 0) / GARDEN_WORLD_WIDTH * 100;
+          const y = (this.pet?.y ?? 0) / GARDEN_WORLD_HEIGHT * 100;
+          return { x: clamp(x, 0, 100), y: clamp(y, 0, 100) };
+        }
+
+        private keeperScenePercent() {
+          const x = (this.avatar?.x ?? 0) / GARDEN_WORLD_WIDTH * 100;
+          const y = (this.avatar?.y ?? 0) / GARDEN_WORLD_HEIGHT * 100;
+          return { x: clamp(x, 0, 100), y: clamp(y, 0, 100) };
+        }
+
+        private broadcastParkPosition() {
+          window.dispatchEvent(new CustomEvent("hearthaven:park-position", {
+            detail: {
+              keeper: this.keeperScenePercent(),
+              companion: this.companionScenePercent(),
+              keeperHint: this.locationHint(this.keeperScenePercent()),
+              companionHint: this.locationHint(this.companionScenePercent()),
+            },
+          }));
+        }
+
+        /**
+         * Friendly text describing roughly where in the park (or garden) a
+         * character is right now. Falls back to "exploring" so the HUD's
+         * Live-card never ends up blank.
+         */
+        private locationHint(pos: { x: number; y: number }) {
+          const landmarks: Array<{ x: number; y: number; name: string }> = [
+            { x: 24, y: 78, name: "swings" },
+            { x: 40, y: 62, name: "fountain" },
+            { x: 58, y: 28, name: "claw machine" },
+            { x: 72, y: 68, name: "flower cart" },
+            { x: 82, y: 18, name: "sakura tree" },
+            { x: 50, y: 82, name: "squeeze gap" },
+            { x: 88, y: 22, name: "lantern arch" },
+          ];
+          let best: { dist: number; name: string } | null = null;
+          for (const landmark of landmarks) {
+            const dist = Math.hypot(landmark.x - pos.x, landmark.y - pos.y);
+            if (!best || dist < best.dist) best = { dist, name: landmark.name };
+          }
+          if (!best) return "exploring";
+          return best.dist < 12 ? `near the ${best.name}` : `wandering past the ${best.name}`;
+        }
+
+        /**
+         * Swap whether the keeper or the companion is the WASD-driven
+         * character. The other one freezes in place (with their auto-idle
+         * loop still running), and the camera switches to follow the new
+         * active character.
+         */
+        private togglePlayMode() {
+          this.playMode = this.playMode === "keeper" ? "companion" : "keeper";
+          this.target = undefined;
+          if (this.playMode === "companion") {
+            this.petMood = "idle";
+            this.cameras.main.startFollow(this.pet, true, 0.08, 0.08);
+            setStatus("Playing as your companion. They're faster and can sniff for hidden items. Right-click to swap back.");
+            playCozyCue("petChirp");
+          } else {
+            this.cameras.main.startFollow(this.avatar, true, 0.08, 0.08);
+            setStatus("Back in your keeper. Right-click to swap to your companion.");
+            playCozyCue("score");
+          }
+          this.updatePlayModeBadge();
+          // Mirror the canvas-side play mode out to React so the HUD, the
+          // sidebar control card, and the minimap all match what's actually
+          // being driven by WASD right now.
+          window.dispatchEvent(new CustomEvent("hearthaven:play-mode-changed", { detail: { mode: this.playMode } }));
+        }
+
+        /**
+         * Snap the companion back to the keeper's side. Triggered by holding
+         * the right mouse button ≥500ms — handy when the pet has roamed
+         * into the corner of the map and you want them back without walking
+         * over yourself.
+         */
+        private recallCompanion() {
+          if (!this.pet || !this.avatar) return;
+          this.pet.setPosition(this.avatar.x + 64, this.avatar.y + 28);
+          this.petMood = "follow";
+          this.petMoodTimer = 0;
+          playCozyCue("petChirp");
+          setStatus("Whistled the companion back to you.");
+        }
+
+        /**
+         * Floating "playing as" pill in the top-left of the camera. Mirrors
+         * the swap state so the player can tell at a glance which character
+         * the keyboard is driving.
+         */
+        private drawPlayModeBadge() {
+          const badge = this.add.container(20, 20).setScrollFactor(0).setDepth(10000);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.95);
+          bg.fillRoundedRect(0, 0, 220, 36, 18);
+          bg.lineStyle(2, 0xc0a8dc, 0.85);
+          bg.strokeRoundedRect(0, 0, 220, 36, 18);
+          const label = this.add
+            .text(14, 8, "PLAYING AS", {
+              color: "#8E70BD",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "10px",
+              fontStyle: "900",
+            })
+            .setName("playmode-label");
+          const value = this.add
+            .text(86, 6, "Keeper", {
+              color: "#3A2A2A",
+              fontFamily: "Caprasimo, Georgia, serif",
+              fontSize: "14px",
+            })
+            .setName("playmode-value");
+          const hint = this.add
+            .text(14, 22, "Right-click to swap · hold to recall", {
+              color: "#84675F",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "10px",
+              fontStyle: "800",
+            })
+            .setName("playmode-hint");
+          badge.add([bg, label, value, hint]);
+          this.playModeBadge = badge;
+        }
+
+        private updatePlayModeBadge() {
+          if (!this.playModeBadge) return;
+          const value = this.playModeBadge.getByName("playmode-value") as Phaser.GameObjects.Text | undefined;
+          if (value) value.setText(this.playMode === "companion" ? "Companion" : "Keeper");
         }
 
         private createRealtimeBridge() {
@@ -1030,6 +1369,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
             if (this.companionMoodHandler) window.removeEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
             if (this.textInputFocusHandler) window.removeEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
+            if (this.swapRequestHandler) window.removeEventListener("hearthaven:request-play-mode-swap", this.swapRequestHandler);
+            if (this.parkActionHandler) window.removeEventListener("hearthaven:park-action", this.parkActionHandler);
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
@@ -1159,7 +1500,37 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             .setDisplaySize(accessory.width, accessory.height);
         }
 
+        /**
+         * If right-click has been held longer than 500ms without releasing,
+         * recall the companion to the keeper. The flag prevents the
+         * subsequent pointerup from also toggling modes.
+         */
+        private checkRightHold() {
+          if (this.rightHoldFired) return;
+          if (this.rightButtonDownAt === 0) return;
+          if (!this.input.activePointer.rightButtonDown()) {
+            this.rightButtonDownAt = 0;
+            return;
+          }
+          if (this.time.now - this.rightButtonDownAt >= 500) {
+            this.rightHoldFired = true;
+            this.recallCompanion();
+          }
+        }
+
         private updateAvatar(delta: number) {
+          // When the player is driving the companion, the keeper stays put.
+          // We still update the facing flip and the pose so the keeper
+          // "watches" their companion rather than freezing into a T-pose.
+          if (this.playMode === "companion") {
+            this.avatarFacing = this.pet?.x && this.pet.x < this.avatar.x ? "left" : "right";
+            this.avatarSprite.setFlipX(this.avatarFacing === "left");
+            this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
+            this.avatarShadow.setDepth(this.avatar.y - 1);
+            this.applyKeeperLocomotion(false);
+            return;
+          }
+
           const keyboard = this.readKeyboard();
           const speed = 0.24 * delta;
           let moving = false;
@@ -1229,6 +1600,53 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           }
         }
 
+        /**
+         * Drive the companion sprite directly from the keyboard. Used while
+         * `playMode === "companion"`. Speed is ×1.6 the keeper's so the pet
+         * actually feels like a quick scout. We still keep them on the
+         * walkable corridor so they don't sprint through hedges.
+         */
+        private updatePetController(delta: number) {
+          if (!this.pet) return;
+          const keyboard = this.readKeyboard();
+          const speed = 0.24 * 1.6 * delta;
+          const prevPetX = this.pet.x;
+          let petMoving = false;
+          let petMoveDx = 0;
+
+          if (keyboard.x !== 0 || keyboard.y !== 0) {
+            const next = this.constrainAvatarToWalkable(this.pet.x + keyboard.x * speed, this.pet.y + keyboard.y * speed);
+            petMoveDx = next.x - this.pet.x;
+            this.pet.setPosition(next.x, next.y);
+            petMoving = true;
+          } else if (this.target) {
+            const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, this.target.x, this.target.y);
+            if (distance < 5) {
+              this.target = undefined;
+            } else {
+              const angle = PhaserModule.Math.Angle.Between(this.pet.x, this.pet.y, this.target.x, this.target.y);
+              const next = this.constrainAvatarToWalkable(
+                this.pet.x + Math.cos(angle) * speed,
+                this.pet.y + Math.sin(angle) * speed,
+              );
+              petMoveDx = next.x - this.pet.x;
+              this.pet.setPosition(next.x, next.y);
+              petMoving = true;
+            }
+          }
+
+          if (petMoving && Math.abs(petMoveDx) > 0.05) {
+            this.petFacing = petMoveDx < 0 ? "left" : "right";
+          } else if (!petMoving) {
+            this.petFacing = prevPetX > this.pet.x ? "left" : this.petFacing;
+          }
+          this.petSprite.setFlipX(this.petFacing === "left");
+          this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+          this.applyPetLocomotion(petMoving, "walk1");
+          this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
+          this.petShadow.setDepth(this.pet.y - 1);
+        }
+
         private updatePet(delta: number) {
           if (!this.pet) return;
           this.petMoodTimer += delta;
@@ -1238,6 +1656,14 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           if (this.petMoodTimer > 14000) {
             this.petMoodTimer = 0;
             this.petMood = this.petMood === "idle" ? "sit" : "idle";
+          }
+
+          // When the player is driving the companion, WASD moves the pet
+          // directly at a faster speed (×1.6) and the auto-follow falls
+          // away — the companion can roam free until you swap back.
+          if (this.playMode === "companion") {
+            this.updatePetController(delta);
+            return;
           }
 
           const targetX = this.avatar.x + 64;

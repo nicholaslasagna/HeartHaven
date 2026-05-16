@@ -169,20 +169,23 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     <div className="grid gap-5">
       {!embedded && <SeasonalEventBanner compact />}
       {!embedded && <WorldZoneDock active="room" />}
-      <section className="flex flex-col justify-between gap-4 rounded-lg border border-cream-300 bg-white/64 p-5 shadow-sm md:flex-row md:items-center">
-        <div>
-          <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Playable room</p>
-          <h1 className="mt-1 font-display text-4xl text-ink-900">{activeRoom.name}</h1>
-          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            {activeRoom.description} Walk with click-to-move or WASD, drag furniture, choose left/right facing, layer
-            objects on the 2.5D depth axis, and invite friends into the same hosted world.
-          </p>
-          <p className="mt-2 text-xs font-extrabold uppercase tracking-normal text-garden-700">{saveStatus}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="warm"><Move /> Design</Button>
-          <Button disabled={!canEditRoom} onClick={saveRoom}><Save /> Save layout</Button>
-          <Button disabled={!canEditRoom} onClick={resetRoom} variant="secondary"><RotateCcw /> Reset</Button>
+      <section className="hh-card relative overflow-hidden p-5">
+        <div className="pointer-events-none absolute inset-0 hh-bg-paper opacity-40" aria-hidden />
+        <div className="relative flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <p className="hh-eyebrow text-blush-500">Playable room</p>
+            <h1 className="hh-display mt-1 text-4xl text-ink-900">{activeRoom.name}</h1>
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
+              {activeRoom.description} Walk with click-to-move or WASD, drag furniture freely on both axes, choose
+              left/right facing, layer objects on the 2.5D depth axis, and invite friends into the same hosted world.
+            </p>
+            <p className="mt-2 hh-eyebrow text-garden-700">{saveStatus}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="warm"><Move /> Design</Button>
+            <Button disabled={!canEditRoom} onClick={saveRoom}><Save /> Save layout</Button>
+            <Button disabled={!canEditRoom} onClick={resetRoom} variant="secondary"><RotateCcw /> Reset</Button>
+          </div>
         </div>
       </section>
       <section className="rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm">

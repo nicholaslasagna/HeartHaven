@@ -68,17 +68,22 @@ export function AreaClient({ games, plots }: AreaClientProps) {
 
   return (
     <div className="grid gap-5">
-      <section className="flex flex-col justify-between gap-4 rounded-lg border border-cream-300 bg-white/72 p-5 shadow-sm md:flex-row md:items-center">
-        <div>
-          <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Your hosted world</p>
-          <h1 className="mt-1 font-display text-4xl text-ink-900">@{username}&apos;s haven</h1>
+      <section className="hh-card relative flex flex-col justify-between gap-4 overflow-hidden p-5 md:flex-row md:items-center">
+        <div className="pointer-events-none absolute inset-0 hh-bg-paper opacity-40" aria-hidden />
+        <div className="relative">
+          <p className="hh-eyebrow text-blush-500">Your hosted world</p>
+          <h1 className="hh-display mt-1 text-4xl text-ink-900">@{username}&apos;s haven</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            One place for your room, garden, and the park. You host your own world — friends visit when you send an
-            invite, and they follow you wherever you move inside it.
+            One place for your room, garden, and the park. Friends visit when you invite them, and they follow you
+            wherever you move inside it.
+          </p>
+          <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-lavender-300/60 bg-lavender-100/60 px-3 py-1 text-xs font-extrabold text-lavender-500">
+            <span aria-hidden>🐾</span>
+            Right-click anywhere in the world to play as your companion. Hold to recall.
           </p>
         </div>
         <Link
-          className="inline-flex items-center gap-2 rounded-md border border-cream-300 bg-cream-50 px-3 py-2 text-sm font-extrabold text-ink-700 transition hover:-translate-y-0.5 hover:border-lavender-300 hover:bg-lavender-100"
+          className="relative inline-flex items-center gap-2 rounded-md border border-cream-300 bg-cream-50 px-3 py-2 text-sm font-extrabold text-ink-700 transition hover:-translate-y-0.5 hover:border-lavender-300 hover:bg-lavender-100"
           href="/app/games"
         >
           <Gamepad2 className="size-4" /> Open games hub
