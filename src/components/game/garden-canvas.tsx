@@ -110,43 +110,49 @@ type WalkSegment = { x1: number; y1: number; x2: number; y2: number; radius: num
 type WalkCircle = { x: number; y: number; radius: number };
 
 const sharedWalkSegments: WalkSegment[] = [
-  { x1: 132, y1: 690, x2: 500, y2: 570, radius: 112 },
-  { x1: 500, y1: 570, x2: 900, y2: 462, radius: 118 },
-  { x1: 900, y1: 462, x2: 1280, y2: 555, radius: 118 },
-  { x1: 1280, y1: 555, x2: 1720, y2: 610, radius: 124 },
-  { x1: 1720, y1: 610, x2: 2140, y2: 520, radius: 126 },
-  { x1: 2140, y1: 520, x2: 2600, y2: 590, radius: 126 },
-  { x1: 2600, y1: 590, x2: 3260, y2: 650, radius: 132 },
+  { x1: 132, y1: 690, x2: 500, y2: 570, radius: 74 },
+  { x1: 500, y1: 570, x2: 900, y2: 462, radius: 76 },
+  { x1: 900, y1: 462, x2: 1280, y2: 555, radius: 78 },
+  { x1: 1280, y1: 555, x2: 1720, y2: 610, radius: 82 },
+  { x1: 1720, y1: 610, x2: 2140, y2: 520, radius: 84 },
+  { x1: 2140, y1: 520, x2: 2600, y2: 590, radius: 84 },
+  { x1: 2600, y1: 590, x2: 3260, y2: 650, radius: 88 },
 ];
 
 const parkWalkSegments: WalkSegment[] = [
-  { x1: 118, y1: 620, x2: 520, y2: 488, radius: 126 },
-  { x1: 520, y1: 488, x2: 870, y2: 420, radius: 132 },
-  { x1: 870, y1: 420, x2: 1260, y2: 440, radius: 126 },
-  { x1: 1260, y1: 440, x2: 1660, y2: 520, radius: 128 },
-  { x1: 1660, y1: 520, x2: 2140, y2: 430, radius: 132 },
-  { x1: 2140, y1: 430, x2: 2600, y2: 594, radius: 140 },
-  { x1: 2600, y1: 594, x2: 3260, y2: 520, radius: 140 },
-  { x1: 860, y1: 720, x2: 2350, y2: 722, radius: 116 },
+  { x1: 118, y1: 620, x2: 520, y2: 488, radius: 82 },
+  { x1: 520, y1: 488, x2: 870, y2: 420, radius: 86 },
+  { x1: 870, y1: 420, x2: 1260, y2: 440, radius: 84 },
+  { x1: 1260, y1: 440, x2: 1660, y2: 520, radius: 86 },
+  { x1: 1660, y1: 520, x2: 2140, y2: 430, radius: 88 },
+  { x1: 2140, y1: 430, x2: 2600, y2: 594, radius: 92 },
+  { x1: 2600, y1: 594, x2: 3260, y2: 520, radius: 92 },
+  { x1: 860, y1: 720, x2: 2350, y2: 722, radius: 76 },
 ];
 
 const sharedWalkCircles: WalkCircle[] = [
-  { x: 500, y: 570, radius: 190 },
-  { x: 900, y: 462, radius: 170 },
-  { x: 1280, y: 555, radius: 176 },
-  { x: 2140, y: 520, radius: 184 },
-  { x: 2860, y: 610, radius: 190 },
+  { x: 252, y: 418, radius: 118 },
+  { x: 426, y: 488, radius: 112 },
+  { x: 500, y: 570, radius: 126 },
+  { x: 612, y: 412, radius: 112 },
+  { x: 700, y: 430, radius: 112 },
+  { x: 900, y: 462, radius: 126 },
+  { x: 1048, y: 420, radius: 112 },
+  { x: 1280, y: 555, radius: 132 },
+  { x: 1348, y: 525, radius: 116 },
+  { x: 2140, y: 520, radius: 138 },
+  { x: 2860, y: 610, radius: 142 },
 ];
 
 const parkWalkCircles: WalkCircle[] = [
-  { x: 540, y: 404, radius: 210 },
-  { x: 860, y: 548, radius: 184 },
-  { x: 1160, y: 612, radius: 176 },
-  { x: 1560, y: 510, radius: 194 },
-  { x: 2260, y: 510, radius: 210 },
-  { x: 2580, y: 618, radius: 190 },
-  { x: 2860, y: 590, radius: 190 },
-  { x: 3140, y: 470, radius: 186 },
+  { x: 540, y: 404, radius: 146 },
+  { x: 860, y: 548, radius: 132 },
+  { x: 1160, y: 612, radius: 126 },
+  { x: 1560, y: 510, radius: 136 },
+  { x: 2260, y: 510, radius: 146 },
+  { x: 2580, y: 618, radius: 138 },
+  { x: 2860, y: 590, radius: 138 },
+  { x: 3140, y: 470, radius: 132 },
 ];
 
 /**
@@ -165,6 +171,26 @@ function getAvatarStartPosition(variant: GardenCanvasProps["variant"]) {
   // shared circle sits at (500, 570, r=190), which is the natural "you walk
   // in from the path" entry point.
   return { x: 500, y: 570 };
+}
+
+function getPlotPositions(variant: GardenCanvasProps["variant"]) {
+  return variant === "partner"
+    ? [
+        [260, 376],
+        [700, 376],
+        [318, 492],
+        [642, 492],
+        [1048, 348],
+        [1348, 476],
+      ]
+    : [
+        [252, 360],
+        [426, 430],
+        [612, 352],
+        [628, 492],
+        [1042, 348],
+        [1360, 486],
+      ];
 }
 
 const gardenDecorItems: Array<{ kind: GardenDecorKind; label: string; description: string; href?: string }> = [
@@ -310,6 +336,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private remotePlayersHandler?: (event: Event) => void;
         private chatBubbleHandler?: (event: Event) => void;
         private addDecorHandler?: (event: Event) => void;
+        private sunshineHandler?: (event: Event) => void;
         private keeperCustomizationHandler?: (event: Event) => void;
         private petCustomizationHandler?: (event: Event) => void;
         private timeOfDayHandler?: (event: Event) => void;
@@ -468,14 +495,14 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             corridor.fillStyle(0xfae3a8, 0.18);
             corridor.fillCircle(circle.x, circle.y, circle.radius + 12);
           });
-          // Main road body — clearly visible cream with a soft warm wash.
+          // Main road body exactly matches the playable corridor width.
           segments.forEach((segment) => {
-            corridor.lineStyle(segment.radius * 1.55, 0xfffcf3, 0.62);
+            corridor.lineStyle(segment.radius * 2, 0xfffcf3, 0.64);
             corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
           });
           circles.forEach((circle) => {
-            corridor.fillStyle(0xfffcf3, 0.55);
-            corridor.fillCircle(circle.x, circle.y, circle.radius * 0.82);
+            corridor.fillStyle(0xfffcf3, 0.58);
+            corridor.fillCircle(circle.x, circle.y, circle.radius);
           });
           // Painted edge line so the path reads clearly even on light backgrounds.
           segments.forEach((segment) => {
@@ -571,23 +598,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private drawPlots() {
-          const positions = variant === "partner"
-            ? [
-                [260, 376],
-                [700, 376],
-                [318, 492],
-                [642, 492],
-                [1048, 348],
-                [1348, 476],
-              ]
-            : [
-                [252, 360],
-                [426, 430],
-                [612, 352],
-                [628, 492],
-                [1042, 348],
-                [1360, 486],
-              ];
+          const positions = getPlotPositions(variant);
 
           plots.forEach((plot, index) => {
             const [x, y] = positions[index % positions.length];
@@ -1064,6 +1075,14 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             if (this.textInputFocused || isTextInputFocused()) return;
             if (this.playMode === "companion") this.trySniff();
           });
+          this.input.keyboard?.on("keydown-DELETE", () => {
+            if (this.textInputFocused || isTextInputFocused()) return;
+            this.removeSelectedDecor();
+          });
+          this.input.keyboard?.on("keydown-BACKSPACE", () => {
+            if (this.textInputFocused || isTextInputFocused()) return;
+            this.removeSelectedDecor();
+          });
 
           this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             // Right click — start a swap-or-recall timer. A short tap toggles
@@ -1146,6 +1165,24 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               : "Pawed at the dirt — nothing buried here yet.");
             return;
           }
+        }
+
+        private applySunshinePulse() {
+          playCozyCue("heart");
+          setTimeOfDay("morning");
+          this.petMood = "happy";
+          this.petMoodTimer = 0;
+          setStatus("Sunshine warmed the shared garden: every visible plot was watered, your companion cheered, and a small care reward was added.");
+          this.showLocalBubble("Sunshine warmed every plot.");
+          this.spawnHeartBurst(this.avatar.x, this.avatar.y - 104);
+          this.spawnSparkleBurst(this.pet.x, this.pet.y - 72, 0xfaebc2, 18);
+
+          getPlotPositions(variant).forEach(([x, y], index) => {
+            this.time.delayedCall(index * 90, () => {
+              this.spawnSparkleBurst(x, y - 34, 0xd9a53e, 10);
+              this.spawnWaterCrown(x, y - 10);
+            });
+          });
         }
 
         /**
@@ -1267,7 +1304,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
          */
         private recallCompanion() {
           if (!this.pet || !this.avatar) return;
-          this.pet.setPosition(this.avatar.x + 64, this.avatar.y + 28);
+          const follow = this.companionFollowTarget();
+          this.pet.setPosition(follow.x, follow.y);
           this.petMood = "follow";
           this.petMoodTimer = 0;
           playCozyCue("petChirp");
@@ -1337,6 +1375,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             }
             this.addDecorFromDrawer(kind);
           };
+          this.sunshineHandler = () => this.applySunshinePulse();
           this.timeOfDayHandler = (event: Event) => {
             const nextTime = (event as CustomEvent<{ timeOfDay?: GardenTimeOfDay }>).detail?.timeOfDay;
             if (nextTime) this.applyTimeOfDay(nextTime);
@@ -1362,6 +1401,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           window.addEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
           window.addEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
+          window.addEventListener("hearthaven:partner-sunshine", this.sunshineHandler);
           window.addEventListener("hearthaven:garden-time", this.timeOfDayHandler);
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
           window.addEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
@@ -1372,6 +1412,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
             if (this.chatBubbleHandler) window.removeEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
             if (this.addDecorHandler) window.removeEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
+            if (this.sunshineHandler) window.removeEventListener("hearthaven:partner-sunshine", this.sunshineHandler);
             if (this.timeOfDayHandler) window.removeEventListener("hearthaven:garden-time", this.timeOfDayHandler);
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
             if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
@@ -1801,9 +1842,14 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           }
           this.petSprite.setFlipX(this.petFacing === "left");
           this.petAccessorySprite?.setFlipX(this.petFacing === "left");
-          this.applyPetLocomotion(petMoving, "walk1");
+          this.applyPetLocomotion(petMoving, "idle");
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
           this.petShadow.setDepth(this.pet.y - 1);
+        }
+
+        private companionFollowTarget() {
+          const offsetX = this.avatarFacing === "left" ? 64 : -64;
+          return this.constrainAvatarToWalkable(this.avatar.x + offsetX, this.avatar.y + 28);
         }
 
         private updatePet(delta: number) {
@@ -1825,14 +1871,18 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             return;
           }
 
-          const targetX = this.avatar.x + 64;
-          const targetY = this.avatar.y + 28;
+          const follow = this.companionFollowTarget();
+          const targetX = follow.x;
+          const targetY = follow.y;
           const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, targetX, targetY);
           let petMoving = false;
           const prevPetX = this.pet.x;
           if (distance > 16) {
-            this.pet.x = PhaserModule.Math.Linear(this.pet.x, targetX, 0.055);
-            this.pet.y = PhaserModule.Math.Linear(this.pet.y, targetY, 0.055);
+            const next = this.constrainAvatarToWalkable(
+              PhaserModule.Math.Linear(this.pet.x, targetX, 0.055),
+              PhaserModule.Math.Linear(this.pet.y, targetY, 0.055),
+            );
+            this.pet.setPosition(next.x, next.y);
             this.petMood = "follow";
             petMoving = true;
           } else if (this.petMood === "follow") {
@@ -2355,7 +2405,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             playCozyCue("ui");
             setStatus(
               canEditGarden
-                ? `${this.selectedDecor.label} selected. Drag to move, R flips left/right.`
+                ? `${this.selectedDecor.label} selected. Drag to move, R flips left/right, Delete removes it.`
                 : `${this.selectedDecor.label} selected. Ask the host for decorator permission to move it.`,
             );
             this.showDecorBubble(this.selectedDecor);
@@ -2368,15 +2418,15 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           const container = this.decorObjects.get(decoration.id);
           if (!container) return;
           const spriteConfig = worldObjectSprites[decoration.kind];
-          const bubble = this.add.container(container.x, container.y - spriteConfig.height - 20).setDepth(10000);
+          const bubble = this.add.container(container.x, container.y - spriteConfig.height - 24).setDepth(10000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.96);
-          bg.fillRoundedRect(-92, -28, 184, 56, 16);
+          bg.fillRoundedRect(-126, -36, 252, 72, 16);
           bg.lineStyle(2, 0xc0a8dc, 0.9);
-          bg.strokeRoundedRect(-92, -28, 184, 56, 16);
+          bg.strokeRoundedRect(-126, -36, 252, 72, 16);
 
           const label = this.add
-            .text(0, -12, decoration.label, {
+            .text(0, -20, decoration.label, {
               color: "#3A2A2A",
               fontFamily: "Nunito, sans-serif",
               fontSize: "12px",
@@ -2385,7 +2435,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             .setOrigin(0.5);
 
           const leftButton = this.add
-            .text(-42, 12, "Face L", {
+            .text(-74, 13, "Face L", {
               color: "#8E70BD",
               fontFamily: "Nunito, sans-serif",
               fontSize: "11px",
@@ -2401,7 +2451,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           });
 
           const rightButton = this.add
-            .text(42, 12, "Face R", {
+            .text(0, 13, "Face R", {
               color: "#8E70BD",
               fontFamily: "Nunito, sans-serif",
               fontSize: "11px",
@@ -2416,7 +2466,23 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             this.setSelectedDecorFacing("right");
           });
 
-          bubble.add([bg, label, leftButton, rightButton]);
+          const removeButton = this.add
+            .text(76, 13, "Remove", {
+              color: "#9A453E",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "11px",
+              fontStyle: "900",
+              backgroundColor: "#FBE0DA",
+              padding: { x: 8, y: 4 },
+            })
+            .setOrigin(0.5)
+            .setInteractive({ useHandCursor: true });
+          removeButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            pointer.event.stopPropagation();
+            this.removeSelectedDecor();
+          });
+
+          bubble.add([bg, label, leftButton, rightButton, removeButton]);
           this.decorBubble = bubble;
         }
 
@@ -2425,7 +2491,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           const container = this.decorObjects.get(this.selectedDecor.id);
           if (!container) return;
           const spriteConfig = worldObjectSprites[this.selectedDecor.kind];
-          this.decorBubble.setPosition(container.x, container.y - spriteConfig.height - 20);
+          this.decorBubble.setPosition(container.x, container.y - spriteConfig.height - 24);
         }
 
         private toggleSelectedDecorFacing() {
@@ -2448,6 +2514,27 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.persistDecorations();
           playCozyCue("rotate");
           setStatus(`${this.selectedDecor.label} now faces ${facing}.`);
+        }
+
+        private removeSelectedDecor() {
+          if (!canEditGarden) {
+            setStatus("Only the host or trusted decorators can remove garden items in this visit.");
+            return;
+          }
+          if (!this.selectedDecor) {
+            setStatus("Select a garden item first, then press Delete or use Remove.");
+            return;
+          }
+          const decoration = this.selectedDecor;
+          const container = this.decorObjects.get(decoration.id);
+          container?.destroy(true);
+          this.decorObjects.delete(decoration.id);
+          this.selectedDecor = undefined;
+          this.decorBubble?.destroy(true);
+          this.decorBubble = undefined;
+          this.persistDecorations();
+          playCozyCue("place");
+          setStatus(`${decoration.label} removed from the garden. You can place it again from the drawer.`);
         }
 
         private persistDecorations() {
@@ -2724,7 +2811,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           <span className="text-xs font-extrabold uppercase tracking-normal text-garden-700">Garden decor drawer</span>
           <span className="text-xs font-bold text-ink-600">
             {canEditGarden
-              ? "Place here, then drag inside the garden. R flips selected decor left/right."
+              ? "Place here, drag inside the garden, R flips, Delete removes selected decor."
               : "Decorator permissions are off for this visit."}
           </span>
         </div>

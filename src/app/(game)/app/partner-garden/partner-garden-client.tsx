@@ -10,8 +10,10 @@ import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
+import { recordActivity } from "@/lib/game/activity";
 import { lookupFriendCode } from "@/lib/game/social";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
+import { creditWallet } from "@/lib/game/wallet-store";
 import type { friendInvite, partnerGardenPlots } from "@/lib/mock-data";
 
 type PartnerGardenClientProps = {
@@ -19,14 +21,50 @@ type PartnerGardenClientProps = {
   plots: typeof partnerGardenPlots;
 };
 
+const SUNSHINE_STORAGE_KEY = "hearthaven:partner-sunshine";
+const DAILY_SUNSHINE = 3;
+
+type SunshineState = {
+  date: string;
+  remaining: number;
+  sent: number;
+};
+
+function localDateKey() {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+function readSunshineState(): SunshineState {
+  const fallback = { date: localDateKey(), remaining: DAILY_SUNSHINE, sent: 0 };
+  if (typeof window === "undefined") return fallback;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SUNSHINE_STORAGE_KEY) ?? "null") as Partial<SunshineState> | null;
+    if (!parsed || parsed.date !== fallback.date) return fallback;
+    return {
+      date: fallback.date,
+      remaining: Math.max(0, Math.min(DAILY_SUNSHINE, Number(parsed.remaining ?? DAILY_SUNSHINE))),
+      sent: Math.max(0, Number(parsed.sent ?? 0)),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSunshineState(state: SunshineState) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SUNSHINE_STORAGE_KEY, JSON.stringify(state));
+}
+
 export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps) {
   const searchParams = useSearchParams();
   const visitTarget = searchParams.get("visit");
   const isGuestVisit = Boolean(visitTarget);
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
   const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
-  const [sunshine, setSunshine] = useState(3);
-  const [message, setMessage] = useState("Casper is watching the shared gate.");
+  const [sunshine, setSunshine] = useState(readSunshineState);
+  const [message, setMessage] = useState(
+    "First time? Sunshine spends one daily pulse to warm the shared garden, water every visible plot, cheer your companion, and add a tiny care reward.",
+  );
   const realtime = useGardenRealtime({
     gardenId: isVisitAllowed ? "shared-heart-garden" : "friend-only-partner-gate",
     gardenName: isVisitAllowed ? "Shared Heart Garden" : "Friend-only shared garden",
@@ -53,9 +91,32 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
   }
 
   function sendSunshine() {
-    setSunshine((value) => value + 1);
-    setMessage("Sunshine sent to the partner garden.");
-    // TODO: Broadcast partner garden care events through Supabase Realtime.
+    if (sunshine.remaining <= 0) {
+      setMessage("All sunshine pulses were used today. Come back tomorrow for three fresh garden care pulses.");
+      return;
+    }
+
+    const next = {
+      date: localDateKey(),
+      remaining: sunshine.remaining - 1,
+      sent: sunshine.sent + 1,
+    };
+    setSunshine(next);
+    writeSunshineState(next);
+
+    creditWallet({
+      gameId: "partner-sunshine",
+      label: "Shared Garden Sunshine",
+      score: next.sent,
+      coins: 18,
+      hearts: 1,
+    });
+    recordActivity("garden-watered", Math.max(1, plots.length), { source: "partner-sunshine" });
+    recordActivity("coins-earned", 18, { source: "partner-sunshine" });
+    recordActivity("hearts-earned", 1, { source: "partner-sunshine" });
+
+    window.dispatchEvent(new CustomEvent("hearthaven:partner-sunshine", { detail: { sent: next.sent } }));
+    setMessage("Sunshine sent: every visible plot gets a warm watering pulse, your companion cheers, and your wallet receives +18 coins and +1 heart.");
   }
 
   return (
@@ -75,9 +136,12 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
         <div>
           <h2 className="font-display text-2xl text-ink-900">Shared care pulse</h2>
           <p className="text-sm font-bold text-ink-700">{message}</p>
+          <p className="mt-1 text-xs font-extrabold uppercase tracking-normal text-blush-500">
+            {sunshine.sent} sent today · {sunshine.remaining} left
+          </p>
         </div>
-        <CozyButton onClick={sendSunshine}>
-          <Sun /> Send sunshine ({sunshine})
+        <CozyButton disabled={sunshine.remaining <= 0} onClick={sendSunshine}>
+          <Sun /> Send sunshine ({sunshine.remaining} left)
         </CozyButton>
       </CozyCard>
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
