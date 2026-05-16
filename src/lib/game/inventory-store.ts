@@ -93,8 +93,14 @@ export function readInventoryState(): InventoryState {
       return seed;
     }
     const parsed = JSON.parse(raw) as Partial<InventoryState>;
+    const parsedItems = Array.isArray(parsed.items) ? (parsed.items as InventoryEntry[]) : [];
+    if (parsedItems.length === 0) {
+      const seed = freshState();
+      writeState(seed);
+      return seed;
+    }
     return {
-      items: Array.isArray(parsed.items) ? (parsed.items as InventoryEntry[]) : [],
+      items: parsedItems,
       giftsSent: Array.isArray(parsed.giftsSent) ? (parsed.giftsSent as OutgoingGift[]) : [],
       giftsReceived: Array.isArray(parsed.giftsReceived) ? (parsed.giftsReceived as ReceivedGift[]) : [],
     };

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, LockKeyhole, UsersRound } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
@@ -10,12 +11,19 @@ export function RoomPreview() {
 
   return (
     <CozyCard className="overflow-hidden">
-      <div className="relative h-48 bg-cream-100">
-        <div className="absolute inset-x-8 bottom-4 h-24 rounded-lg border-2 border-cream-300 bg-cream-200" />
-        <div className="absolute left-12 top-8 h-20 w-24 rounded-md border-4 border-ink-500/50 bg-sky-200" />
-        <div className="absolute bottom-8 left-1/2 h-16 w-36 -translate-x-1/2 rounded-[50%] border-2 border-blush-300 bg-blush-200" />
-        <div className="absolute bottom-10 right-16 h-14 w-9 rounded-md border-4 border-ink-500/55 bg-honey-100" />
-        <div className="absolute bottom-10 left-20 h-16 w-20 rounded-md border-2 border-lavender-500/40 bg-lavender-200" />
+      <div className="relative h-56 overflow-hidden bg-cream-100">
+        <Image
+          alt="Painted cozy room preview"
+          className="h-full w-full object-cover"
+          height={600}
+          priority
+          src="/game-assets/generated/cozy-room-bg.png"
+          width={960}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-ink-900/38 via-transparent to-white/12" />
+        <div className="absolute bottom-4 left-4 rounded-full border border-white/60 bg-white/78 px-3 py-1 text-xs font-black text-ink-800 shadow-sm backdrop-blur">
+          Drag-and-drop decor
+        </div>
       </div>
       <div className="p-5">
         <div className="mb-3 flex flex-wrap gap-2">

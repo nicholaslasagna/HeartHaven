@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Coins, Heart, PackagePlus, ShoppingBag } from "lucide-react";
+import { Check, Coins, Heart, ShoppingBag } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { CurrencyPill } from "@/components/cozy/currency-pill";
@@ -10,6 +11,7 @@ import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner
 import { Badge } from "@/components/ui/badge";
 import { useGameWallet } from "@/lib/game/use-game-wallet";
 import { useInventory } from "@/lib/game/use-inventory";
+import { getCatalogItemArt, getCatalogItemArtFit } from "@/lib/game/item-art";
 import type { CatalogItem, ItemCategory } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { getCatalogItemSeason, isItemVisibleForSeason, isSeasonalCatalogItem } from "@/lib/seasonal-events";
@@ -145,7 +147,13 @@ export function ShopClient({ items }: ShopClientProps) {
                         : undefined
                     }
                   >
-                    <PackagePlus className="size-10 text-blush-500" />
+                    <Image
+                      alt={`${item.name} preview`}
+                      className={`h-full w-full ${getCatalogItemArtFit(item) === "cover" ? "object-cover" : "object-contain p-3"} drop-shadow-[0_16px_18px_rgba(91,63,63,0.2)]`}
+                      height={160}
+                      src={getCatalogItemArt(item)}
+                      width={220}
+                    />
                   </div>
                   <h2 className="font-display text-2xl text-ink-900">{item.name}</h2>
                   <p className="mt-1 min-h-12 text-sm font-semibold leading-6 text-ink-700">{item.description}</p>

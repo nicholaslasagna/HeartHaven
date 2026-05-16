@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
-import { CheckCircle2, Coins, Gift, PackagePlus } from "lucide-react";
+import { CheckCircle2, Coins, Gift } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { CurrencyPill } from "@/components/cozy/currency-pill";
@@ -10,6 +11,7 @@ import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner
 import { Badge } from "@/components/ui/badge";
 import { useGameWallet } from "@/lib/game/use-game-wallet";
 import { useInventory } from "@/lib/game/use-inventory";
+import { getCatalogItemArt, getCatalogItemArtFit } from "@/lib/game/item-art";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { getCatalogItemSeason, isItemVisibleForSeason, isSeasonalCatalogItem } from "@/lib/seasonal-events";
 
@@ -116,7 +118,13 @@ export function InventoryClient() {
                     : undefined
                 }
               >
-                <PackagePlus className="size-10 text-blush-500" />
+                <Image
+                  alt={`${row.catalog.name} preview`}
+                  className={`h-full w-full ${getCatalogItemArtFit(row.catalog) === "cover" ? "object-cover" : "object-contain p-3"} drop-shadow-[0_16px_18px_rgba(91,63,63,0.2)]`}
+                  height={160}
+                  src={getCatalogItemArt(row.catalog)}
+                  width={220}
+                />
               </div>
               <h2 className="mt-4 font-display text-2xl text-ink-900">{row.catalog.name}</h2>
               <p className="mt-1 text-sm font-semibold leading-6 text-ink-700">{row.catalog.description}</p>

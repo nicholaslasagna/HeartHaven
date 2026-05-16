@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { DoorOpen, Gamepad2, Leaf, Map as MapIcon } from "lucide-react";
 import { GardenClient } from "@/app/(game)/app/garden/garden-client";
@@ -23,10 +24,11 @@ const ZONE_TABS: Array<{
   label: string;
   hint: string;
   icon: typeof DoorOpen;
+  image: string;
 }> = [
-  { zone: "room", label: "Your room", hint: "Decorate and host friends.", icon: DoorOpen },
-  { zone: "garden", label: "Your garden", hint: "Plant, water, walk paths.", icon: Leaf },
-  { zone: "park", label: "Park visit", hint: "Meet friends and play.", icon: MapIcon },
+  { zone: "room", label: "Your room", hint: "Decorate and host friends.", icon: DoorOpen, image: "/game-assets/generated/cozy-room-bg.png" },
+  { zone: "garden", label: "Your garden", hint: "Plant, water, walk paths.", icon: Leaf, image: "/game-assets/generated/garden-bare-map.png" },
+  { zone: "park", label: "Park visit", hint: "Meet friends and play.", icon: MapIcon, image: "/game-assets/generated/park-bare-map.png" },
 ];
 
 function normalizeZone(value: string | null): AreaZone {
@@ -90,15 +92,15 @@ export function AreaClient({ games, plots }: AreaClientProps) {
         </Link>
       </section>
 
-      <section className="rounded-lg border border-cream-300 bg-white/72 p-3 shadow-sm">
-        <div role="tablist" className="flex flex-wrap gap-2">
+      <section className="rounded-3xl border border-cream-300 bg-white/72 p-3 shadow-sm">
+        <div role="tablist" className="grid gap-3 md:grid-cols-3">
           {ZONE_TABS.map((tab) => {
             const Icon = tab.icon;
             const selected = tab.zone === activeZone;
             return (
               <button
                 aria-selected={selected}
-                className={`min-w-[178px] rounded-lg border px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 ${
+                className={`grid grid-cols-[88px_1fr] gap-3 rounded-2xl border p-2 text-left shadow-sm transition hover:-translate-y-0.5 ${
                   selected
                     ? "border-blush-300 bg-blush-100 text-ink-900"
                     : "border-cream-300 bg-cream-50 text-ink-700 hover:border-lavender-300 hover:bg-lavender-100/60"
@@ -108,10 +110,15 @@ export function AreaClient({ games, plots }: AreaClientProps) {
                 role="tab"
                 type="button"
               >
-                <span className="flex items-center gap-2 text-sm font-black">
-                  <Icon className="size-4" /> {tab.label}
+                <span className="relative grid h-20 place-items-center overflow-hidden rounded-xl border border-white/80 bg-white/80 shadow-inner">
+                  <Image alt={`${tab.label} preview`} className="h-full w-full object-cover" height={120} src={tab.image} width={160} />
                 </span>
-                <span className="mt-1 block text-xs font-bold">{tab.hint}</span>
+                <span className="self-center">
+                  <span className="flex items-center gap-2 text-sm font-black">
+                    <Icon className="size-4" /> {tab.label}
+                  </span>
+                  <span className="mt-1 block text-xs font-bold">{tab.hint}</span>
+                </span>
               </button>
             );
           })}

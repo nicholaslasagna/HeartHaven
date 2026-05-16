@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { DragEvent } from "react";
+import Image from "next/image";
 import type Phaser from "phaser";
 import {
   getPetAccessory,
@@ -31,6 +33,7 @@ import { recordActivity } from "@/lib/game/activity";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import { PET_VITALS_EVENT, getPetMood, getPetVitals, type PetMood } from "@/lib/game/pet-state";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
+import { getGardenDecorArt } from "@/lib/game/item-art";
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 
@@ -1367,13 +1370,21 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             if (message?.text) this.showChatBubble(message);
           };
           this.addDecorHandler = (event: Event) => {
-            const kind = (event as CustomEvent<{ kind?: GardenDecorKind }>).detail?.kind;
+            const detail = (event as CustomEvent<{ kind?: GardenDecorKind; clientX?: number; clientY?: number }>).detail;
+            const kind = detail?.kind;
             if (!kind) return;
             if (!canEditGarden) {
               setStatus("Only the host or trusted decorators can place garden items in this visit.");
               return;
             }
-            this.addDecorFromDrawer(kind);
+            let point: { x: number; y: number } | undefined;
+            if (typeof detail.clientX === "number" && typeof detail.clientY === "number") {
+              const rect = this.game.canvas.getBoundingClientRect();
+              const localX = ((detail.clientX - rect.left) / rect.width) * GARDEN_WIDTH;
+              const localY = ((detail.clientY - rect.top) / rect.height) * GARDEN_HEIGHT;
+              point = this.constrainToWorldBounds(this.cameras.main.scrollX + localX, this.cameras.main.scrollY + localY);
+            }
+            this.addDecorFromDrawer(kind, point);
           };
           this.sunshineHandler = () => this.applySunshinePulse();
           this.timeOfDayHandler = (event: Event) => {
@@ -2175,14 +2186,14 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           decorations.forEach((decoration) => this.createDecoration(decoration));
         }
 
-        private addDecorFromDrawer(kind: GardenDecorKind) {
+        private addDecorFromDrawer(kind: GardenDecorKind, point?: { x: number; y: number }) {
           if (!canEditGarden) {
             setStatus("Only the host or trusted decorators can place garden items in this visit.");
             return;
           }
           const item = gardenDecorItems.find((entry) => entry.kind === kind);
           if (!item) return;
-          const center = this.constrainToWorldBounds(this.cameras.main.scrollX + GARDEN_WIDTH / 2, this.cameras.main.scrollY + GARDEN_HEIGHT / 2 + 80);
+          const center = point ?? this.constrainToWorldBounds(this.cameras.main.scrollX + GARDEN_WIDTH / 2, this.cameras.main.scrollY + GARDEN_HEIGHT / 2 + 80);
           const decoration: GardenDecorPlacement = {
             id: `garden-${kind}-${Date.now()}`,
             kind,
@@ -2751,6 +2762,29 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
     };
   }, [activeEvent, canEditGarden, onAvatarMove, plots, timeOfDayRef, variant]);
 
+  function dispatchAddDecor(kind: GardenDecorKind, point?: { clientX: number; clientY: number }) {
+    window.dispatchEvent(new CustomEvent("hearthaven:garden-add-decor", { detail: { kind, ...point } }));
+  }
+
+  function handleDecorDragStart(event: DragEvent<HTMLButtonElement>, kind: GardenDecorKind) {
+    if (!canEditGarden) return;
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/hearthaven-garden-decor", kind);
+    event.dataTransfer.setData("text/plain", kind);
+    setStatus("Dragging garden decor. Drop it onto the visible map.");
+  }
+
+  function handleGardenDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    if (!canEditGarden) {
+      setStatus("Only the host or trusted decorators can place garden items in this visit.");
+      return;
+    }
+    const kind = event.dataTransfer.getData("application/hearthaven-garden-decor") || event.dataTransfer.getData("text/plain");
+    if (!gardenDecorItems.some((item) => item.kind === kind)) return;
+    dispatchAddDecor(kind as GardenDecorKind, { clientX: event.clientX, clientY: event.clientY });
+  }
+
   return (
     <section className="overflow-hidden rounded-lg border border-garden-300/50 bg-garden-100 shadow-[0_24px_70px_rgba(76,110,54,0.14)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-garden-300/40 bg-white/68 px-4 py-3">
@@ -2789,6 +2823,12 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
       </div>
       <div
         ref={mountRef}
+        onDragOver={(event) => {
+          if (!canEditGarden) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }}
+        onDrop={handleGardenDrop}
         aria-label={
           variant === "partner"
             ? "Scrollable interactive shared garden canvas with avatar movement, chat bubbles, memory tree, quests, Casper statue, and flowers"
@@ -2811,25 +2851,38 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           <span className="text-xs font-extrabold uppercase tracking-normal text-garden-700">Garden decor drawer</span>
           <span className="text-xs font-bold text-ink-600">
             {canEditGarden
-              ? "Place here, drag inside the garden, R flips, Delete removes selected decor."
+              ? "Drag icons onto the map, move them in-world, R flips, Delete removes selected decor."
               : "Decorator permissions are off for this visit."}
           </span>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
           {gardenDecorItems.map((item) => (
             <button
-              className={`min-w-[132px] rounded-lg border border-cream-300 px-3 py-2 text-left shadow-sm transition ${
+              className={`grid min-w-[170px] grid-cols-[68px_1fr] gap-2 rounded-2xl border border-cream-300 p-2 text-left shadow-sm transition ${
                 canEditGarden
                   ? "bg-cream-50 hover:-translate-y-0.5 hover:border-garden-300 hover:bg-garden-100"
                   : "cursor-not-allowed bg-stone-100/80 opacity-60"
               }`}
+              draggable={canEditGarden}
               disabled={!canEditGarden}
               key={item.kind}
-              onClick={() => window.dispatchEvent(new CustomEvent("hearthaven:garden-add-decor", { detail: { kind: item.kind } }))}
+              onClick={() => dispatchAddDecor(item.kind)}
+              onDragStart={(event) => handleDecorDragStart(event, item.kind)}
               type="button"
             >
-              <span className="block text-sm font-black text-ink-900">{item.label}</span>
-              <span className="mt-0.5 block text-xs font-bold text-ink-600">{item.description}</span>
+              <span className="grid size-16 place-items-center overflow-hidden rounded-xl border border-white/80 bg-white/78 shadow-inner">
+                <Image
+                  alt={`${item.label} icon`}
+                  className="h-full w-full object-contain p-1 drop-shadow-[0_10px_14px_rgba(76,110,54,0.2)]"
+                  height={96}
+                  src={getGardenDecorArt(item.kind)}
+                  width={96}
+                />
+              </span>
+              <span className="min-w-0 self-center">
+                <span className="block text-sm font-black leading-tight text-ink-900">{item.label}</span>
+                <span className="mt-0.5 block text-xs font-bold leading-4 text-ink-600">{item.description}</span>
+              </span>
             </button>
           ))}
         </div>

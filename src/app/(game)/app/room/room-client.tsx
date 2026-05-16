@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DragEvent } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { DoorOpen, Move, PackagePlus, Plus, RotateCcw, Save, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -10,15 +12,22 @@ import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Button } from "@/components/ui/button";
 import { recordActivity } from "@/lib/game/activity";
-import { getStarterPlacementsForRoom, roomBlueprints, starterPlacements } from "@/lib/catalog";
+import { getStarterPlacementsForRoom, roomBlueprints, starterCatalog, starterPlacements } from "@/lib/catalog";
 import type { CatalogItem, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { useRoomRealtime } from "@/lib/game/use-room-realtime";
 import { useInventory } from "@/lib/game/use-inventory";
+import { getCatalogItemArt, getCatalogItemArtFit } from "@/lib/game/item-art";
 import { isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
 import { isItemVisibleForSeason } from "@/lib/seasonal-events";
 
 const ROOM_STORAGE_PREFIX = "hearthaven:room-placements:v2:";
+const ROOM_CANVAS_WIDTH = 960;
+const ROOM_CANVAS_HEIGHT = 600;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 function getRoomStorageKey(roomId: string) {
   return `${ROOM_STORAGE_PREFIX}${roomId}`;
@@ -69,6 +78,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const [draftPlacements, setDraftPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [saveStatus, setSaveStatus] = useState("Move-in ready");
   const placementCounter = useRef(0);
+  const roomDropRef = useRef<HTMLDivElement | null>(null);
   const realtime = useRoomRealtime({
     roomId: isVisitAllowed ? activeRoom.id : "friend-only-gate",
     roomName: isVisitAllowed ? activeRoom.name : "Friend-only room",
@@ -76,10 +86,25 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const canEditRoom = isHostRoom || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
   const { activeEvent } = useSeasonalEvent();
   const inventory = useInventory();
-  const roomDrawerItems = inventory.view
+  const inventoryRoomRows = inventory.view
     .filter((row) => isItemVisibleForSeason(row.catalog, activeEvent))
     .filter((row) => row.catalog.placementType === "floor" || row.catalog.placementType === "wall")
     .slice(0, 18);
+  const starterRoomRows = starterCatalog
+    .filter((catalog) => catalog.placementType === "floor" || catalog.placementType === "wall")
+    .slice(0, 12)
+    .map((catalog, index) => ({
+      catalog,
+      entry: {
+        id: `starter-drawer-${catalog.id}-${index}`,
+        catalogItemId: catalog.id,
+        quantity: 1,
+        equipped: false,
+        acquiredAt: "",
+        source: "starter" as const,
+      },
+    }));
+  const roomDrawerItems = inventoryRoomRows.length > 0 ? inventoryRoomRows : starterRoomRows;
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -126,7 +151,27 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     setSaveStatus("Room restored to its move-in layout");
   }
 
-  function addRoomItem(item: CatalogItem) {
+  function dropPointForItem(item: CatalogItem, event: DragEvent<HTMLDivElement>) {
+    const canvas = roomDropRef.current?.querySelector("canvas");
+    const rect = canvas?.getBoundingClientRect() ?? roomDropRef.current?.getBoundingClientRect();
+    if (!rect) return undefined;
+    const x = ((event.clientX - rect.left) / rect.width) * ROOM_CANVAS_WIDTH;
+    const y = ((event.clientY - rect.top) / rect.height) * ROOM_CANVAS_HEIGHT;
+
+    if (item.placementType === "wall") {
+      return {
+        x: clamp(x, 180, 780),
+        y: clamp(y, 112, 230),
+      };
+    }
+
+    return {
+      x: clamp(x, 130, 830),
+      y: clamp(y, 250, 520),
+    };
+  }
+
+  function addRoomItem(item: CatalogItem, point?: { x: number; y: number }) {
     if (!canEditRoom) {
       setSaveStatus("Ask the host for decorator access before adding furniture.");
       return;
@@ -135,8 +180,8 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     const nextPlacement: RoomPlacement = {
       id: `placement-${item.id}-${draftPlacements.length}-${placementCounter.current}`,
       catalogItemId: item.id,
-      x: item.placementType === "wall" ? 330 : 460,
-      y: item.placementType === "wall" ? 150 : 340,
+      x: Math.round(point?.x ?? (item.placementType === "wall" ? 330 : 460)),
+      y: Math.round(point?.y ?? (item.placementType === "wall" ? 150 : 340)),
       rotation: 0,
       scale: 1,
       zIndex: item.placementType === "wall" ? 0 : 3,
@@ -145,6 +190,27 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     setDraftPlacements(next);
     setPlacements(next);
     setSaveStatus(`${item.name} added. Drag it in the room, then save layout.`);
+  }
+
+  function handleDrawerDragStart(event: DragEvent<HTMLButtonElement>, item: CatalogItem) {
+    if (!canEditRoom) return;
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/hearthaven-room-item", item.id);
+    event.dataTransfer.setData("text/plain", item.id);
+    setSaveStatus(`Dragging ${item.name}. Drop it onto the room canvas.`);
+  }
+
+  function handleRoomDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    if (!canEditRoom) {
+      setSaveStatus("Ask the host for decorator access before adding furniture.");
+      return;
+    }
+    const itemId =
+      event.dataTransfer.getData("application/hearthaven-room-item") || event.dataTransfer.getData("text/plain");
+    const row = roomDrawerItems.find((entry) => entry.catalog.id === itemId);
+    if (!row) return;
+    addRoomItem(row.catalog, dropPointForItem(row.catalog, event));
   }
 
   if (!isVisitAllowed) {
@@ -166,7 +232,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid max-w-full gap-5 overflow-hidden">
       {!embedded && <SeasonalEventBanner compact />}
       {!embedded && <WorldZoneDock active="room" />}
       <section className="hh-card relative overflow-hidden p-5">
@@ -215,8 +281,8 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
           ))}
         </div>
       </section>
-      <section className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="grid content-start gap-4 xl:sticky xl:top-4">
+      <section className="grid min-w-0 max-w-full gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="grid min-w-0 content-start gap-4 xl:sticky xl:top-4">
           <section className="rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
@@ -224,7 +290,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
                   <PackagePlus className="size-3.5" /> Room dock
                 </p>
                 <p className="mt-1 text-sm font-bold leading-5 text-ink-700">
-                  Add furniture from here, then drag it inside the room. This stays in the game viewport.
+                  Drag item cards onto the room, or tap one to place it near the center.
                 </p>
               </div>
               <span className="rounded-full bg-cream-100 px-2.5 py-1 text-xs font-black text-ink-700">{roomDrawerItems.length}</span>
@@ -235,17 +301,41 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
                   Your placeable inventory is empty. Buy room items in the shop or open daily gifts to stock this drawer.
                 </div>
               )}
+              {inventory.ready && inventoryRoomRows.length === 0 && roomDrawerItems.length > 0 && (
+                <div className="rounded-2xl border border-honey-300/60 bg-honey-100/70 px-3 py-2 text-xs font-extrabold leading-5 text-honey-700">
+                  Starter crate shown so you can decorate right away. Purchased and gifted items appear here too.
+                </div>
+              )}
               {roomDrawerItems.map((row) => (
                 <button
-                  className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/70 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="grid grid-cols-[72px_1fr] gap-3 rounded-2xl border border-cream-300 bg-cream-50 p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/70 disabled:cursor-not-allowed disabled:opacity-50"
+                  draggable={canEditRoom}
                   disabled={!canEditRoom}
                   key={row.entry.id}
                   onClick={() => addRoomItem(row.catalog)}
+                  onDragStart={(event) => handleDrawerDragStart(event, row.catalog)}
                   type="button"
                 >
-                  <span className="block text-sm font-black text-ink-900">{row.catalog.name}</span>
-                  <span className="mt-0.5 block text-xs font-bold text-ink-600">
-                    {row.catalog.category} | {row.catalog.placementType} | owned x{row.entry.quantity}
+                  <span className="relative grid h-[70px] place-items-center overflow-hidden rounded-xl border border-white/80 bg-white/78 shadow-inner">
+                    <Image
+                      alt={`${row.catalog.name} icon`}
+                      className={`h-full w-full ${getCatalogItemArtFit(row.catalog) === "cover" ? "object-cover" : "object-contain p-1.5"} drop-shadow-[0_10px_14px_rgba(91,63,63,0.18)]`}
+                      height={96}
+                      src={getCatalogItemArt(row.catalog)}
+                      width={96}
+                    />
+                    <span className="absolute bottom-1 right-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-black text-ink-700">
+                      x{row.entry.quantity}
+                    </span>
+                  </span>
+                  <span className="min-w-0 self-center">
+                    <span className="block text-sm font-black leading-tight text-ink-900">{row.catalog.name}</span>
+                    <span className="mt-1 block text-xs font-bold capitalize leading-4 text-ink-600">
+                      {row.catalog.category} · {row.catalog.placementType.replace("_", " ")}
+                    </span>
+                    <span className="mt-1 inline-flex rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-black uppercase tracking-normal text-blush-500">
+                      drag to place
+                    </span>
                   </span>
                 </button>
               ))}
@@ -264,17 +354,33 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
             status={realtime.status}
           />
         </aside>
-        <div className="grid content-start gap-3">
-          <RoomCanvasLoader
-            canEditRoom={canEditRoom}
-            onAvatarMove={realtime.sendMove}
-            onPlacementsChange={handlePlacementsChange}
-            onRoomEmote={realtime.sendEmote}
-            placements={placements}
-            remotePlayers={realtime.players}
-            roomName={activeRoom.name}
-            roomTheme={activeRoom.theme}
-          />
+        <div
+          className="grid min-w-0 content-start gap-3"
+          onDragOver={(event) => {
+            if (!canEditRoom) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={handleRoomDrop}
+          ref={roomDropRef}
+        >
+          <div className="relative">
+            {canEditRoom && (
+              <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-white/70 bg-white/82 px-3 py-1 text-xs font-black text-ink-700 shadow-sm backdrop-blur">
+                Drop furniture here
+              </div>
+            )}
+            <RoomCanvasLoader
+              canEditRoom={canEditRoom}
+              onAvatarMove={realtime.sendMove}
+              onPlacementsChange={handlePlacementsChange}
+              onRoomEmote={realtime.sendEmote}
+              placements={placements}
+              remotePlayers={realtime.players}
+              roomName={activeRoom.name}
+              roomTheme={activeRoom.theme}
+            />
+          </div>
           {!canEditRoom && (
             <p className="rounded-md border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-xs font-extrabold text-honey-700">
               You&apos;re a guest in this room. Walk around, send emotes, and chat. The host can approve your username for
