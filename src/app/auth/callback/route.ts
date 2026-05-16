@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const type = requestUrl.searchParams.get("type");
 
   if (!isSupabaseConfigured()) {
-    errorUrl.searchParams.set("message", "Supabase is not configured for this deployment.");
+    errorUrl.searchParams.set("message", "Account sign-in is not available for this deployment yet.");
     return NextResponse.redirect(errorUrl);
   }
 
@@ -40,6 +40,6 @@ export async function GET(request: Request) {
     return NextResponse.redirect(errorUrl);
   }
 
-  errorUrl.searchParams.set("message", "The auth link was missing a valid Supabase code. Request a new link and try again.");
+  errorUrl.searchParams.set("message", "The sign-in link was missing a valid code. Request a new link and try again.");
   return NextResponse.redirect(errorUrl);
 }

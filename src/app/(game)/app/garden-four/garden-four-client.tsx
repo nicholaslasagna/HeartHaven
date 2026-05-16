@@ -32,8 +32,8 @@ export function GardenFourClient() {
       <GardenFourCanvasLoader onReward={grantReward} />
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/60 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-honey-700" />
-        Garden Four is local pass-and-play now. The board shape is ready for Realtime turn sync, spectators, and hosted
-        party tables.
+        Garden Four is local pass-and-play now. The board shape is ready for live turn sync, spectators, and hosted party
+        tables.
       </div>
     </div>
   );

@@ -28,7 +28,7 @@ export function LanternRelayClient() {
       <CozyQuestCanvasLoader onReward={grantReward} variant="lantern-relay" />
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/70 p-4 text-sm font-bold text-ink-700">
         <Flame className="mr-2 inline size-4 text-honey-700" />
-        Supabase Realtime can turn each lantern click into a party move event for shared relay nights.
+        Online play can turn each lantern click into a party move event for shared relay nights.
         <Sparkles className="ml-2 inline size-4 text-blush-500" />
       </div>
     </div>

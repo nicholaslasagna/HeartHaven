@@ -107,8 +107,7 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
       </section>
       <div className="rounded-lg border border-garden-300/40 bg-garden-100/70 p-4 text-sm font-bold text-ink-700">
         <Leaf className="mr-2 inline size-4 text-garden-700" />
-        Garden visits and chat use Supabase Realtime when env vars are present; local demo mode keeps the full garden
-        playable while backend setup is incomplete.
+        Garden visits and chat use online play when available. Solo mode keeps the full garden playable at any time.
       </div>
       <div className="grid gap-5 md:grid-cols-2">
         {games.map((game) => (

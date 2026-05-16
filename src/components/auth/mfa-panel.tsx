@@ -40,7 +40,7 @@ export function MfaPanel() {
 
   const loadMfaState = useCallback(async () => {
     if (!isSupabaseConfigured()) {
-      setStatus("Supabase is not configured, so live MFA controls are disabled in this build.");
+      setStatus("Live security controls are not available in this build yet.");
       return;
     }
 
@@ -180,7 +180,7 @@ export function MfaPanel() {
           </p>
           <h2 className="mt-2 font-display text-3xl text-ink-900">Account protection</h2>
           <p className="mt-2 max-w-2xl text-sm font-bold leading-6 text-ink-700">
-            Add an authenticator app code before private gardens, love notes, and memory pages become real data-backed
+            Add an authenticator app code before private gardens, love notes, and memory pages become live account
             features.
           </p>
         </div>

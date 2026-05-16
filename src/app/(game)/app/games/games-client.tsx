@@ -526,8 +526,8 @@ export function GamesClient() {
         </div>
         <div className="rounded-lg border border-sky-500/25 bg-sky-100/65 p-4 text-sm font-bold text-ink-700">
           <RadioTower className="mr-2 inline size-4 text-sky-500" />
-          This MVP party model is local-first with real friend seats and join links. Supabase Realtime can replace the
-          storage layer for cross-device live seats without changing the UI contract.
+          Party lobbies use real friend seats, long join codes, host start control, and invite links. Online seats can
+          sync live across devices without changing the party flow.
           <Sparkles className="ml-2 inline size-4 text-honey-700" />
         </div>
       </section>

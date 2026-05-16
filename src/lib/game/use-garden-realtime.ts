@@ -60,7 +60,7 @@ export function useGardenRealtime({
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
   const [connectionState, setConnectionState] = useState<ConnectionState>("demo");
-  const [status, setStatus] = useState("Garden chat demo mode");
+  const [status, setStatus] = useState("Solo garden mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const localPlayerRef = useRef<RealtimeRoomPlayer | null>(null);
   const lastFriendPointAtRef = useRef(0);
@@ -102,7 +102,7 @@ export function useGardenRealtime({
           updatedAt: Date.now(),
         };
         setConnectionState("demo");
-        setStatus("Set Supabase env vars to enable live garden visits.");
+        setStatus("Online garden visits are not available in this build yet.");
       });
       return;
     }
@@ -200,10 +200,10 @@ export function useGardenRealtime({
               setStatus(`Live in garden ${gardenCode}`);
             } else if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") {
               setConnectionState("error");
-              setStatus("Realtime could not connect. The garden still works locally.");
+              setStatus("Online garden visits could not connect. The garden still works.");
             } else if (state === "CLOSED") {
               setConnectionState("offline");
-              setStatus("Realtime garden closed.");
+              setStatus("Garden visit connection closed.");
             }
           });
 
@@ -231,7 +231,7 @@ export function useGardenRealtime({
         };
       } catch (error) {
         setConnectionState("error");
-        setStatus(error instanceof Error ? error.message : "Garden Realtime could not start.");
+        setStatus(error instanceof Error ? error.message : "Online garden visits could not start.");
       }
     }
 

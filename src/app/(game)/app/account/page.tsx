@@ -73,7 +73,7 @@ export default async function AccountPage({
           </p>
           <h2 className="mt-2 font-display text-2xl text-ink-900">{email}</h2>
           <p className="mt-2 text-sm font-bold text-ink-700">
-            Email status: {confirmed ? "confirmed" : "not confirmed or unavailable in demo mode"}
+            Email status: {confirmed ? "confirmed" : "not confirmed or unavailable in this build"}
           </p>
           <p className="mt-2 text-xs font-bold text-ink-500">
             Your email is only used to sign in and recover your account. It&apos;s never shown to other keepers.

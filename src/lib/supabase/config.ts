@@ -11,5 +11,5 @@ export function isSupabaseConfigured() {
 }
 
 export function getSupabaseMissingConfigMessage() {
-  return "Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in Cloudflare, then redeploy.";
+  return "Online account services are not connected in this build yet. You can still explore HeartHaven locally.";
 }

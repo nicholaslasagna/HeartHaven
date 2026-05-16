@@ -109,11 +109,11 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
             <h2 className="font-display text-2xl text-ink-900">Partner link</h2>
           </div>
           <p className="mt-2 text-sm font-semibold leading-6 text-ink-700">
-            Once connected, this page should read accepted <code>partner_links</code> and shared garden rows.
+            Once connected, this page will open the accepted partner link and shared garden.
           </p>
           <div className="mt-4 rounded-lg border border-lavender-300/50 bg-lavender-100 p-3 text-sm font-extrabold text-ink-700">
             <LockKeyhole className="mr-2 inline size-4 text-lavender-500" />
-            Private love note and memory unlocks stay behind partner RLS.
+            Private love note and memory unlocks stay visible only to the linked partners.
           </div>
           <CozyButton className="mt-4" variant="warm">Manage partner invite</CozyButton>
         </CozyCard>

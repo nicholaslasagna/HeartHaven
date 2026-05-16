@@ -20,7 +20,7 @@ export function ProfileForm() {
           </label>
           <label className="grid gap-2 text-sm font-extrabold text-ink-700">
             Private display name
-            <Input name="displayName" placeholder="Only visible to you and backend admin tools" />
+            <Input name="displayName" placeholder="Only visible in private account settings" />
           </label>
           <label className="grid gap-2 text-sm font-extrabold text-ink-700">
             Haven name
@@ -33,9 +33,9 @@ export function ProfileForm() {
           <div className="rounded-lg border border-garden-300/40 bg-garden-100/70 p-4 text-sm text-garden-700">
             <div className="mb-1 flex items-center gap-2 font-extrabold">
               <BadgeCheck className="size-4" />
-              Phase 2 ready
+            Haven setup
             </div>
-            This form now writes <code>profiles</code>, <code>worlds</code>, <code>rooms</code>, <code>gardens</code>, starter inventory, room placements, and the wallet seed when Supabase is configured.
+            This creates your keeper profile, starter room, garden, first inventory, room layout, and wallet.
           </div>
           <Button className="justify-self-start">
             Continue to adoption <ArrowRight />

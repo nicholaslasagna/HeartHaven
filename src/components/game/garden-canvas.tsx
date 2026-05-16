@@ -97,6 +97,7 @@ type RemoteGardenAvatarObject = {
 };
 
 type GardenPetMood = "idle" | "follow" | "sit" | "happy";
+type KeeperAfkAnimation = "idle" | "sit" | "wave" | "heart" | "yoyo";
 type GardenTimeOfDay = "morning" | "noon" | "night";
 
 const GARDEN_WIDTH = 960;
@@ -279,6 +280,12 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private avatarSprite!: Phaser.GameObjects.Sprite;
         private avatarPose: KeeperPose = "idle";
         private avatarFacing: FacingDirection = "right";
+        private afkIdleMs = 0;
+        private afkAnimation: KeeperAfkAnimation = "idle";
+        private afkStartedAt = 0;
+        private afkNextAt = 4200;
+        private afkEffect?: Phaser.GameObjects.Container;
+        private afkEffectNextAt = 0;
         private keeperCustomization: KeeperCustomization = readKeeperCustomization();
         private pet!: Phaser.GameObjects.Container;
         private petShadow!: Phaser.GameObjects.Ellipse;
@@ -1361,6 +1368,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           window.addEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
           window.addEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
           const cleanup = () => {
+            this.clearAfkEffect();
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
             if (this.chatBubbleHandler) window.removeEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
             if (this.addDecorHandler) window.removeEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
@@ -1401,15 +1409,166 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.petSprite?.setFrame(petFrame(this.petCustomization.speciesId, pose));
         }
 
-        private applyKeeperLocomotion(moving: boolean) {
-          if (!this.avatarSprite) return;
-          if (!moving) {
+        private clearAfkEffect() {
+          this.afkEffect?.destroy(true);
+          this.afkEffect = undefined;
+        }
+
+        private resetAfkAnimation() {
+          this.afkIdleMs = 0;
+          this.afkAnimation = "idle";
+          this.afkStartedAt = 0;
+          this.afkNextAt = PhaserModule.Math.Between(4200, 7800);
+          this.afkEffectNextAt = 0;
+          this.clearAfkEffect();
+        }
+
+        private chooseAfkAnimation(): KeeperAfkAnimation {
+          const weightedByOutfit: Record<KeeperOutfitId, KeeperAfkAnimation[]> = {
+            cardigan: ["sit", "heart", "wave", "yoyo", "sit"],
+            overalls: ["yoyo", "wave", "sit", "yoyo", "heart"],
+            cape: ["heart", "wave", "sit", "heart", "yoyo"],
+            sweater: ["yoyo", "wave", "heart", "yoyo", "sit"],
+          };
+          const choices = weightedByOutfit[this.keeperCustomization.outfitId] ?? weightedByOutfit.cardigan;
+          return choices[PhaserModule.Math.Between(0, choices.length - 1)];
+        }
+
+        private startAfkAnimation() {
+          this.clearAfkEffect();
+          this.afkAnimation = this.chooseAfkAnimation();
+          this.afkStartedAt = this.time.now;
+          this.afkEffectNextAt = 0;
+          if (this.afkAnimation === "yoyo") this.createAfkYoyo();
+        }
+
+        private createAfkYoyo() {
+          const string = this.add.line(0, 0, 0, -42, 0, -12, 0x8e70bd, 0.45).setOrigin(0.5, 0);
+          const toyShadow = this.add.ellipse(0, 14, 14, 5, 0x3a2a2a, 0.14);
+          const toy = this.add.circle(0, -12, 8, 0xf4b6c4, 0.96).setStrokeStyle(2, 0xfff4d6, 0.88);
+          const shine = this.add.circle(3, -15, 2.2, 0xffffff, 0.9);
+          const yoyo = this.add
+            .container(this.avatarFacing === "left" ? -38 : 38, -68, [string, toyShadow, toy, shine])
+            .setScale(this.avatarFacing === "left" ? -1 : 1, 1);
+          this.avatar.add(yoyo);
+          this.afkEffect = yoyo;
+          this.tweens.add({
+            targets: toy,
+            y: 12,
+            duration: 520,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
+          this.tweens.add({
+            targets: shine,
+            y: 9,
+            duration: 520,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
+          this.tweens.add({
+            targets: toyShadow,
+            scaleX: 1.35,
+            alpha: 0.08,
+            duration: 520,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
+        }
+
+        private emitAfkSparkle(kind: "heart" | "wave") {
+          const glyph = kind === "heart" ? "♡" : "✦";
+          const color = kind === "heart" ? "#d87e8c" : "#d9a53e";
+          const sparkle = this.add
+            .text(
+              this.avatar.x + (this.avatarFacing === "left" ? -44 : 44) + PhaserModule.Math.Between(-8, 8),
+              this.avatar.y - 130 + PhaserModule.Math.Between(-8, 8),
+              glyph,
+              { fontFamily: "Georgia, serif", fontSize: "24px", color },
+            )
+            .setOrigin(0.5)
+            .setDepth(this.avatar.y + 80);
+          this.tweens.add({
+            targets: sparkle,
+            y: sparkle.y - 30,
+            alpha: 0,
+            scale: 1.35,
+            duration: 1100,
+            ease: "Sine.out",
+            onComplete: () => sparkle.destroy(),
+          });
+        }
+
+        private updateAfkAnimation(delta: number) {
+          this.afkIdleMs += delta;
+
+          if (this.afkAnimation === "idle" && this.afkIdleMs >= this.afkNextAt) {
+            this.startAfkAnimation();
+          }
+
+          if (this.afkAnimation === "idle") {
             this.setAvatarPose("idle");
             this.avatarSprite.setY(-66).setRotation(0);
             this.avatarShadow?.setScale(1, 1);
             return;
           }
 
+          const elapsed = this.time.now - this.afkStartedAt;
+          if (elapsed > 5600) {
+            this.resetAfkAnimation();
+            this.setAvatarPose("idle");
+            this.avatarSprite.setY(-66).setRotation(0);
+            this.avatarShadow?.setScale(1, 1);
+            return;
+          }
+
+          const wave = Math.sin(elapsed / 360);
+          if (this.afkAnimation === "sit") {
+            this.setAvatarPose("sit");
+            this.avatarSprite.setY(-52).setRotation(0);
+            this.avatarShadow?.setScale(1.16, 1);
+            return;
+          }
+
+          if (this.afkAnimation === "heart") {
+            this.setAvatarPose("heart");
+            this.avatarSprite.setY(-66 - Math.max(0, wave) * 1.2).setRotation(wave * 0.006);
+            this.avatarShadow?.setScale(1.04, 1);
+            if (this.time.now >= this.afkEffectNextAt) {
+              this.afkEffectNextAt = this.time.now + 900;
+              this.emitAfkSparkle("heart");
+            }
+            return;
+          }
+
+          if (this.afkAnimation === "wave") {
+            this.setAvatarPose("wave");
+            this.avatarSprite.setY(-66).setRotation(wave * 0.012 * (this.avatarFacing === "left" ? -1 : 1));
+            this.avatarShadow?.setScale(1.04, 1);
+            if (this.time.now >= this.afkEffectNextAt) {
+              this.afkEffectNextAt = this.time.now + 1200;
+              this.emitAfkSparkle("wave");
+            }
+            return;
+          }
+
+          this.setAvatarPose("wave");
+          this.avatarSprite.setY(-66 - Math.abs(wave) * 1.2).setRotation(wave * 0.01);
+          this.avatarShadow?.setScale(1.05, 1);
+          if (this.afkEffect) this.afkEffect.setScale(this.avatarFacing === "left" ? -1 : 1, 1);
+        }
+
+        private applyKeeperLocomotion(moving: boolean, delta = 16) {
+          if (!this.avatarSprite) return;
+          if (!moving) {
+            this.updateAfkAnimation(delta);
+            return;
+          }
+
+          if (this.afkAnimation !== "idle" || this.afkIdleMs !== 0) this.resetAfkAnimation();
           const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
           this.setAvatarPose(keeperGaitPose(this.time.now));
           this.avatarSprite
@@ -1527,7 +1686,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             this.avatarSprite.setFlipX(this.avatarFacing === "left");
             this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
             this.avatarShadow.setDepth(this.avatar.y - 1);
-            this.applyKeeperLocomotion(false);
+            this.applyKeeperLocomotion(false, delta);
             return;
           }
 
@@ -1577,7 +1736,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
           this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
           this.avatarShadow.setDepth(this.avatar.y - 1);
-          this.applyKeeperLocomotion(moving);
+          this.applyKeeperLocomotion(moving, delta);
 
           this.moveBroadcastTimer += delta;
           this.footstepTimer += delta;

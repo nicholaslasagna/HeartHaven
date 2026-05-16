@@ -39,7 +39,7 @@ function friendlyAuthMessage(message: string) {
   }
 
   if (normalized.includes("rate limit")) {
-    return "Supabase is rate limiting this email for a moment. Wait a minute, then try again.";
+    return "The sign-in service is slowing requests for this email for a moment. Wait a minute, then try again.";
   }
 
   return message;

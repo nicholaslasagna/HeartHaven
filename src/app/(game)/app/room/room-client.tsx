@@ -285,8 +285,8 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
       </section>
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-lavender-500" />
-        Avatar movement and emotes now broadcast through Supabase Realtime when env vars are present. Furniture edits
-        still save locally first, with Supabase placed item persistence kept as the next backend step.
+        Avatar movement and emotes sync during online visits. Furniture edits stay tied to the room layout so the space
+        feels consistent every time you return.
       </div>
     </div>
   );

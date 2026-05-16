@@ -511,7 +511,7 @@ export const roomBlueprints: RoomBlueprint[] = [
   {
     id: "moonlit-loft",
     name: "Moonlit Loft",
-    description: "Starter 2.5D room with a wall plane, floor plane, furniture layering, Casper, and Realtime visits.",
+    description: "Starter 2.5D room with a wall plane, floor plane, furniture layering, Casper, and friend visits.",
     priceCoins: 0,
     priceHearts: 0,
     theme: "loft",

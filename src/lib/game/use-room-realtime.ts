@@ -48,7 +48,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
   const [connectionState, setConnectionState] = useState<ConnectionState>("demo");
-  const [status, setStatus] = useState("Realtime demo mode");
+  const [status, setStatus] = useState("Solo room mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const localPlayerRef = useRef<RealtimeRoomPlayer | null>(null);
   const lastFriendPointAtRef = useRef(0);
@@ -86,7 +86,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
           updatedAt: Date.now(),
         };
         setConnectionState("demo");
-        setStatus("Set Supabase env vars to enable live room presence.");
+        setStatus("Online room visits are not available in this build yet.");
       });
       return;
     }
@@ -197,10 +197,10 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
               setStatus(`Live in room ${roomCode}`);
             } else if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") {
               setConnectionState("error");
-              setStatus("Realtime could not connect. The room still works locally.");
+              setStatus("Online room visits could not connect. The room still works.");
             } else if (state === "CLOSED") {
               setConnectionState("offline");
-              setStatus("Realtime room closed.");
+              setStatus("Room visit connection closed.");
             }
           });
 
@@ -229,7 +229,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
         };
       } catch (error) {
         setConnectionState("error");
-        setStatus(error instanceof Error ? error.message : "Realtime could not start.");
+        setStatus(error instanceof Error ? error.message : "Online room visits could not start.");
       }
     }
 

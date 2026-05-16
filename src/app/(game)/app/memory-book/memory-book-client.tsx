@@ -48,10 +48,10 @@ export function MemoryBookClient({ pages }: MemoryBookClientProps) {
       <CozyCard className="p-5">
         <div className="flex items-center gap-2">
           <BookHeart className="size-5 text-blush-500" />
-          <h2 className="font-display text-2xl">Supabase-ready memory model</h2>
+          <h2 className="font-display text-2xl">Private memory pages</h2>
         </div>
         <p className="mt-2 text-sm font-semibold leading-6 text-ink-700">
-          These cards map to <code>memory_book_pages</code> with private owner and partner-link RLS policies.
+          Memory pages are designed to stay private to their owner and any approved partner link.
         </p>
       </CozyCard>
     </div>

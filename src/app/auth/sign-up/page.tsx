@@ -32,7 +32,7 @@ export default async function SignUpPage({
           <CardHeader>
             <Logo className="mb-6" />
             <CardTitle>Create account</CardTitle>
-            <CardDescription>Supabase Auth handles sessions, email confirmation, and ownership for every game record.</CardDescription>
+            <CardDescription>HeartHaven keeps your session, email confirmation, and game ownership protected.</CardDescription>
           </CardHeader>
           <CardContent>
             {message && (

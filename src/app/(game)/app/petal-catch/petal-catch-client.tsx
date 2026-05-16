@@ -31,8 +31,7 @@ export function PetalCatchClient() {
       <PetalCatchCanvasLoader onReward={grantReward} />
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/70 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-honey-700" />
-        Rewards now update the local wallet immediately. Supabase can promote these same reward events into protected
-        wallet transactions when persistence is enabled.
+        Rewards update the wallet immediately and are shaped for trusted online payouts when live play is available.
       </div>
     </div>
   );

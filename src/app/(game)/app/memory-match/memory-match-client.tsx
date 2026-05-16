@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 const modeCopy: Record<MemoryMatchMode, { title: string; description: string }> = {
   couples: {
     title: "Couple-vs-couple",
-    description: "Two couple teams pass turns locally now. Realtime rooms can replace the turn state later.",
+    description: "Two couple teams pass turns locally now. Online rooms can sync the turns later.",
   },
   party: {
     title: "Party table",
@@ -68,8 +68,8 @@ export function MemoryMatchClient() {
       <RewardWalletPanel />
       <MemoryMatchCanvasLoader mode={mode} onReward={grantReward} />
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">
-        Pass-and-play rewards now update the wallet immediately. The scene is still structured for Supabase Realtime
-        game sessions, player seats, turn events, and party room invites.
+        Pass-and-play rewards now update the wallet immediately. The scene is structured for online seats, turn events,
+        and party room invites.
       </div>
     </div>
   );

@@ -134,7 +134,7 @@ export function RockPaperScissorsClient() {
           <h1 className="mt-1 font-display text-4xl text-ink-900">Moonstone Rock Paper Scissors</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
             A cozy best-of-five secret-pick duel for couples, friends, and party seats. Turn switching is enforced locally
-            now and ready for Realtime game moves later.
+            now and ready for live game moves later.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

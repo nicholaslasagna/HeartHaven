@@ -35,7 +35,7 @@ export function FashionShowClient() {
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/70 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-honey-700" />
         This stage uses the same painted keeper and pet sprite sheets as the room, so wardrobe choices can stay shared
-        across the whole world when Supabase persistence is enabled.
+        across the whole world when online play is available.
       </div>
     </div>
   );
