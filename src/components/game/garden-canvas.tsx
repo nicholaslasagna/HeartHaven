@@ -103,6 +103,27 @@ type GardenPetMood = "idle" | "follow" | "sit" | "happy";
 type KeeperAfkAnimation = "idle" | "sit" | "wave" | "heart" | "yoyo";
 type GardenTimeOfDay = "morning" | "noon" | "night";
 
+const gardenTimeOfDayCopy: Record<
+  GardenTimeOfDay,
+  { label: string; hint: string; selectedClass: string }
+> = {
+  morning: {
+    label: "Morning",
+    hint: "Golden dew",
+    selectedClass: "border-honey-300 bg-gradient-to-b from-honey-100 to-cream-100 text-ink-900 shadow-[0_10px_22px_-16px_rgba(184,129,44,0.7)]",
+  },
+  noon: {
+    label: "Noon",
+    hint: "Clear decorating",
+    selectedClass: "border-garden-300 bg-gradient-to-b from-white to-garden-100 text-garden-900 shadow-[0_10px_22px_-16px_rgba(69,117,56,0.58)]",
+  },
+  night: {
+    label: "Night",
+    hint: "Lantern glow",
+    selectedClass: "border-lavender-300 bg-gradient-to-b from-lavender-200 to-lavender-400 text-ink-900 shadow-[0_10px_22px_-16px_rgba(85,65,137,0.68)]",
+  },
+};
+
 const GARDEN_WIDTH = 960;
 const GARDEN_HEIGHT = 620;
 const GARDEN_WORLD_WIDTH = 3400;
@@ -346,6 +367,10 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private textInputFocused = false;
         private textInputFocusHandler?: (event: Event) => void;
         private timeOverlay?: Phaser.GameObjects.Rectangle;
+        private skyWash?: Phaser.GameObjects.Rectangle;
+        private lowSunGlow?: Phaser.GameObjects.Ellipse;
+        private moonGlow?: Phaser.GameObjects.Ellipse;
+        private currentTimeOfDay: GardenTimeOfDay = "noon";
         private decorDragging = false;
         /**
          * Which character the player is actively driving with WASD / arrows.
@@ -454,8 +479,9 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           });
 
           this.fireflies.forEach((firefly, index) => {
-            firefly.setAlpha(0.22 + Math.sin((this.time.now + index * 240) * 0.004) * 0.22);
-            firefly.y -= delta * 0.003;
+            const light = this.getFireflyLight();
+            firefly.setAlpha(light.base + Math.sin((this.time.now + index * 240) * 0.004) * light.amplitude);
+            firefly.y -= delta * light.drift;
             if (firefly.y < 104) firefly.y = PhaserModule.Math.Between(360, 528);
           });
           this.sortDepths();
@@ -465,6 +491,18 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           const mapKey = variant === "park" ? "park-bare-map" : "garden-bare-map";
           this.add.image(GARDEN_WORLD_WIDTH / 2, GARDEN_WORLD_HEIGHT / 2, mapKey).setDisplaySize(GARDEN_WORLD_WIDTH, GARDEN_WORLD_HEIGHT).setDepth(-30);
           this.add.rectangle(GARDEN_WORLD_WIDTH / 2, GARDEN_WORLD_HEIGHT / 2, GARDEN_WORLD_WIDTH, GARDEN_WORLD_HEIGHT, 0xfffcf3, 0.04).setDepth(-29);
+          this.skyWash = this.add
+            .rectangle(GARDEN_WORLD_WIDTH / 2, GARDEN_WORLD_HEIGHT / 2, GARDEN_WORLD_WIDTH, GARDEN_WORLD_HEIGHT, 0xffffff, 0)
+            .setDepth(-28)
+            .setBlendMode(PhaserModule.BlendModes.ADD);
+          this.lowSunGlow = this.add
+            .ellipse(GARDEN_WORLD_WIDTH * 0.2, GARDEN_WORLD_HEIGHT * 0.28, 1120, 420, 0xffd18a, 0)
+            .setDepth(6794)
+            .setBlendMode(PhaserModule.BlendModes.ADD);
+          this.moonGlow = this.add
+            .ellipse(GARDEN_WORLD_WIDTH * 0.82, GARDEN_WORLD_HEIGHT * 0.18, 760, 430, 0xded0ff, 0)
+            .setDepth(6795)
+            .setBlendMode(PhaserModule.BlendModes.ADD);
           this.timeOverlay = this.add.rectangle(
             GARDEN_WORLD_WIDTH / 2,
             GARDEN_WORLD_HEIGHT / 2,
@@ -908,6 +946,25 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           });
         }
 
+        private getButterflyAlpha() {
+          if (this.currentTimeOfDay === "night") return 0.34;
+          if (this.currentTimeOfDay === "morning") return 0.76;
+          return 0.9;
+        }
+
+        private getFireflyLight() {
+          if (this.currentTimeOfDay === "night") return { base: 0.46, amplitude: 0.24, drift: 0.0048 };
+          if (this.currentTimeOfDay === "morning") return { base: 0.1, amplitude: 0.08, drift: 0.0025 };
+          return { base: 0.22, amplitude: 0.16, drift: 0.003 };
+        }
+
+        private updateCritterLighting() {
+          const butterflyAlpha = this.getButterflyAlpha();
+          this.butterflies.forEach((butterfly) => butterfly.setAlpha(butterflyAlpha));
+          const fireflyAlpha = this.getFireflyLight().base;
+          this.fireflies.forEach((firefly) => firefly.setAlpha(fireflyAlpha));
+        }
+
         private drawButterflies() {
           const count = variant === "partner" ? 8 : variant === "park" ? 14 : 5;
           const maxX = variant === "park" ? GARDEN_WORLD_WIDTH - 180 : 830;
@@ -917,7 +974,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             const butterfly = this.add
               .sprite(x, y, "ambient-critter-sprites", index % 5)
               .setDisplaySize(42 + (index % 3) * 10, 42 + (index % 3) * 10)
-              .setAlpha(0.9)
+              .setAlpha(this.getButterflyAlpha())
               .setDepth(5800);
             this.butterflies.push(butterfly);
             this.tweens.add({
@@ -995,7 +1052,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
                 5,
               )
               .setDisplaySize(30 + (index % 4) * 5, 30 + (index % 4) * 5)
-              .setAlpha(0.3)
+              .setAlpha(this.getFireflyLight().base)
               .setDepth(5900);
             this.fireflies.push(firefly);
           }
@@ -1438,18 +1495,31 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
         private applyTimeOfDay(nextTime: GardenTimeOfDay) {
           if (!this.timeOverlay) return;
+          this.currentTimeOfDay = nextTime;
           if (nextTime === "morning") {
-            this.timeOverlay.setFillStyle(0xffe7bd, 0.08);
-            setStatus("Morning light selected for this garden visit.");
+            this.skyWash?.setFillStyle(0xfff1cf, 0.13);
+            this.lowSunGlow?.setPosition(GARDEN_WORLD_WIDTH * 0.18, GARDEN_WORLD_HEIGHT * 0.32).setFillStyle(0xffcf87, 0.18);
+            this.moonGlow?.setFillStyle(0xded0ff, 0);
+            this.timeOverlay.setFillStyle(0xffd69a, 0.11);
+            this.updateCritterLighting();
+            setStatus("Morning light selected. Dew, soft warmth, and quieter fireflies are active.");
             return;
           }
           if (nextTime === "night") {
-            this.timeOverlay.setFillStyle(0x332b62, 0.28);
-            setStatus("Night light selected. Lanterns and fireflies stand out more.");
+            this.skyWash?.setFillStyle(0x29235c, 0.24);
+            this.lowSunGlow?.setPosition(GARDEN_WORLD_WIDTH * 0.14, GARDEN_WORLD_HEIGHT * 0.74).setFillStyle(0x6b5ba6, 0.08);
+            this.moonGlow?.setFillStyle(0xded0ff, 0.18);
+            this.timeOverlay.setFillStyle(0x1b173e, 0.42);
+            this.updateCritterLighting();
+            setStatus("Night light selected. Lanterns, moon glow, and bright fireflies are active.");
             return;
           }
+          this.skyWash?.setFillStyle(0xfffbec, 0.04);
+          this.lowSunGlow?.setPosition(GARDEN_WORLD_WIDTH * 0.34, GARDEN_WORLD_HEIGHT * 0.22).setFillStyle(0xffe5a6, 0.06);
+          this.moonGlow?.setFillStyle(0xded0ff, 0);
           this.timeOverlay.setFillStyle(0xffffff, 0);
-          setStatus("Noon light selected for clear decorating.");
+          this.updateCritterLighting();
+          setStatus("Noon light selected. Bright clear decorating is active.");
         }
 
         private setAvatarPose(pose: KeeperPose) {
@@ -2803,18 +2873,26 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-extrabold text-ink-700">
-          {(["morning", "noon", "night"] as const).map((time) => (
-            <button
-              className={`rounded-md px-2.5 py-1 capitalize transition ${
-                timeOfDay === time ? "bg-blush-500 text-white" : "bg-white/78 text-ink-700 hover:bg-blush-100"
-              }`}
-              key={time}
-              onClick={() => setTimeOfDay(time)}
-              type="button"
-            >
-              {time}
-            </button>
-          ))}
+          {(["morning", "noon", "night"] as const).map((time) => {
+            const option = gardenTimeOfDayCopy[time];
+            const selected = timeOfDay === time;
+            return (
+              <button
+                aria-pressed={selected}
+                className={`rounded-2xl border px-3 py-2 text-left transition-all duration-200 hover:-translate-y-0.5 active:translate-y-px ${
+                  selected
+                    ? option.selectedClass
+                    : "border-cream-300/80 bg-white/72 text-ink-700 shadow-[0_8px_18px_-16px_rgba(91,63,63,0.55)] hover:border-blush-300/70 hover:bg-blush-50/80"
+                }`}
+                key={time}
+                onClick={() => setTimeOfDay(time)}
+                type="button"
+              >
+                <span className="block text-[11px] font-black uppercase leading-none tracking-normal">{option.label}</span>
+                <span className="mt-1 block text-[10px] font-extrabold leading-none opacity-75">{option.hint}</span>
+              </button>
+            );
+          })}
           <span className="rounded-md bg-garden-100 px-2.5 py-1">Click flowers</span>
           <span className="rounded-md bg-sky-100 px-2.5 py-1">Water effects</span>
           <span className="rounded-md bg-honey-100 px-2.5 py-1">Lantern glow</span>

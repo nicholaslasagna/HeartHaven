@@ -6,7 +6,10 @@ export function CozyButton({ className, variant = "default", ...props }: ButtonP
   return (
     <Button
       variant={variant}
-      className={cn("shadow-[0_10px_28px_-18px_rgba(91,63,63,0.55)]", className)}
+      className={cn(
+        "shadow-[0_14px_34px_-22px_rgba(91,63,63,0.55)] before:absolute before:inset-x-4 before:top-1 before:h-px before:bg-white/42 before:content-['']",
+        className,
+      )}
       {...props}
     />
   );
