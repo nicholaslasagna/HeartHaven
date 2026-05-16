@@ -5,11 +5,15 @@ import type { DragEvent } from "react";
 import Image from "next/image";
 import type Phaser from "phaser";
 import {
+  getKeeperHairColor,
+  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
   keeperGaitPose,
   keeperFrame,
+  keeperHairFrame,
+  keeperSkinFrame,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
   petAccessoryFrame,
@@ -20,9 +24,12 @@ import {
   readPetCustomization,
   type KeeperCustomization,
   type KeeperBodyId,
+  type KeeperHairColorId,
+  type KeeperHairStyleId,
   type KeeperOutfitId,
   type KeeperPaletteId,
   type KeeperPose,
+  type KeeperSkinId,
   type PetCustomization,
   type PetAccessoryId,
   type PetPose,
@@ -82,6 +89,8 @@ type RemoteGardenAvatarObject = {
   container: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
   sprite: Phaser.GameObjects.Sprite;
+  skinSprite: Phaser.GameObjects.Sprite;
+  hairSprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
   /** Each visiting keeper brings their own customized pet. */
   petContainer: Phaser.GameObjects.Container;
@@ -90,6 +99,9 @@ type RemoteGardenAvatarObject = {
   petAccessorySprite: Phaser.GameObjects.Sprite;
   /** Cached customization so frames only rebuild when it actually changes. */
   bodyId: KeeperBodyId;
+  skinId: KeeperSkinId;
+  hairStyleId: KeeperHairStyleId;
+  hairColorId: KeeperHairColorId;
   paletteId: KeeperPaletteId;
   outfitId: KeeperOutfitId;
   petSpeciesId: PetSpeciesId;
@@ -328,6 +340,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private avatar!: Phaser.GameObjects.Container;
         private avatarShadow!: Phaser.GameObjects.Ellipse;
         private avatarSprite!: Phaser.GameObjects.Sprite;
+        private avatarSkinSprite!: Phaser.GameObjects.Sprite;
+        private avatarHairSprite!: Phaser.GameObjects.Sprite;
         private avatarPose: KeeperPose = "idle";
         private avatarFacing: FacingDirection = "right";
         private afkIdleMs = 0;
@@ -394,7 +408,15 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.load.image("garden-bare-map", "/game-assets/generated/heartheaven-garden-bare-map.png");
           this.load.image("park-bare-map", "/game-assets/generated/heartheaven-park-bare-map.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
-          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-sheet.png", {
+          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-base-sheet.png", {
+            frameWidth: 256,
+            frameHeight: 384,
+          });
+          this.load.spritesheet("keeper-skin-mask-sheet", "/game-assets/generated/keeper-skin-mask-sheet.png", {
+            frameWidth: 256,
+            frameHeight: 384,
+          });
+          this.load.spritesheet("keeper-hair-style-sheet", "/game-assets/generated/keeper-hair-style-sheet.png", {
             frameWidth: 256,
             frameHeight: 384,
           });
@@ -1063,6 +1085,15 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           const start = getAvatarStartPosition(variant);
           this.avatarShadow = this.add.ellipse(start.x, start.y + 22, 50, 18, 0x3a2a2a, 0.18).setDepth(start.y - 1);
           this.avatar = this.add.container(start.x, start.y).setDepth(start.y);
+          this.avatarSkinSprite = this.add
+            .sprite(
+              0,
+              -66,
+              "keeper-skin-mask-sheet",
+              keeperSkinFrame("idle", this.keeperCustomization.outfitId, this.keeperCustomization.bodyId),
+            )
+            .setDisplaySize(98, 147)
+            .setAlpha(0.92);
           this.avatarSprite = this.add
             .sprite(
               0,
@@ -1071,7 +1102,16 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               keeperFrame(this.keeperCustomization.paletteId, "idle", this.keeperCustomization.outfitId, this.keeperCustomization.bodyId),
             )
             .setDisplaySize(98, 147);
-          this.avatar.add(this.avatarSprite);
+          this.avatarHairSprite = this.add
+            .sprite(
+              0,
+              -66,
+              "keeper-hair-style-sheet",
+              keeperHairFrame(this.keeperCustomization.hairStyleId, "idle", this.keeperCustomization.bodyId),
+            )
+            .setDisplaySize(98, 147);
+          this.avatar.add([this.avatarSprite, this.avatarSkinSprite, this.avatarHairSprite]);
+          this.applyKeeperLayerTints();
           this.avatar.setSize(62, 92);
           this.lastSentPosition = { x: this.avatar.x, y: this.avatar.y };
 
@@ -1525,6 +1565,29 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private setAvatarPose(pose: KeeperPose) {
           this.avatarPose = pose;
           this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
+          this.avatarSkinSprite?.setFrame(keeperSkinFrame(pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
+          this.avatarHairSprite?.setFrame(keeperHairFrame(this.keeperCustomization.hairStyleId, pose, this.keeperCustomization.bodyId));
+          this.applyKeeperLayerTints();
+        }
+
+        private applyKeeperLayerTints() {
+          const skinTone = getKeeperSkinTone(this.keeperCustomization.skinId);
+          const hairColor = getKeeperHairColor(this.keeperCustomization.hairColorId);
+          this.avatarSkinSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color);
+          this.avatarHairSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color);
+        }
+
+        private setKeeperLayerFlip(facing: FacingDirection) {
+          const flip = facing === "left";
+          this.avatarSprite?.setFlipX(flip);
+          this.avatarSkinSprite?.setFlipX(flip);
+          this.avatarHairSprite?.setFlipX(flip);
+        }
+
+        private setKeeperLayerMotion(y: number, rotation: number) {
+          [this.avatarSkinSprite, this.avatarSprite, this.avatarHairSprite].forEach((sprite) => {
+            sprite?.setY(y).setRotation(rotation);
+          });
         }
 
         private setPetPose(pose: PetPose) {
@@ -1633,7 +1696,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
           if (this.afkAnimation === "idle") {
             this.setAvatarPose("idle");
-            this.avatarSprite.setY(-66).setRotation(0);
+            this.setKeeperLayerMotion(-66, 0);
             this.avatarShadow?.setScale(1, 1);
             return;
           }
@@ -1642,7 +1705,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           if (elapsed > 5600) {
             this.resetAfkAnimation();
             this.setAvatarPose("idle");
-            this.avatarSprite.setY(-66).setRotation(0);
+            this.setKeeperLayerMotion(-66, 0);
             this.avatarShadow?.setScale(1, 1);
             return;
           }
@@ -1650,14 +1713,14 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           const wave = Math.sin(elapsed / 360);
           if (this.afkAnimation === "sit") {
             this.setAvatarPose("sit");
-            this.avatarSprite.setY(-52).setRotation(0);
+            this.setKeeperLayerMotion(-52, 0);
             this.avatarShadow?.setScale(1.16, 1);
             return;
           }
 
           if (this.afkAnimation === "heart") {
             this.setAvatarPose("heart");
-            this.avatarSprite.setY(-66 - Math.max(0, wave) * 1.2).setRotation(wave * 0.006);
+            this.setKeeperLayerMotion(-66 - Math.max(0, wave) * 1.2, wave * 0.006);
             this.avatarShadow?.setScale(1.04, 1);
             if (this.time.now >= this.afkEffectNextAt) {
               this.afkEffectNextAt = this.time.now + 900;
@@ -1668,7 +1731,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
           if (this.afkAnimation === "wave") {
             this.setAvatarPose("wave");
-            this.avatarSprite.setY(-66).setRotation(wave * 0.012 * (this.avatarFacing === "left" ? -1 : 1));
+            this.setKeeperLayerMotion(-66, wave * 0.012 * (this.avatarFacing === "left" ? -1 : 1));
             this.avatarShadow?.setScale(1.04, 1);
             if (this.time.now >= this.afkEffectNextAt) {
               this.afkEffectNextAt = this.time.now + 1200;
@@ -1678,7 +1741,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           }
 
           this.setAvatarPose("wave");
-          this.avatarSprite.setY(-66 - Math.abs(wave) * 1.2).setRotation(wave * 0.01);
+          this.setKeeperLayerMotion(-66 - Math.abs(wave) * 1.2, wave * 0.01);
           this.avatarShadow?.setScale(1.05, 1);
           if (this.afkEffect) this.afkEffect.setScale(this.avatarFacing === "left" ? -1 : 1, 1);
         }
@@ -1693,9 +1756,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           if (this.afkAnimation !== "idle" || this.afkIdleMs !== 0) this.resetAfkAnimation();
           const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
           this.setAvatarPose(keeperGaitPose(this.time.now));
-          this.avatarSprite
-            .setY(-66 - Math.abs(wave) * 3)
-            .setRotation(wave * 0.018 * (this.avatarFacing === "left" ? -1 : 1));
+          this.setKeeperLayerMotion(-66 - Math.abs(wave) * 3, wave * 0.018 * (this.avatarFacing === "left" ? -1 : 1));
           this.avatarShadow?.setScale(1 + Math.abs(wave) * 0.08, 1);
         }
 
@@ -1720,15 +1781,13 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.remoteAvatars.forEach((remote) => {
             const moving = this.time.now < remote.movingUntil;
             const facingLeft = remote.facing === "left";
-            remote.sprite.setFlipX(facingLeft);
+            this.setRemoteKeeperFlip(remote, facingLeft);
             remote.petSprite.setFlipX(facingLeft);
             remote.petAccessorySprite.setFlipX(facingLeft);
 
             if (!moving) {
-              remote.sprite
-                .setFrame(keeperFrame(remote.paletteId, "idle", remote.outfitId, remote.bodyId))
-                .setY(-66)
-                .setRotation(0);
+              this.setRemoteKeeperFrame(remote, "idle");
+              this.setRemoteKeeperMotion(remote, -66, 0);
               remote.petSprite
                 .setFrame(petFrame(remote.petSpeciesId, "idle"))
                 .setY(-38)
@@ -1740,10 +1799,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
             const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
             const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
-            remote.sprite
-              .setFrame(keeperFrame(remote.paletteId, keeperGaitPose(this.time.now), remote.outfitId, remote.bodyId))
-              .setY(-66 - Math.abs(wave) * 3)
-              .setRotation(wave * 0.018 * (facingLeft ? -1 : 1));
+            this.setRemoteKeeperFrame(remote, keeperGaitPose(this.time.now));
+            this.setRemoteKeeperMotion(remote, -66 - Math.abs(wave) * 3, wave * 0.018 * (facingLeft ? -1 : 1));
             remote.petSprite
               .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
               .setY(-38 - Math.abs(petWave) * 2.3)
@@ -1751,6 +1808,32 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
             remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
           });
+        }
+
+        private setRemoteKeeperFlip(remote: RemoteGardenAvatarObject, facingLeft: boolean) {
+          remote.sprite.setFlipX(facingLeft);
+          remote.skinSprite.setFlipX(facingLeft);
+          remote.hairSprite.setFlipX(facingLeft);
+        }
+
+        private setRemoteKeeperFrame(remote: RemoteGardenAvatarObject, pose: KeeperPose) {
+          remote.sprite.setFrame(keeperFrame(remote.paletteId, pose, remote.outfitId, remote.bodyId));
+          remote.skinSprite.setFrame(keeperSkinFrame(pose, remote.outfitId, remote.bodyId));
+          remote.hairSprite.setFrame(keeperHairFrame(remote.hairStyleId, pose, remote.bodyId));
+          this.applyRemoteKeeperTints(remote);
+        }
+
+        private setRemoteKeeperMotion(remote: RemoteGardenAvatarObject, y: number, rotation: number) {
+          [remote.skinSprite, remote.sprite, remote.hairSprite].forEach((sprite) => {
+            sprite.setY(y).setRotation(rotation);
+          });
+        }
+
+        private applyRemoteKeeperTints(remote: RemoteGardenAvatarObject) {
+          const skinTone = getKeeperSkinTone(remote.skinId);
+          const hairColor = getKeeperHairColor(remote.hairColorId);
+          remote.skinSprite.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color);
+          remote.hairSprite.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color);
         }
 
         private tintPetForTone() {
@@ -1805,7 +1888,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           // "watches" their companion rather than freezing into a T-pose.
           if (this.playMode === "companion") {
             this.avatarFacing = this.pet?.x && this.pet.x < this.avatar.x ? "left" : "right";
-            this.avatarSprite.setFlipX(this.avatarFacing === "left");
+            this.setKeeperLayerFlip(this.avatarFacing);
             this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
             this.avatarShadow.setDepth(this.avatar.y - 1);
             this.applyKeeperLocomotion(false, delta);
@@ -1854,7 +1937,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           if (moving && Math.abs(moveDx) > 0.05) {
             this.avatarFacing = moveDx < 0 ? "left" : "right";
           }
-          this.avatarSprite.setFlipX(this.avatarFacing === "left");
+          this.setKeeperLayerFlip(this.avatarFacing);
 
           this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
           this.avatarShadow.setDepth(this.avatar.y - 1);
@@ -2114,6 +2197,9 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               const petY = player.y + 18;
               const changed =
                 existing.bodyId !== custom.bodyId ||
+                existing.skinId !== custom.skinId ||
+                existing.hairStyleId !== custom.hairStyleId ||
+                existing.hairColorId !== custom.hairColorId ||
                 existing.paletteId !== custom.paletteId ||
                 existing.outfitId !== custom.outfitId ||
                 existing.petSpeciesId !== custom.petSpeciesId ||
@@ -2121,11 +2207,15 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
                 existing.petAccessoryId !== custom.petAccessoryId;
               if (changed) {
                 existing.bodyId = custom.bodyId;
+                existing.skinId = custom.skinId;
+                existing.hairStyleId = custom.hairStyleId;
+                existing.hairColorId = custom.hairColorId;
                 existing.paletteId = custom.paletteId;
                 existing.outfitId = custom.outfitId;
                 existing.petSpeciesId = custom.petSpeciesId;
                 existing.petToneId = custom.petToneId;
                 existing.petAccessoryId = custom.petAccessoryId;
+                this.setRemoteKeeperFrame(existing, "idle");
                 this.applyRemotePetTone(existing.petSprite, custom.petToneId);
                 this.updatePetAccessory(existing.petAccessorySprite, custom.petAccessoryId);
               }
@@ -2160,11 +2250,23 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             const shadow = this.add.ellipse(player.x, player.y + 22, 48, 17, 0x3a2a2a, 0.14).setDepth(player.y - 1);
             const container = this.add.container(player.x, player.y).setDepth(player.y);
             const aura = this.add.circle(0, -80, 14, color, 0.28);
+            const skinSprite = this.add
+              .sprite(0, -66, "keeper-skin-mask-sheet", keeperSkinFrame("idle", custom.outfitId, custom.bodyId))
+              .setDisplaySize(98, 147)
+              .setAlpha(0.94)
+              .setFlipX(facingLeft);
             const sprite = this.add
               .sprite(0, -66, "keeper-animation-sheet", keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId))
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
+            const hairSprite = this.add
+              .sprite(0, -66, "keeper-hair-style-sheet", keeperHairFrame(custom.hairStyleId, "idle", custom.bodyId))
+              .setDisplaySize(98, 147)
+              .setAlpha(0.94)
+              .setFlipX(facingLeft);
+            skinSprite.setTint(PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(custom.skinId).color).color);
+            hairSprite.setTint(PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(custom.hairColorId).color).color);
             const label = this.add
               .text(0, -102, player.displayName, {
                 align: "center",
@@ -2176,7 +2278,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
                 padding: { x: 8, y: 3 },
               })
               .setOrigin(0.5);
-            container.add([aura, sprite, label]);
+            container.add([aura, sprite, skinSprite, hairSprite, label]);
 
             // --- their pet ---
             const petShadow = this.add.ellipse(petX, petY + 16, 42, 14, 0x3a2a2a, 0.13).setDepth(petY - 2);
@@ -2194,12 +2296,17 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               container,
               shadow,
               sprite,
+              skinSprite,
+              hairSprite,
               label,
               petContainer,
               petShadow,
               petSprite,
               petAccessorySprite,
               bodyId: custom.bodyId,
+              skinId: custom.skinId,
+              hairStyleId: custom.hairStyleId,
+              hairColorId: custom.hairColorId,
               paletteId: custom.paletteId,
               outfitId: custom.outfitId,
               petSpeciesId: custom.petSpeciesId,

@@ -164,6 +164,17 @@ export function keeperFrame(
   return row * 6 + keeperPoseColumns[pose];
 }
 
+export function keeperSkinFrame(pose: KeeperPose, outfitId: KeeperOutfitId = "cardigan", bodyId: KeeperBodyId = "female") {
+  return keeperFrame("blush", pose, outfitId, bodyId);
+}
+
+export function keeperHairFrame(hairStyleId: KeeperHairStyleId, pose: KeeperPose, bodyId: KeeperBodyId = "female") {
+  const bodyBlock = KEEPER_BODY_TYPES.find((body) => body.id === bodyId)?.frameBlock ?? 0;
+  const hairRow = Math.max(0, KEEPER_HAIR_STYLES.findIndex((hair) => hair.id === hairStyleId));
+  const row = bodyBlock * KEEPER_HAIR_STYLES.length + hairRow;
+  return row * 6 + keeperPoseColumns[pose];
+}
+
 export function petFrame(speciesId: PetSpeciesId, pose: PetPose) {
   const row = PET_SPECIES.find((species) => species.id === speciesId)?.frameRow ?? 0;
   return row * 6 + petPoseColumns[pose];
@@ -249,6 +260,14 @@ export function readPresenceCustomization() {
 
 export function getKeeperPalette(id: KeeperPaletteId) {
   return KEEPER_PALETTES.find((palette) => palette.id === id) ?? KEEPER_PALETTES[0];
+}
+
+export function getKeeperSkinTone(id: KeeperSkinId) {
+  return KEEPER_SKIN_TONES.find((skin) => skin.id === id) ?? KEEPER_SKIN_TONES[0];
+}
+
+export function getKeeperHairColor(id: KeeperHairColorId) {
+  return KEEPER_HAIR_COLORS.find((hair) => hair.id === id) ?? KEEPER_HAIR_COLORS[0];
 }
 
 export function keeperPaletteIdFromColor(color: string): KeeperPaletteId {

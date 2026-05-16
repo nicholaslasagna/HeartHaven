@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import { CheckCircle2, Palette, Scissors, Shirt, Sparkles, UserRound } from "lucide-react";
+import { KeeperAvatarPreview } from "@/components/cozy/keeper-avatar-preview";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import {
   KEEPER_BODY_TYPES,
@@ -36,7 +36,6 @@ export function KeeperCustomizerCard() {
   const hairColor = KEEPER_HAIR_COLORS.find((item) => item.id === hairColorId) ?? KEEPER_HAIR_COLORS[0];
   const hairStyle = KEEPER_HAIR_STYLES.find((item) => item.id === hairStyleId) ?? KEEPER_HAIR_STYLES[0];
   const body = KEEPER_BODY_TYPES.find((item) => item.id === bodyId) ?? KEEPER_BODY_TYPES[0];
-  const previewSrc = `/game-assets/generated/keeper-custom-preview-${bodyId}-${outfitId}.png`;
 
   useEffect(() => {
     let active = true;
@@ -95,13 +94,14 @@ export function KeeperCustomizerCard() {
               className="absolute right-5 top-5 size-8 rounded-full border-[3px] border-white shadow-[0_10px_24px_-16px_rgba(91,63,63,0.8)]"
               style={{ backgroundColor: palette.color }}
             />
-            <Image
-              alt="Painted chibi keeper avatar preview"
+            <KeeperAvatarPreview
+              bodyId={bodyId}
               className="relative mx-auto mt-10 h-56 w-auto object-contain drop-shadow-[0_18px_22px_rgba(91,63,63,0.24)]"
-              height={384}
-              priority
-              src={previewSrc}
-              width={256}
+              hairColorId={hairColorId}
+              hairStyleId={hairStyleId}
+              outfitId={outfitId}
+              paletteId={paletteId}
+              skinId={skinId}
             />
           </div>
 

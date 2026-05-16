@@ -3,12 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
+  getKeeperHairColor,
+  getKeeperSkinTone,
   getPetTone,
   keeperGaitPose,
   keeperFrame,
+  keeperHairFrame,
+  keeperSkinFrame,
   petFrame,
   readKeeperCustomization,
   readPetCustomization,
+  type KeeperCustomization,
   type KeeperOutfitId,
   type KeeperPaletteId,
   type KeeperPose,
@@ -136,6 +141,8 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         private walking = false;
         private finished = false;
         private keeperSprite!: Phaser.GameObjects.Sprite;
+        private keeperSkinSprite!: Phaser.GameObjects.Sprite;
+        private keeperHairSprite!: Phaser.GameObjects.Sprite;
         private petSprite!: Phaser.GameObjects.Sprite;
         private runwayGlow!: Phaser.GameObjects.Ellipse;
         private themeText!: Phaser.GameObjects.Text;
@@ -143,7 +150,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         private scoreText!: Phaser.GameObjects.Text;
         private feedbackText!: Phaser.GameObjects.Text;
         private walkButton!: Phaser.GameObjects.Container;
-        private keeperBodyId = readKeeperCustomization().bodyId;
+        private keeperCustomization: KeeperCustomization = readKeeperCustomization();
         private choiceCards: FashionChoiceCard[] = [];
         private rewardLayer?: Phaser.GameObjects.Container;
 
@@ -152,7 +159,15 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         }
 
         preload() {
-          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-sheet.png", {
+          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-base-sheet.png", {
+            frameWidth: 256,
+            frameHeight: 384,
+          });
+          this.load.spritesheet("keeper-skin-mask-sheet", "/game-assets/generated/keeper-skin-mask-sheet.png", {
+            frameWidth: 256,
+            frameHeight: 384,
+          });
+          this.load.spritesheet("keeper-hair-style-sheet", "/game-assets/generated/keeper-hair-style-sheet.png", {
             frameWidth: 256,
             frameHeight: 384,
           });
@@ -325,12 +340,22 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
 
         private createPerformer() {
           const keeperCustomization = readKeeperCustomization();
-          this.keeperBodyId = keeperCustomization.bodyId;
+          this.keeperCustomization = keeperCustomization;
           const petCustomization = readPetCustomization();
+          this.keeperSkinSprite = this.add
+            .sprite(332, 382, "keeper-skin-mask-sheet", keeperSkinFrame("idle", keeperCustomization.outfitId, keeperCustomization.bodyId))
+            .setDisplaySize(150, 225)
+            .setDepth(421)
+            .setAlpha(0.92);
           this.keeperSprite = this.add
-            .sprite(332, 382, "keeper-animation-sheet", keeperFrame(keeperCustomization.paletteId, "idle", keeperCustomization.outfitId, this.keeperBodyId))
+            .sprite(332, 382, "keeper-animation-sheet", keeperFrame(keeperCustomization.paletteId, "idle", keeperCustomization.outfitId, keeperCustomization.bodyId))
             .setDisplaySize(150, 225)
             .setDepth(420);
+          this.keeperHairSprite = this.add
+            .sprite(332, 382, "keeper-hair-style-sheet", keeperHairFrame(keeperCustomization.hairStyleId, "idle", keeperCustomization.bodyId))
+            .setDisplaySize(150, 225)
+            .setDepth(422);
+          this.applyKeeperLayerTints();
           this.petSprite = this.add
             .sprite(574, 428, "pet-animation-sheet", petFrame(petCustomization.speciesId, "idle"))
             .setDisplaySize(120, 135)
@@ -343,7 +368,21 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
 
           this.add.ellipse(332, 496, 86, 24, 0x3a2a2a, 0.14).setDepth(390);
           this.add.ellipse(574, 492, 74, 20, 0x3a2a2a, 0.13).setDepth(389);
-          this.tweens.add({ targets: [this.keeperSprite, this.petSprite], y: "-=5", duration: 1080, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+          this.tweens.add({ targets: [this.keeperSkinSprite, this.keeperSprite, this.keeperHairSprite, this.petSprite], y: "-=5", duration: 1080, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        }
+
+        private applyKeeperLayerTints() {
+          const skinTone = getKeeperSkinTone(this.keeperCustomization.skinId);
+          const hairColor = getKeeperHairColor(this.keeperCustomization.hairColorId);
+          this.keeperSkinSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color);
+          this.keeperHairSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color);
+        }
+
+        private setKeeperLook(paletteId: KeeperPaletteId, pose: KeeperPose, outfitId: KeeperOutfitId) {
+          this.keeperSprite.setFrame(keeperFrame(paletteId, pose, outfitId, this.keeperCustomization.bodyId));
+          this.keeperSkinSprite.setFrame(keeperSkinFrame(pose, outfitId, this.keeperCustomization.bodyId));
+          this.keeperHairSprite.setFrame(keeperHairFrame(this.keeperCustomization.hairStyleId, pose, this.keeperCustomization.bodyId));
+          this.applyKeeperLayerTints();
         }
 
         private createChoiceCards() {
@@ -408,7 +447,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         private selectChoice(choice: FashionChoice) {
           if (this.walking || this.finished) return;
           this.selectedChoice = choice;
-          this.keeperSprite.setFrame(keeperFrame(choice.paletteId, choice.pose, choice.outfitId, this.keeperBodyId));
+          this.setKeeperLook(choice.paletteId, choice.pose, choice.outfitId);
           this.petSprite.setFrame(petFrame(readPetCustomization().speciesId, choice.petPose));
           this.choiceCards.forEach(({ bg, choice: cardChoice }) => {
             bg.setStrokeStyle(cardChoice.id === choice.id ? 5 : 3, cardChoice.accent, cardChoice.id === choice.id ? 0.92 : 0.32);
@@ -435,19 +474,19 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
           this.feedbackText.setText(`Judges gave ${roundScore} points for ${choice.title}.`);
           playCozyCue(roundScore >= 86 ? "reward" : "heart");
 
-          this.keeperSprite.setFrame(keeperFrame(choice.paletteId, "walk1", choice.outfitId, this.keeperBodyId));
+          this.setKeeperLook(choice.paletteId, "walk1", choice.outfitId);
           this.tweens.add({
-            targets: this.keeperSprite,
+            targets: [this.keeperSkinSprite, this.keeperSprite, this.keeperHairSprite],
             x: 690,
             y: 364,
             duration: 980,
             ease: "Sine.inOut",
             onUpdate: () => {
               const pose = keeperGaitPose(this.time.now);
-              this.keeperSprite.setFrame(keeperFrame(choice.paletteId, pose, choice.outfitId, this.keeperBodyId));
+              this.setKeeperLook(choice.paletteId, pose, choice.outfitId);
             },
             onComplete: () => {
-              this.keeperSprite.setFrame(keeperFrame(choice.paletteId, choice.pose, choice.outfitId, this.keeperBodyId));
+              this.setKeeperLook(choice.paletteId, choice.pose, choice.outfitId);
               this.petSprite.setFrame(petFrame(readPetCustomization().speciesId, choice.petPose));
               this.spawnApplause(choice.accent);
               this.time.delayedCall(760, () => this.finishRound(choice));
@@ -473,9 +512,9 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
             return;
           }
 
-          this.keeperSprite.setPosition(332, 382);
+          [this.keeperSkinSprite, this.keeperSprite, this.keeperHairSprite].forEach((sprite) => sprite.setPosition(332, 382));
           this.petSprite.setPosition(574, 428);
-          this.keeperSprite.setFrame(keeperFrame(choice.paletteId, "idle", choice.outfitId, this.keeperBodyId));
+          this.setKeeperLook(choice.paletteId, "idle", choice.outfitId);
           this.petSprite.setFrame(petFrame(readPetCustomization().speciesId, "idle"));
           this.walking = false;
           this.applyRound();
