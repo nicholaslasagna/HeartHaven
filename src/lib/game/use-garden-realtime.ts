@@ -5,7 +5,12 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { moderateChatMessage, type ChatModerationResult, type GardenChatMessage } from "@/lib/game/chat-moderation";
-import { hardenIncomingChat, hardenRealtimePlayer } from "@/lib/game/realtime-hardening";
+import {
+  hardenGardenDecor,
+  hardenIncomingChat,
+  hardenRealtimePlayer,
+  type HardenedGardenDecor,
+} from "@/lib/game/realtime-hardening";
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
 import {
   KEEPER_CUSTOMIZATION_EVENT,
@@ -27,7 +32,17 @@ type UseGardenRealtimeOptions = {
   gardenName: string;
   invitePath?: "/app/garden" | "/app/partner-garden" | "/app/park" | "/app/area";
   inviteZone?: "garden" | "park";
+  /** Host friend code that owns the canonical decor + grants for this
+   *  garden. When unset (guest is browsing their own garden) we fall back
+   *  to the local keeper's friend code. The channel key includes this so
+   *  two users visiting the same host meet on the same channel, while two
+   *  users in their *own* default-named gardens stay isolated. */
+  hostFriendCode?: string | null;
 };
+
+export type SaveDecorResult =
+  | { ok: true; version: number }
+  | { ok: false; reason: "conflict" | "unauthorized" | "network" | "invalid"; serverVersion?: number; message?: string };
 
 type ConnectionState = "demo" | "connecting" | "connected" | "offline" | "error";
 
@@ -53,10 +68,19 @@ export function useGardenRealtime({
   gardenName,
   invitePath = "/app/garden",
   inviteZone,
+  hostFriendCode,
 }: UseGardenRealtimeOptions) {
   const [players, setPlayers] = useState<RealtimeRoomPlayer[]>([]);
   const [messages, setMessages] = useState<GardenChatMessage[]>([]);
   const [approvedDecoratorCodes, setApprovedDecoratorCodes] = useState<string[]>([]);
+  // Server-canonical decor for the host that owns this garden. Hydrated
+  // via `get_garden_decor` on connect; refreshed via `garden_decor_updated`
+  // broadcasts; written via `saveDecor` (which calls the save_garden_decor
+  // RPC). See the room hook for the same pattern + comments.
+  const [decor, setDecor] = useState<HardenedGardenDecor[] | null>(null);
+  const [decorVersion, setDecorVersion] = useState<number>(0);
+  const [decorLoading, setDecorLoading] = useState<boolean>(true);
+  const decorVersionRef = useRef<number>(0);
   const [localFriendCode, setLocalFriendCode] = useState(() =>
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
@@ -89,6 +113,17 @@ export function useGardenRealtime({
   const latestFriendCodeRef = useRef<string>("");
   const lastFriendPointAtRef = useRef(0);
   const normalizedGardenId = useMemo(() => normalizeGardenId(gardenId), [gardenId]);
+  // Resolve the host code up-front so the channel + RPC reads are
+  // (host, garden)-scoped. When a guest follows a ?visit= link we honour
+  // their target; otherwise we own this garden ourselves.
+  const normalizedHostCode = useMemo(
+    () => normalizeFriendCode(hostFriendCode ?? (localFriendCode || getSocialState().selfCode)),
+    [hostFriendCode, localFriendCode],
+  );
+  const channelKey = useMemo(
+    () => `${normalizedHostCode || "anon"}:${normalizedGardenId}`,
+    [normalizedHostCode, normalizedGardenId],
+  );
 
   const inviteUrl = useMemo(() => {
     if (typeof window === "undefined") {
@@ -163,7 +198,7 @@ export function useGardenRealtime({
 
         localPlayerRef.current = localPlayer;
 
-        const channel = supabase.channel(`garden:${normalizedGardenId}`, {
+        const channel = supabase.channel(`garden:${channelKey}`, {
           config: {
             broadcast: { self: false },
             presence: { key: localId },
@@ -171,6 +206,46 @@ export function useGardenRealtime({
         });
 
         channelRef.current = channel;
+
+        // --- Hydrate server-canonical decor + grants -------------------
+        // Before subscribing, pull the host's saved decor and approved-
+        // decorator list so the first paint is the real shared state. We
+        // fire both RPCs in parallel — they're independent.
+        setDecorLoading(true);
+        const hydration = await Promise.all([
+          supabase.rpc("get_garden_decor", {
+            p_host_friend_code: normalizedHostCode,
+            p_garden_id: normalizedGardenId,
+          }),
+          supabase.rpc("get_garden_decorators", {
+            p_host_friend_code: normalizedHostCode,
+            p_garden_id: normalizedGardenId,
+          }),
+        ]);
+        if (cancelled) return;
+
+        const decorRow = Array.isArray(hydration[0].data) ? hydration[0].data[0] : null;
+        if (decorRow) {
+          const safe = hardenGardenDecor(decorRow.decor);
+          setDecor(safe);
+          const versionNumber = Number(decorRow.version);
+          const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
+          setDecorVersion(safeVersion);
+          decorVersionRef.current = safeVersion;
+        } else {
+          // No row yet — the host hasn't placed any decor. Caller falls
+          // back to its starter default.
+          setDecor(null);
+          setDecorVersion(0);
+          decorVersionRef.current = 0;
+        }
+        setDecorLoading(false);
+
+        const grantsData = Array.isArray(hydration[1].data) ? hydration[1].data : [];
+        const hydratedGrants = grantsData
+          .map((row) => normalizeFriendCode(String((row as { grantee_friend_code?: string })?.grantee_friend_code ?? "")))
+          .filter((code) => code.length > 0);
+        setApprovedDecoratorCodes(Array.from(new Set(hydratedGrants)));
 
         function syncPresence() {
           const state = channel.presenceState<RealtimeRoomPlayer>();
@@ -221,6 +296,18 @@ export function useGardenRealtime({
                 .filter((code): code is string => Boolean(code))
               : [];
             setApprovedDecoratorCodes([...new Set(approvedCodes)]);
+          })
+          .on("broadcast", { event: "garden_decor_updated" }, ({ payload }) => {
+            // Delta from a save_garden_decor call on another client. Apply
+            // only if the broadcast version beats what we already have —
+            // otherwise we'd clobber a more recent local write.
+            const versionNumber = Number((payload as { version?: number })?.version);
+            if (!Number.isFinite(versionNumber)) return;
+            if (versionNumber <= decorVersionRef.current) return;
+            const safe = hardenGardenDecor((payload as { decor?: unknown })?.decor);
+            decorVersionRef.current = versionNumber;
+            setDecorVersion(versionNumber);
+            setDecor(safe);
           })
           .subscribe(async (state) => {
             if (cancelled) return;
@@ -283,7 +370,7 @@ export function useGardenRealtime({
       localPlayerRef.current = null;
       setPlayers([]);
     };
-  }, [appendMessage, gardenCode, gardenName, normalizedGardenId]);
+  }, [appendMessage, channelKey, gardenCode, gardenName, normalizedGardenId, normalizedHostCode]);
 
   const sendMove = useCallback((position: {
     x: number;
@@ -366,40 +453,117 @@ export function useGardenRealtime({
     return moderation;
   }, [appendMessage, invitePath]);
 
-  const toggleDecoratorPermission = useCallback((friendCode: string) => {
+  const toggleDecoratorPermission = useCallback(async (friendCode: string) => {
     const normalized = normalizeFriendCode(friendCode);
     if (!normalized) return;
 
+    let nextList: string[] = approvedDecoratorCodes;
     setApprovedDecoratorCodes((current) => {
-      const next = current.includes(normalized)
+      nextList = current.includes(normalized)
         ? current.filter((code) => code !== normalized)
         : [...current, normalized];
-
-      const channel = channelRef.current;
-      if (channel) {
-        void channel.send({
-          type: "broadcast",
-          event: "garden_decorator_permissions",
-          payload: {
-            approvedCodes: next,
-            hostCode: getSocialState().selfCode,
-            updatedAt: Date.now(),
-          },
-        });
-      }
-
-      return next;
+      return nextList;
     });
-  }, []);
+    const grant = nextList.includes(normalized);
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseBrowserClient();
+        await supabase.rpc("set_garden_decorator", {
+          p_garden_id: normalizedGardenId,
+          p_grantee_friend_code: normalized,
+          p_grant: grant,
+        });
+      } catch {
+        /* fall through — broadcast still propagates the local change */
+      }
+    }
+
+    const channel = channelRef.current;
+    if (channel) {
+      void channel.send({
+        type: "broadcast",
+        event: "garden_decorator_permissions",
+        payload: {
+          approvedCodes: nextList,
+          hostCode: getSocialState().selfCode,
+          updatedAt: Date.now(),
+        },
+      });
+    }
+  }, [approvedDecoratorCodes, normalizedGardenId]);
+
+  const saveDecor = useCallback(
+    async (nextDecor: HardenedGardenDecor[]): Promise<SaveDecorResult> => {
+      if (!isSupabaseConfigured()) {
+        return { ok: false, reason: "network", message: "Online garden sync is not configured." };
+      }
+      const safe = hardenGardenDecor(nextDecor);
+      const expected = decorVersionRef.current;
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data, error } = await supabase.rpc("save_garden_decor", {
+          p_host_friend_code: normalizedHostCode,
+          p_garden_id: normalizedGardenId,
+          p_decor: safe,
+          p_expected_version: expected,
+        });
+        if (error) {
+          const message = error.message ?? "Could not save garden decor.";
+          if (/not authorized/i.test(message)) {
+            return { ok: false, reason: "unauthorized", message };
+          }
+          if (/too many|invalid|must be a json array/i.test(message)) {
+            return { ok: false, reason: "invalid", message };
+          }
+          return { ok: false, reason: "network", message };
+        }
+        const row = Array.isArray(data) ? data[0] : null;
+        if (!row) {
+          return { ok: false, reason: "network", message: "Empty response from server." };
+        }
+        if (row.conflict) {
+          const sv = Number(row.version);
+          return { ok: false, reason: "conflict", serverVersion: Number.isFinite(sv) ? sv : undefined };
+        }
+        const newVersion = Number(row.version);
+        const safeVersion = Number.isFinite(newVersion) ? newVersion : expected + 1;
+        decorVersionRef.current = safeVersion;
+        setDecorVersion(safeVersion);
+        setDecor(safe);
+
+        const channel = channelRef.current;
+        if (channel) {
+          void channel.send({
+            type: "broadcast",
+            event: "garden_decor_updated",
+            payload: { decor: safe, version: safeVersion, updatedAt: Date.now() },
+          });
+        }
+        return { ok: true, version: safeVersion };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: "network",
+          message: error instanceof Error ? error.message : "Network error.",
+        };
+      }
+    },
+    [normalizedGardenId, normalizedHostCode],
+  );
 
   return {
     approvedDecoratorCodes,
     connectionState,
+    decor,
+    decorVersion,
+    decorLoading,
     gardenCode,
     inviteUrl,
     localFriendCode,
     messages,
     players,
+    saveDecor,
     sendChat,
     sendMove,
     status,

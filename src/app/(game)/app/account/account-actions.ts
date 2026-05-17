@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { normalizePhone } from "@/lib/auth/phone";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -152,4 +153,57 @@ export async function updateUsernameAction(formData: FormData) {
   }
 
   redirectAccount(`Username updated to @${requested}.`);
+}
+
+/**
+ * Add, replace, or clear the keeper's optional phone number. Stored E.164
+ * on `profiles.phone`. Used as a secondary ban-match key — see migration
+ * 0023. No SMS verification in this MVP; the value is self-reported.
+ */
+export async function updatePhoneAction(formData: FormData) {
+  if (!isSupabaseConfigured()) {
+    redirectAccount("Phone settings need Supabase configured.");
+  }
+
+  const intent = String(formData.get("intent") ?? "save");
+  const parseResult = normalizePhone(formData.get("phone")?.toString() ?? null);
+  if (!parseResult.ok) {
+    redirectAccount(parseResult.reason);
+  }
+  // `intent=clear` always wipes the phone, regardless of the input field.
+  const phone = intent === "clear" ? null : ("phone" in parseResult ? parseResult.phone : null);
+
+  const supabase = await getSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    redirectAccount("Sign in to update your phone.");
+  }
+
+  // If the keeper is setting a phone, double-check it's not already in the
+  // ban table — otherwise a banned user could attach a clean email to a
+  // banned phone and slip through.
+  if (phone) {
+    const { data: isBanned } = await supabase.rpc("is_phone_banned", { p_phone: phone });
+    if (isBanned === true) {
+      redirectAccount("This phone number can't be added to a HeartHaven account.");
+    }
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ phone })
+    .eq("id", user.id);
+
+  if (error) {
+    // Uniqueness violation = someone else already has it.
+    if (/profiles_phone_unique/i.test(error.message)) {
+      redirectAccount("That phone is already on another HeartHaven account.");
+    }
+    if (/profiles_phone_e164_chk/i.test(error.message)) {
+      redirectAccount("Enter the phone with the country code, e.g. +14155550100.");
+    }
+    redirectAccount(`Could not save your phone: ${error.message}`);
+  }
+
+  redirectAccount(phone ? "Phone saved." : "Phone removed.");
 }

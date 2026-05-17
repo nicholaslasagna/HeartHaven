@@ -27,6 +27,7 @@ type RoomCanvasLoaderProps = {
     right?: { name: string; href: string };
   };
   roomSurfaces?: RoomSurfaceSelection;
+  pendingPlacementIds?: string[];
   onAvatarMove?: (position: {
     x: number;
     y: number;
@@ -50,6 +51,7 @@ export function RoomCanvasLoader({
   worldHeight,
   roomPortals,
   roomSurfaces,
+  pendingPlacementIds,
   onAvatarMove,
   onRoomEmote,
   onPlacementsChange,
@@ -60,6 +62,7 @@ export function RoomCanvasLoader({
       onAvatarMove={onAvatarMove}
       onPlacementsChange={onPlacementsChange}
       onRoomEmote={onRoomEmote}
+      pendingPlacementIds={pendingPlacementIds}
       placements={placements}
       remotePlayers={remotePlayers}
       roomName={roomName}

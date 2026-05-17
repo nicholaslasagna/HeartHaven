@@ -66,6 +66,7 @@ type RoomCanvasProps = {
     right?: RoomPortal;
   };
   roomSurfaces?: RoomSurfaceSelection;
+  pendingPlacementIds?: string[];
   onAvatarMove?: (position: {
     x: number;
     y: number;
@@ -95,6 +96,7 @@ type FurnitureObject = {
   placement: PlayablePlacement;
   container: Phaser.GameObjects.Container;
   glow: Phaser.GameObjects.Graphics;
+  pendingOutline: Phaser.GameObjects.Graphics;
   baseY: number;
   /** Reference to the breathing bob tween so we can pause/resume it during drag. */
   bobTween?: Phaser.Tweens.Tween;
@@ -183,6 +185,7 @@ export function RoomCanvas({
   worldHeight: worldHeightProp,
   roomPortals,
   roomSurfaces = defaultRoomSurfaceSelection,
+  pendingPlacementIds = [],
 }: RoomCanvasProps) {
   // Bigger world for living-room-class blueprints (park-style scroll).
   // Falls back to the original fixed 960×600 viewport when the blueprint
@@ -192,6 +195,9 @@ export function RoomCanvas({
   const isLargeRoom = worldWidth > ROOM_WIDTH || worldHeight > ROOM_HEIGHT;
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotePlayersRef = useRef(remotePlayers);
+  const placementsRef = useRef(placements);
+  const pendingPlacementIdsRef = useRef(pendingPlacementIds);
+  const onPlacementsChangeRef = useRef(onPlacementsChange);
   const [status, setStatus] = useState("Lighting the Moonlit Loft");
   const [selected, setSelected] = useState("No item selected");
   const { activeEvent } = useSeasonalEvent();
@@ -202,12 +208,26 @@ export function RoomCanvas({
   }, [remotePlayers]);
 
   useEffect(() => {
+    onPlacementsChangeRef.current = onPlacementsChange;
+  }, [onPlacementsChange]);
+
+  useEffect(() => {
+    placementsRef.current = placements;
+    window.dispatchEvent(new CustomEvent("hearthaven:room-placements-updated", { detail: { placements } }));
+  }, [placements]);
+
+  useEffect(() => {
+    pendingPlacementIdsRef.current = pendingPlacementIds;
+    window.dispatchEvent(new CustomEvent("hearthaven:room-pending-placements", { detail: { ids: pendingPlacementIds } }));
+  }, [pendingPlacementIds]);
+
+  useEffect(() => {
     let destroyed = false;
     let game: Phaser.Game | null = null;
 
     async function boot() {
       const PhaserModule = await import("phaser");
-      const normalizedPlacements = placements.map(toPlayablePlacement);
+      const normalizedPlacements = placementsRef.current.map(toPlayablePlacement);
 
       if (!mountRef.current || destroyed) return;
 
@@ -257,6 +277,9 @@ export function RoomCanvas({
         private roomChatBubbleHandler?: (event: Event) => void;
         private remotePlayersHandler?: (event: Event) => void;
         private remoteEmoteHandler?: (event: Event) => void;
+        private roomPlacementsHandler?: (event: Event) => void;
+        private pendingPlacementsHandler?: (event: Event) => void;
+        private pendingPlacementIds = new Set(pendingPlacementIdsRef.current);
         private keeperCustomizationHandler?: (event: Event) => void;
         private petCustomizationHandler?: (event: Event) => void;
         private moveBroadcastTimer = 0;
@@ -745,6 +768,10 @@ export function RoomCanvas({
           glow.setVisible(false);
           container.add(glow);
 
+          const pendingOutline = this.add.graphics();
+          pendingOutline.setVisible(false);
+          container.add(pendingOutline);
+
           drawFurnitureShape(this, container, placement);
           // Hosts and approved decorators can rearrange both floor AND wall
           // items. Visitors still get the hover affordance (so they can see
@@ -761,8 +788,10 @@ export function RoomCanvas({
             placement,
             container,
             glow,
+            pendingOutline,
             baseY: placement.y,
           };
+          this.applyPendingStyle(furniture);
 
           container.on("pointerover", () => {
             glow.setVisible(true);
@@ -809,7 +838,7 @@ export function RoomCanvas({
             if (this.dragStarted) {
               furniture.baseY = furniture.placement.y;
               setStatus(`${placement.label} moved to x ${Math.round(container.x)}, y ${Math.round(container.y)}.`);
-              onPlacementsChange?.(this.exportPlacements());
+              onPlacementsChangeRef.current?.(this.exportPlacements());
               // Restart the breathing tween relative to the new resting y so
               // the bob continues to feel "alive" without snapping the piece
               // back to its old position.
@@ -834,6 +863,94 @@ export function RoomCanvas({
           });
 
           return furniture;
+        }
+
+        private syncPlacements(nextPlacements: RoomPlacement[]) {
+          const nextPlayable = nextPlacements.map(toPlayablePlacement);
+          const nextById = new Map(nextPlayable.map((placement) => [placement.id, placement]));
+
+          for (const item of [...this.furniture]) {
+            if (!nextById.has(item.placement.id)) {
+              item.bobTween?.stop();
+              item.container.destroy(true);
+              this.furniture = this.furniture.filter((entry) => entry !== item);
+              if (this.selectedFurniture === item) {
+                this.selectedFurniture = undefined;
+                this.interactionBubble?.destroy(true);
+                this.interactionBubble = undefined;
+                setSelected("No item selected");
+              }
+            }
+          }
+
+          for (const nextPlacement of nextPlayable) {
+            const existing = this.findFurnitureById(nextPlacement.id);
+            if (!existing) {
+              const created = this.createFurnitureObject(nextPlacement);
+              this.furniture.push(created);
+              continue;
+            }
+
+            if (existing.placement.catalogItemId !== nextPlacement.catalogItemId) {
+              existing.bobTween?.stop();
+              existing.container.destroy(true);
+              this.furniture = this.furniture.filter((entry) => entry !== existing);
+              const replacement = this.createFurnitureObject(nextPlacement);
+              this.furniture.push(replacement);
+              continue;
+            }
+
+            Object.assign(existing.placement, nextPlacement);
+            existing.bobTween?.stop();
+            existing.bobTween = undefined;
+            existing.container.setPosition(nextPlacement.x, nextPlacement.y);
+            existing.container.setSize(nextPlacement.width, nextPlacement.height);
+            existing.container.setRotation(0);
+            existing.container.setScale(
+              isFacingLeft(nextPlacement.rotation) ? -nextPlacement.scale : nextPlacement.scale,
+              nextPlacement.scale,
+            );
+            existing.baseY = nextPlacement.y;
+            existing.bobTween = this.tweens.add({
+              targets: existing.container,
+              y: nextPlacement.kind === "lantern" ? existing.baseY - 4 : existing.baseY,
+              duration: 1800,
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
+            });
+            this.applyPendingStyle(existing);
+          }
+
+          this.sortDepths();
+          this.moveBubbleToSelection();
+        }
+
+        private updatePendingPlacements(ids: string[]) {
+          this.pendingPlacementIds = new Set(ids);
+          this.furniture.forEach((item) => this.applyPendingStyle(item));
+        }
+
+        private applyPendingStyle(item: FurnitureObject) {
+          const isPending = this.pendingPlacementIds.has(item.placement.id);
+          item.container.setAlpha(isPending ? 0.7 : 1);
+          item.pendingOutline.clear();
+          item.pendingOutline.setVisible(isPending);
+          if (!isPending) return;
+
+          const width = item.placement.width + 18;
+          const height = item.placement.height + 18;
+          item.pendingOutline.lineStyle(3, 0xc685a2, 0.9);
+          item.pendingOutline.strokeRoundedRect(-width / 2, -height / 2, width, height, 20);
+          item.pendingOutline.lineStyle(2, 0xffffff, 0.9);
+          for (let x = -width / 2 + 10; x < width / 2 - 8; x += 22) {
+            item.pendingOutline.lineBetween(x, -height / 2, x + 10, -height / 2);
+            item.pendingOutline.lineBetween(x, height / 2, x + 10, height / 2);
+          }
+          for (let y = -height / 2 + 10; y < height / 2 - 8; y += 22) {
+            item.pendingOutline.lineBetween(-width / 2, y, -width / 2, y + 10);
+            item.pendingOutline.lineBetween(width / 2, y, width / 2, y + 10);
+          }
         }
 
         /**
@@ -1082,6 +1199,15 @@ export function RoomCanvas({
             if (!player?.id || !player.emote) return;
             this.playRemoteEmote(player);
           };
+          this.roomPlacementsHandler = (event: Event) => {
+            const next = (event as CustomEvent<{ placements?: RoomPlacement[] }>).detail?.placements;
+            if (!Array.isArray(next)) return;
+            this.syncPlacements(next);
+          };
+          this.pendingPlacementsHandler = (event: Event) => {
+            const ids = (event as CustomEvent<{ ids?: string[] }>).detail?.ids;
+            this.updatePendingPlacements(Array.isArray(ids) ? ids : []);
+          };
           this.keeperCustomizationHandler = (event: Event) => {
             this.keeperCustomization = (event as CustomEvent<KeeperCustomization>).detail ?? readKeeperCustomization();
             this.setAvatarPose(this.avatarPose);
@@ -1105,6 +1231,8 @@ export function RoomCanvas({
           window.addEventListener("hearthaven:room-chat-bubble", this.roomChatBubbleHandler);
           window.addEventListener("hearthaven:remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
+          window.addEventListener("hearthaven:room-placements-updated", this.roomPlacementsHandler);
+          window.addEventListener("hearthaven:room-pending-placements", this.pendingPlacementsHandler);
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
           window.addEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
           window.addEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
@@ -1115,6 +1243,8 @@ export function RoomCanvas({
             if (this.roomChatBubbleHandler) window.removeEventListener("hearthaven:room-chat-bubble", this.roomChatBubbleHandler);
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:remote-players", this.remotePlayersHandler);
             if (this.remoteEmoteHandler) window.removeEventListener("hearthaven:remote-emote", this.remoteEmoteHandler);
+            if (this.roomPlacementsHandler) window.removeEventListener("hearthaven:room-placements-updated", this.roomPlacementsHandler);
+            if (this.pendingPlacementsHandler) window.removeEventListener("hearthaven:room-pending-placements", this.pendingPlacementsHandler);
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
             if (this.petCustomizationHandler) window.removeEventListener(PET_CUSTOMIZATION_EVENT, this.petCustomizationHandler);
             if (this.companionMoodHandler) window.removeEventListener(PET_VITALS_EVENT, this.companionMoodHandler);
@@ -2044,6 +2174,29 @@ export function RoomCanvas({
 
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
           this.petShadow.setDepth(this.pet.y - 1);
+
+          // Keeper-mode pet broadcast — when the keeper is standing still
+          // but the pet is auto-following / settling into furniture, the
+          // avatar-move path doesn't fire, so remote viewers would see the
+          // pet snap on the next keeper move instead of trailing along
+          // smoothly. Broadcast pet position here too, throttled the same
+          // way as the companion-mode branch above.
+          this.moveBroadcastTimer += delta;
+          const lastPet = this.lastSentPetPosition;
+          const petHasMoved = !lastPet || PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, lastPet.x, lastPet.y) > 3;
+          if (petHasMoved && this.moveBroadcastTimer > 110) {
+            this.moveBroadcastTimer = 0;
+            this.lastSentPetPosition = { x: this.pet.x, y: this.pet.y };
+            onAvatarMove?.({
+              x: this.avatar.x,
+              y: this.avatar.y,
+              facing: this.avatarFacing,
+              petX: this.pet.x,
+              petY: this.pet.y,
+              petFacing: this.petFacing,
+              controlMode: "keeper",
+            });
+          }
         }
 
         private selectFurniture(furniture: FurnitureObject) {
@@ -2254,7 +2407,7 @@ export function RoomCanvas({
           playCozyCue("place");
           setSelected("No item selected");
           setStatus(`${item.placement.label} removed from this room.`);
-          onPlacementsChange?.(this.exportPlacements());
+          onPlacementsChangeRef.current?.(this.exportPlacements());
         }
 
         private moveBubbleToSelection() {
@@ -2287,7 +2440,7 @@ export function RoomCanvas({
           playCozyCue("rotate");
           this.playInteractionSparkles(this.selectedFurniture.container.x, this.selectedFurniture.container.y);
           setStatus(`${placement.label} now faces ${facing}.`);
-          onPlacementsChange?.(this.exportPlacements());
+          onPlacementsChangeRef.current?.(this.exportPlacements());
         }
 
         private changeSelectedLayer(delta: number) {
@@ -2305,7 +2458,7 @@ export function RoomCanvas({
             delta > 0 ? 0xe4efd7 : 0xf5e9d0,
           );
           setStatus(`${placement.label} depth layer is now ${placement.zIndex}.`);
-          onPlacementsChange?.(this.exportPlacements());
+          onPlacementsChangeRef.current?.(this.exportPlacements());
         }
 
         private playInteractionSparkles(x: number, y: number, color = 0xfaebc2) {
@@ -2416,7 +2569,7 @@ export function RoomCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, [activeEvent, canEditRoom, onAvatarMove, onPlacementsChange, onRoomEmote, placements, roomName, roomPortals, roomSurfaces, roomTheme, worldHeight, worldWidth]);
+  }, [activeEvent, canEditRoom, onAvatarMove, onRoomEmote, roomName, roomPortals, roomSurfaces, roomTheme, worldHeight, worldWidth]);
 
   return (
     <section className="block w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">

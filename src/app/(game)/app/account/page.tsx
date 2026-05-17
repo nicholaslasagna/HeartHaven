@@ -1,10 +1,12 @@
-import { KeyRound, LogOut, MailCheck, ShieldCheck } from "lucide-react";
+import { KeyRound, LogOut, MailCheck, PhoneCall, ShieldCheck, Trash2 } from "lucide-react";
 import { signOutAction, updatePasswordAction } from "@/app/auth/actions";
+import { updatePhoneAction } from "@/app/(game)/app/account/account-actions";
 import { MfaPanel } from "@/components/auth/mfa-panel";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { UsernameSettingsPanel } from "@/components/account/username-settings-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatPhoneForDisplay } from "@/lib/auth/phone";
 import { getSupabaseMissingConfigMessage, isSupabaseConfigured } from "@/lib/supabase/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -18,6 +20,7 @@ export default async function AccountPage({
   let confirmed = false;
   let serverUsername: string | null = null;
   let serverUsernameHistory: string[] | null = null;
+  let serverPhone: string | null = null;
 
   if (isSupabaseConfigured()) {
     const supabase = await getSupabaseServerClient();
@@ -31,13 +34,14 @@ export default async function AccountPage({
     if (user) {
       const { data: profile } = await supabase
         .from("profiles")
-        .select("username, username_changes")
+        .select("username, username_changes, phone")
         .eq("id", user.id)
         .maybeSingle();
       serverUsername = typeof profile?.username === "string" ? profile.username : null;
       serverUsernameHistory = Array.isArray(profile?.username_changes)
         ? (profile.username_changes as unknown[]).map((entry) => String(entry))
         : null;
+      serverPhone = typeof profile?.phone === "string" ? profile.phone : null;
     }
   }
 
@@ -105,6 +109,44 @@ export default async function AccountPage({
           </form>
         </CozyCard>
       </div>
+
+      <CozyCard className="p-5">
+        <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-garden-700">
+          <PhoneCall className="size-4" /> Phone (optional)
+        </p>
+        <h2 className="mt-2 font-display text-2xl text-ink-900">Recovery & safety phone</h2>
+        <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
+          Optional. Used only to help recover your account and to keep banned users from
+          returning under a new email. Never shown to other keepers. Format: international, like
+          <code className="mx-1 rounded bg-cream-200 px-1 py-0.5">+14155550100</code>.
+        </p>
+        {serverPhone && (
+          <p className="mt-3 text-sm font-bold text-ink-800">
+            On file: <span className="font-extrabold">{formatPhoneForDisplay(serverPhone)}</span>
+          </p>
+        )}
+        <form action={updatePhoneAction} className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+          <label className="grid gap-2 text-sm font-extrabold text-ink-700">
+            {serverPhone ? "Replace phone" : "Add phone"}
+            <Input
+              type="tel"
+              name="phone"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="+1 415 555 0100"
+              defaultValue={serverPhone ?? ""}
+            />
+          </label>
+          <Button type="submit" name="intent" value="save">
+            <ShieldCheck /> Save phone
+          </Button>
+          {serverPhone && (
+            <Button type="submit" name="intent" value="clear" variant="secondary">
+              <Trash2 /> Remove
+            </Button>
+          )}
+        </form>
+      </CozyCard>
 
       <MfaPanel />
     </div>

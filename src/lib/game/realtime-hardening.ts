@@ -21,7 +21,7 @@
 
 import { moderateChatMessage, type GardenChatMessage } from "@/lib/game/chat-moderation";
 import { isFriendCodeShape, normalizeFriendCode } from "@/lib/game/social";
-import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
+import type { FacingDirection, RealtimeRoomPlayer, RoomPlacement } from "@/lib/game/types";
 
 /** Maximum permitted chars in a public display name. Matches the server-side
  *  normalizer used by `profiles.username`. */
@@ -154,6 +154,122 @@ export function hardenIncomingChat(raw: unknown): GardenChatMessage | null {
  * normally (visitors are anonymous on purpose). The block list is re-read
  * each call so an unblock takes effect on the next presence frame.
  */
+// ------------------------------------------------------------------------
+// Room placement + garden decor hardening — server state is JSONB so the
+// payload arrives as an opaque blob. We sanitize before handing it to
+// either the renderer or the save RPC. Coercion is permissive (drop
+// unknown fields, clamp invalid coords) so a single bad entry doesn't
+// invalidate the whole save.
+// ------------------------------------------------------------------------
+
+const PLACEMENT_ID_MAX = 80;
+const CATALOG_ID_MAX = 80;
+const ROTATION_MIN = -360;
+const ROTATION_MAX = 360;
+const SCALE_MIN = 0.1;
+const SCALE_MAX = 5;
+const Z_INDEX_MIN = 0;
+const Z_INDEX_MAX = 10_000;
+
+function sanitizeStringField(value: unknown, max: number): string {
+  if (typeof value !== "string") return "";
+  return value.slice(0, max);
+}
+
+function clampInRange(value: unknown, min: number, max: number, fallback: number): number {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  if (num < min) return min;
+  if (num > max) return max;
+  return num;
+}
+
+function hardenRoomPlacement(raw: unknown): RoomPlacement | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const id = sanitizeStringField(r.id, PLACEMENT_ID_MAX);
+  const catalogItemId = sanitizeStringField(r.catalogItemId, CATALOG_ID_MAX);
+  if (!id || !catalogItemId) return null;
+  return {
+    id,
+    catalogItemId,
+    x: clampCoord(r.x, 0),
+    y: clampCoord(r.y, 0),
+    rotation: clampInRange(r.rotation, ROTATION_MIN, ROTATION_MAX, 0),
+    scale: clampInRange(r.scale, SCALE_MIN, SCALE_MAX, 1),
+    zIndex: Math.round(clampInRange(r.zIndex, Z_INDEX_MIN, Z_INDEX_MAX, 0)),
+  };
+}
+
+/**
+ * Validate a payload that should be an array of RoomPlacement. Drops any
+ * entries that don't have a valid id + catalogItemId. Caps the result at
+ * 200 to mirror the server-side guard.
+ *
+ * Returns an array (possibly empty). Never throws — bad input becomes
+ * an empty layout, which is at worst the cozy default for the host.
+ */
+export function hardenRoomPlacements(raw: unknown): RoomPlacement[] {
+  if (!Array.isArray(raw)) return [];
+  const cleaned: RoomPlacement[] = [];
+  for (let i = 0; i < raw.length && cleaned.length < 200; i += 1) {
+    const item = hardenRoomPlacement(raw[i]);
+    if (item) cleaned.push(item);
+  }
+  return cleaned;
+}
+
+const DECOR_KIND_MAX = 40;
+const DECOR_LABEL_MAX = 64;
+
+export type HardenedGardenDecor = {
+  id: string;
+  kind: string;
+  label: string;
+  href?: string;
+  x: number;
+  y: number;
+  rotation: number;
+};
+
+function hardenGardenDecorItem(raw: unknown): HardenedGardenDecor | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const id = sanitizeStringField(r.id, PLACEMENT_ID_MAX);
+  const kind = sanitizeStringField(r.kind, DECOR_KIND_MAX);
+  if (!id || !kind) return null;
+  const label = sanitizeStringField(r.label, DECOR_LABEL_MAX) || kind;
+  const href = typeof r.href === "string" && r.href.startsWith("/") && r.href.length < 200
+    ? r.href
+    : undefined;
+  return {
+    id,
+    kind,
+    label,
+    href,
+    x: clampCoord(r.x, 0),
+    y: clampCoord(r.y, 0),
+    rotation: clampInRange(r.rotation, ROTATION_MIN, ROTATION_MAX, 0),
+  };
+}
+
+/**
+ * Same shape as `hardenRoomPlacements` but for the garden decor JSONB
+ * payload. The `kind` field is left as a free string here because the
+ * canvas has its own allowlist (`worldObjectSprites`) and will simply
+ * ignore decor with an unknown kind — better than rejecting the whole
+ * payload here.
+ */
+export function hardenGardenDecor(raw: unknown): HardenedGardenDecor[] {
+  if (!Array.isArray(raw)) return [];
+  const cleaned: HardenedGardenDecor[] = [];
+  for (let i = 0; i < raw.length && cleaned.length < 200; i += 1) {
+    const item = hardenGardenDecorItem(raw[i]);
+    if (item) cleaned.push(item);
+  }
+  return cleaned;
+}
+
 export function filterBlockedPlayers(players: RealtimeRoomPlayer[]): RealtimeRoomPlayer[] {
   if (typeof window === "undefined") return players;
   try {

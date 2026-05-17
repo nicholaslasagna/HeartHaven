@@ -5,8 +5,8 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { moderateChatMessage, type ChatModerationResult, type GardenChatMessage } from "@/lib/game/chat-moderation";
-import { hardenIncomingChat, hardenRealtimePlayer } from "@/lib/game/realtime-hardening";
-import type { FacingDirection, RealtimeRoomPlayer, RoomEmote } from "@/lib/game/types";
+import { hardenIncomingChat, hardenRealtimePlayer, hardenRoomPlacements } from "@/lib/game/realtime-hardening";
+import type { FacingDirection, RealtimeRoomPlayer, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import {
   KEEPER_CUSTOMIZATION_EVENT,
   PET_CUSTOMIZATION_EVENT,
@@ -43,10 +43,24 @@ function normalizeFriendCode(code: string) {
   return code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
 }
 
+export type SavePlacementsResult =
+  | { ok: true; version: number }
+  | { ok: false; reason: "conflict" | "unauthorized" | "network" | "invalid"; serverVersion?: number; message?: string };
+
 export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRealtimeOptions) {
   const [players, setPlayers] = useState<RealtimeRoomPlayer[]>([]);
   const [messages, setMessages] = useState<GardenChatMessage[]>([]);
   const [approvedDecoratorCodes, setApprovedDecoratorCodes] = useState<string[]>([]);
+  // Server-canonical room layout for the host this channel represents.
+  // `placements` is hydrated on connect via `get_room_placements` and kept
+  // fresh by `room_placements_updated` broadcasts. `placementsVersion` is
+  // the monotonic counter the save RPC enforces for optimistic concurrency.
+  // `placementsLoading` is true until the first hydration round-trip
+  // completes so UI can defer rendering localStorage fallback for a beat.
+  const [placements, setPlacements] = useState<RoomPlacement[] | null>(null);
+  const [placementsVersion, setPlacementsVersion] = useState<number>(0);
+  const [placementsLoading, setPlacementsLoading] = useState<boolean>(true);
+  const placementsVersionRef = useRef<number>(0);
   const [localFriendCode, setLocalFriendCode] = useState(() =>
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
@@ -189,10 +203,67 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           setPlayers(remotePlayers);
         }
 
+        // --- Hydrate server-canonical room state ----------------------
+        // Pull the host's saved layout + the host's approved-decorator list
+        // BEFORE we subscribe — that way the first paint we hand to the
+        // canvas is the real state, not stale localStorage. The two RPCs
+        // are independent so we fire them in parallel.
+        setPlacementsLoading(true);
+        const hydration = await Promise.all([
+          supabase.rpc("get_room_placements", {
+            p_host_friend_code: channelKey,
+            p_room_id: normalizedRoomId,
+          }),
+          supabase.rpc("get_room_decorators", {
+            p_host_friend_code: channelKey,
+            p_room_id: normalizedRoomId,
+          }),
+        ]);
+        if (cancelled) return;
+
+        const placementsRow = Array.isArray(hydration[0].data) ? hydration[0].data[0] : null;
+        if (placementsRow) {
+          const safe = hardenRoomPlacements(placementsRow.placements);
+          setPlacements(safe);
+          const versionNumber = Number(placementsRow.version);
+          const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
+          setPlacementsVersion(safeVersion);
+          placementsVersionRef.current = safeVersion;
+        } else {
+          // No row yet — the host hasn't saved anything to the server. We
+          // leave `placements` as null so the caller (room-client) knows
+          // to fall back to its cozy default + localStorage. Version 0
+          // means "this room has never been persisted" and a fresh save
+          // will create it.
+          setPlacements(null);
+          setPlacementsVersion(0);
+          placementsVersionRef.current = 0;
+        }
+        setPlacementsLoading(false);
+
+        const grantsData = Array.isArray(hydration[1].data) ? hydration[1].data : [];
+        const hydratedGrants = grantsData
+          .map((row) => normalizeFriendCode(String((row as { grantee_friend_code?: string })?.grantee_friend_code ?? "")))
+          .filter((code) => code.length > 0);
+        setApprovedDecoratorCodes(Array.from(new Set(hydratedGrants)));
+
         channel
           .on("presence", { event: "sync" }, syncPresence)
           .on("presence", { event: "join" }, syncPresence)
           .on("presence", { event: "leave" }, syncPresence)
+          .on("broadcast", { event: "room_placements_updated" }, ({ payload }) => {
+            // Delta from another participant's save_room_placements. The
+            // payload carries the new placements + version, so we apply
+            // if the version is newer than what we know. Older or equal
+            // versions are dropped (we already have at-least-as-fresh).
+            const versionNumber = Number((payload as { version?: number })?.version);
+            if (!Number.isFinite(versionNumber)) return;
+            if (versionNumber <= placementsVersionRef.current) return;
+            const safe = hardenRoomPlacements((payload as { placements?: unknown })?.placements);
+            placementsVersionRef.current = versionNumber;
+            setPlacementsVersion(versionNumber);
+            setPlacements(safe);
+          })
           .on("broadcast", { event: "avatar_move" }, ({ payload }) => {
             const player = hardenRealtimePlayer(payload);
             if (!player || player.id === localId) return;
@@ -348,31 +419,127 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     void channel.send({ type: "broadcast", event: "room_emote", payload });
   }, []);
 
-  const toggleDecoratorPermission = useCallback((friendCode: string) => {
+  const toggleDecoratorPermission = useCallback(async (friendCode: string) => {
     const normalized = normalizeFriendCode(friendCode);
     if (!normalized) return;
 
+    // Optimistically flip locally so the host's UI feels snappy. If the
+    // server rejects (e.g. the friend code isn't registered yet) we'll
+    // revert via the next hydration on reconnect — the RPC errors out
+    // before any audit row is written.
+    let nextList: string[] = approvedDecoratorCodes;
     setApprovedDecoratorCodes((current) => {
-      const next = current.includes(normalized)
+      nextList = current.includes(normalized)
         ? current.filter((code) => code !== normalized)
         : [...current, normalized];
-
-      const channel = channelRef.current;
-      if (channel) {
-        void channel.send({
-          type: "broadcast",
-          event: "room_decorator_permissions",
-          payload: {
-            approvedCodes: next,
-            hostCode: getSocialState().selfCode,
-            updatedAt: Date.now(),
-          },
-        });
-      }
-
-      return next;
+      return nextList;
     });
-  }, []);
+    const grant = nextList.includes(normalized);
+
+    // Persist via RPC. Only the host's session has authority — the RPC
+    // gates on auth.uid() so a guest invoking this is rejected.
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseBrowserClient();
+        await supabase.rpc("set_room_decorator", {
+          p_room_id: normalizedRoomId,
+          p_grantee_friend_code: normalized,
+          p_grant: grant,
+        });
+      } catch {
+        /* fall through — broadcast still keeps other clients in sync */
+      }
+    }
+
+    // Broadcast a courtesy event so other clients on the same channel
+    // update without waiting for a re-hydration. The server table is
+    // authoritative; this is only a freshness booster.
+    const channel = channelRef.current;
+    if (channel) {
+      void channel.send({
+        type: "broadcast",
+        event: "room_decorator_permissions",
+        payload: {
+          approvedCodes: nextList,
+          hostCode: getSocialState().selfCode,
+          updatedAt: Date.now(),
+        },
+      });
+    }
+  }, [approvedDecoratorCodes, normalizedRoomId]);
+
+  /**
+   * Persist a new placement list to the server + broadcast the delta to
+   * every other participant on this channel. Returns a structured result
+   * so the caller can surface conflict UI without throwing.
+   *
+   * Concurrency model — every save sends the version the caller thinks
+   * they're editing. The RPC rejects if the server has moved on. The
+   * caller is expected to re-hydrate from `placements` on conflict and
+   * re-attempt with the new version.
+   */
+  const savePlacements = useCallback(
+    async (nextPlacements: RoomPlacement[]): Promise<SavePlacementsResult> => {
+      if (!isSupabaseConfigured()) {
+        return { ok: false, reason: "network", message: "Online room sync is not configured." };
+      }
+      const safe = hardenRoomPlacements(nextPlacements);
+      const expected = placementsVersionRef.current;
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data, error } = await supabase.rpc("save_room_placements", {
+          p_host_friend_code: channelKey,
+          p_room_id: normalizedRoomId,
+          p_placements: safe,
+          p_expected_version: expected,
+        });
+        if (error) {
+          const message = error.message ?? "Could not save room layout.";
+          // Server says the caller isn't allowed. Surface a clean reason.
+          if (/not authorized/i.test(message)) {
+            return { ok: false, reason: "unauthorized", message };
+          }
+          if (/too many|invalid|must be a json array/i.test(message)) {
+            return { ok: false, reason: "invalid", message };
+          }
+          return { ok: false, reason: "network", message };
+        }
+        const row = Array.isArray(data) ? data[0] : null;
+        if (!row) {
+          return { ok: false, reason: "network", message: "Empty response from server." };
+        }
+        if (row.conflict) {
+          const sv = Number(row.version);
+          return { ok: false, reason: "conflict", serverVersion: Number.isFinite(sv) ? sv : undefined };
+        }
+        const newVersion = Number(row.version);
+        const safeVersion = Number.isFinite(newVersion) ? newVersion : expected + 1;
+        placementsVersionRef.current = safeVersion;
+        setPlacementsVersion(safeVersion);
+        setPlacements(safe);
+
+        // Broadcast the delta so other participants on the same channel
+        // pick up the new layout immediately instead of waiting for a
+        // refresh-driven re-hydration.
+        const channel = channelRef.current;
+        if (channel) {
+          void channel.send({
+            type: "broadcast",
+            event: "room_placements_updated",
+            payload: { placements: safe, version: safeVersion, updatedAt: Date.now() },
+          });
+        }
+        return { ok: true, version: safeVersion };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: "network",
+          message: error instanceof Error ? error.message : "Network error.",
+        };
+      }
+    },
+    [channelKey, normalizedRoomId],
+  );
 
   const sendChat = useCallback((input: string): ChatModerationResult => {
     const safety = readSafetyState();
@@ -429,7 +596,11 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     localFriendCode,
     messages,
     players,
+    placements,
+    placementsVersion,
+    placementsLoading,
     roomCode,
+    savePlacements,
     sendEmote,
     sendChat,
     sendMove,

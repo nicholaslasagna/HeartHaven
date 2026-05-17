@@ -56,6 +56,8 @@ type GardenCanvasProps = {
   remotePlayers?: RealtimeRoomPlayer[];
   variant: "personal" | "partner" | "park";
   plots: GardenPlotState[];
+  decor?: GardenDecorPlacement[];
+  pendingDecorIds?: string[];
   canEditGarden?: boolean;
   onAvatarMove?: (position: {
     x: number;
@@ -66,9 +68,10 @@ type GardenCanvasProps = {
     petFacing?: FacingDirection;
     controlMode?: "keeper" | "companion";
   }) => void;
+  onDecorChange?: (decor: GardenDecorPlacement[]) => void;
 };
 
-type GardenDecorKind =
+export type GardenDecorKind =
   | "gazebo"
   | "swing"
   | "picnic"
@@ -82,7 +85,7 @@ type GardenDecorKind =
   | "memoryTree"
   | "flowerStand";
 
-type GardenDecorPlacement = {
+export type GardenDecorPlacement = {
   id: string;
   kind: GardenDecorKind;
   label: string;
@@ -478,9 +481,21 @@ function facingRotation(facing: FacingDirection) {
   return facing === "left" ? 180 : 0;
 }
 
-export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers = [], variant, plots }: GardenCanvasProps) {
+export function GardenCanvas({
+  canEditGarden = true,
+  decor,
+  onAvatarMove,
+  onDecorChange,
+  pendingDecorIds = [],
+  remotePlayers = [],
+  variant,
+  plots,
+}: GardenCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotePlayersRef = useRef(remotePlayers);
+  const decorRef = useRef<GardenDecorPlacement[]>(decor ?? readGardenDecor(variant));
+  const pendingDecorIdsRef = useRef(pendingDecorIds);
+  const onDecorChangeRef = useRef(onDecorChange);
   const timeOfDayRef = useRef<GardenTimeOfDay>("noon");
   const { activeEvent } = useSeasonalEvent();
   const [timeOfDay, setTimeOfDay] = useState<GardenTimeOfDay>("noon");
@@ -498,6 +513,21 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
   }, [remotePlayers]);
 
   useEffect(() => {
+    onDecorChangeRef.current = onDecorChange;
+  }, [onDecorChange]);
+
+  useEffect(() => {
+    const nextDecor = decor ?? readGardenDecor(variant);
+    decorRef.current = nextDecor;
+    window.dispatchEvent(new CustomEvent("hearthaven:garden-decor-updated", { detail: { decor: nextDecor } }));
+  }, [decor, variant]);
+
+  useEffect(() => {
+    pendingDecorIdsRef.current = pendingDecorIds;
+    window.dispatchEvent(new CustomEvent("hearthaven:garden-pending-decor", { detail: { ids: pendingDecorIds } }));
+  }, [pendingDecorIds]);
+
+  useEffect(() => {
     timeOfDayRef.current = timeOfDay;
     window.dispatchEvent(new CustomEvent("hearthaven:garden-time", { detail: { timeOfDay } }));
   }, [timeOfDay]);
@@ -508,7 +538,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
     async function boot() {
       const PhaserModule = await import("phaser");
-      const initialDecor = readGardenDecor(variant);
+      const initialDecor = decorRef.current;
       if (!mountRef.current || destroyed) return;
 
       class HeartHavenGardenScene extends PhaserModule.Scene {
@@ -558,6 +588,9 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private remotePlayersHandler?: (event: Event) => void;
         private chatBubbleHandler?: (event: Event) => void;
         private addDecorHandler?: (event: Event) => void;
+        private decorUpdatedHandler?: (event: Event) => void;
+        private pendingDecorHandler?: (event: Event) => void;
+        private pendingDecorIds = new Set(pendingDecorIdsRef.current);
         private sunshineHandler?: (event: Event) => void;
         private keeperCustomizationHandler?: (event: Event) => void;
         private petCustomizationHandler?: (event: Event) => void;
@@ -1760,6 +1793,15 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             }
             this.addDecorFromDrawer(kind, point);
           };
+          this.decorUpdatedHandler = (event: Event) => {
+            const nextDecor = (event as CustomEvent<{ decor?: GardenDecorPlacement[] }>).detail?.decor;
+            if (!Array.isArray(nextDecor)) return;
+            this.syncDecor(nextDecor);
+          };
+          this.pendingDecorHandler = (event: Event) => {
+            const ids = (event as CustomEvent<{ ids?: string[] }>).detail?.ids;
+            this.updatePendingDecor(Array.isArray(ids) ? ids : []);
+          };
           this.sunshineHandler = () => this.applySunshinePulse();
           this.timeOfDayHandler = (event: Event) => {
             const nextTime = (event as CustomEvent<{ timeOfDay?: GardenTimeOfDay }>).detail?.timeOfDay;
@@ -1786,6 +1828,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           window.addEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
           window.addEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
           window.addEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
+          window.addEventListener("hearthaven:garden-decor-updated", this.decorUpdatedHandler);
+          window.addEventListener("hearthaven:garden-pending-decor", this.pendingDecorHandler);
           window.addEventListener("hearthaven:partner-sunshine", this.sunshineHandler);
           window.addEventListener("hearthaven:garden-time", this.timeOfDayHandler);
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
@@ -1797,6 +1841,8 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
             if (this.chatBubbleHandler) window.removeEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
             if (this.addDecorHandler) window.removeEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
+            if (this.decorUpdatedHandler) window.removeEventListener("hearthaven:garden-decor-updated", this.decorUpdatedHandler);
+            if (this.pendingDecorHandler) window.removeEventListener("hearthaven:garden-pending-decor", this.pendingDecorHandler);
             if (this.sunshineHandler) window.removeEventListener("hearthaven:partner-sunshine", this.sunshineHandler);
             if (this.timeOfDayHandler) window.removeEventListener("hearthaven:garden-time", this.timeOfDayHandler);
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
@@ -2423,6 +2469,28 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           this.pet.setScale(1, this.petMood === "sit" ? 0.96 : 1);
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
           this.petShadow.setDepth(this.pet.y - 1);
+
+          // Keeper-mode pet broadcast — when the keeper is standing still
+          // and the pet is auto-following / wandering to a sniff target,
+          // the avatar-move broadcast doesn't fire. Without this, remote
+          // viewers see the pet teleport on the next keeper move instead
+          // of trailing along. Throttled to ~9Hz to match the avatar tick.
+          this.moveBroadcastTimer += delta;
+          const lastPet = this.lastSentPetPosition;
+          const petHasMoved = !lastPet || PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, lastPet.x, lastPet.y) > 3;
+          if (petHasMoved && this.moveBroadcastTimer > 120) {
+            this.moveBroadcastTimer = 0;
+            this.lastSentPetPosition = { x: this.pet.x, y: this.pet.y };
+            onAvatarMove?.({
+              x: this.avatar.x,
+              y: this.avatar.y,
+              facing: this.avatarFacing,
+              petX: this.pet.x,
+              petY: this.pet.y,
+              petFacing: this.petFacing,
+              controlMode: "keeper",
+            });
+          }
         }
 
         private readKeyboard() {
@@ -2833,6 +2901,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
         private createDecoration(decoration: GardenDecorPlacement) {
           const spriteConfig = worldObjectSprites[decoration.kind];
+          if (!spriteConfig) return;
           const container = this.add.container(decoration.x, decoration.y).setDepth(decoration.y);
           container.setRotation(0);
           container.setSize(spriteConfig.width, spriteConfig.height);
@@ -2845,10 +2914,16 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           glow.setVisible(false);
           container.add(glow);
           container.setData("glow", glow);
+
+          const pendingOutline = this.add.graphics();
+          pendingOutline.setVisible(false);
+          container.add(pendingOutline);
+          container.setData("pendingOutline", pendingOutline);
           container.setData("placement", decoration);
 
           this.drawGardenDecoration(container, decoration.kind);
           this.decorObjects.set(decoration.id, container);
+          this.applyPendingDecorStyle(decoration.id);
 
           container.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             pointer.event.stopPropagation();
@@ -2900,8 +2975,89 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           });
         }
 
+        private syncDecor(nextDecor: GardenDecorPlacement[]) {
+          const nextById = new Map(nextDecor.map((decoration) => [decoration.id, decoration]));
+
+          for (const [id, container] of Array.from(this.decorObjects.entries())) {
+            if (!nextById.has(id)) {
+              container.destroy(true);
+              this.decorObjects.delete(id);
+              if (this.selectedDecor?.id === id) {
+                this.selectedDecor = undefined;
+                this.decorBubble?.destroy(true);
+                this.decorBubble = undefined;
+              }
+            }
+          }
+
+          for (const decoration of nextDecor) {
+            const spriteConfig = worldObjectSprites[decoration.kind];
+            if (!spriteConfig) continue;
+            const existing = this.decorObjects.get(decoration.id);
+            if (!existing) {
+              this.createDecoration(decoration);
+              continue;
+            }
+
+            const placement = existing.getData("placement") as GardenDecorPlacement;
+            if (placement.kind !== decoration.kind) {
+              existing.destroy(true);
+              this.decorObjects.delete(decoration.id);
+              this.createDecoration(decoration);
+              continue;
+            }
+
+            Object.assign(placement, decoration);
+            existing.setPosition(decoration.x, decoration.y);
+            existing.setSize(spriteConfig.width, spriteConfig.height);
+            const sprite = existing.getData("sprite") as Phaser.GameObjects.Image | undefined;
+            sprite?.setFlipX(isFacingLeft(decoration.rotation));
+            this.applyPendingDecorStyle(decoration.id);
+          }
+
+          this.sortDepths();
+          this.moveDecorBubble();
+        }
+
+        private updatePendingDecor(ids: string[]) {
+          this.pendingDecorIds = new Set(ids);
+          this.decorObjects.forEach((_container, id) => this.applyPendingDecorStyle(id));
+        }
+
+        private applyPendingDecorStyle(id: string) {
+          const container = this.decorObjects.get(id);
+          if (!container) return;
+          const placement = container.getData("placement") as GardenDecorPlacement | undefined;
+          if (!placement) return;
+          const spriteConfig = worldObjectSprites[placement.kind];
+          if (!spriteConfig) return;
+          const outline = container.getData("pendingOutline") as Phaser.GameObjects.Graphics | undefined;
+          const isPending = this.pendingDecorIds.has(id);
+          container.setAlpha(isPending ? 0.7 : 1);
+          outline?.clear();
+          outline?.setVisible(isPending);
+          if (!isPending || !outline) return;
+
+          const width = spriteConfig.width + 22;
+          const height = spriteConfig.height + 22;
+          const left = -width / 2;
+          const top = -spriteConfig.height + 25;
+          outline.lineStyle(3, 0x8e70bd, 0.9);
+          outline.strokeRoundedRect(left, top, width, height, 22);
+          outline.lineStyle(2, 0xffffff, 0.9);
+          for (let x = left + 12; x < left + width - 10; x += 24) {
+            outline.lineBetween(x, top, x + 12, top);
+            outline.lineBetween(x, top + height, x + 12, top + height);
+          }
+          for (let y = top + 12; y < top + height - 10; y += 24) {
+            outline.lineBetween(left, y, left, y + 12);
+            outline.lineBetween(left + width, y, left + width, y + 12);
+          }
+        }
+
         private drawGardenDecoration(container: Phaser.GameObjects.Container, kind: GardenDecorKind) {
           const spriteConfig = worldObjectSprites[kind];
+          if (!spriteConfig) return;
           container.add(this.add.ellipse(0, 42, spriteConfig.width * 0.62, 34, 0x3a2a2a, 0.13));
           const sprite = this.add
             .image(0, spriteConfig.yOffset, "world-object-sprites", spriteConfig.frame)
@@ -3181,7 +3337,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             };
           });
           writeGardenDecor(variant, decorations);
-          // TODO: Persist garden decorations to Supabase placed_items with garden ownership checks.
+          onDecorChangeRef.current?.(decorations);
         }
 
         private drawSeasonalGardenDecor() {
@@ -3530,7 +3686,7 @@ function getGardenStorageKey(variant: GardenCanvasProps["variant"]) {
   return `${GARDEN_STORAGE_PREFIX}${variant}`;
 }
 
-function readGardenDecor(variant: GardenCanvasProps["variant"]): GardenDecorPlacement[] {
+export function readGardenDecor(variant: GardenCanvasProps["variant"]): GardenDecorPlacement[] {
   if (typeof window === "undefined") return defaultGardenDecor(variant);
 
   try {
@@ -3562,7 +3718,7 @@ function projectPointToSegment(x: number, y: number, segment: WalkSegment) {
   };
 }
 
-function writeGardenDecor(variant: GardenCanvasProps["variant"], decorations: GardenDecorPlacement[]) {
+export function writeGardenDecor(variant: GardenCanvasProps["variant"], decorations: GardenDecorPlacement[]) {
   window.localStorage.setItem(getGardenStorageKey(variant), JSON.stringify(decorations));
 }
 

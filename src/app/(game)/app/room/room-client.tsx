@@ -76,6 +76,18 @@ function readPlacements(roomId: string): RoomPlacement[] {
   }
 }
 
+function writePlacementsBackup(roomId: string, placements: RoomPlacement[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(getRoomStorageKey(roomId), JSON.stringify(placements));
+}
+
+function changedPlacementIds(previous: RoomPlacement[], next: RoomPlacement[]) {
+  const previousById = new Map(previous.map((placement) => [placement.id, JSON.stringify(placement)]));
+  return next
+    .filter((placement) => previousById.get(placement.id) !== JSON.stringify(placement))
+    .map((placement) => placement.id);
+}
+
 export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("room") ?? "moonlit-loft";
@@ -104,11 +116,13 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const [placements, setPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [draftPlacements, setDraftPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [saveStatus, setSaveStatus] = useState("Move-in ready");
+  const [savingPlacementIds, setSavingPlacementIds] = useState<string[]>([]);
   const [roomExpansions, setRoomExpansions] = useState(0);
   const [progression, setProgression] = useState(() => readPlayerProgression());
   const [roomSurfaces, setRoomSurfaces] = useState<RoomSurfaceSelection>(defaultRoomSurfaceSelection);
   const placementCounter = useRef(0);
   const roomDropRef = useRef<HTMLDivElement | null>(null);
+  const latestPersistedPlacementsRef = useRef<RoomPlacement[]>(starterPlacements);
   const { wallet, spendCurrency } = useGameWallet();
   // Resolve the channel-owning host friend code up-front so the realtime hook
   // never has to fall back to the room id. When a guest follows a ?visit=
@@ -130,6 +144,8 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     roomId: isVisitAllowed ? activeRoom.id : "friend-only-gate",
     roomName: isVisitAllowed ? activeRoom.name : "Friend-only room",
   });
+  const realtimePlacements = realtime.placements;
+  const saveRealtimePlacements = realtime.savePlacements;
   const canEditRoom = isHostRoom || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
   const { activeEvent } = useSeasonalEvent();
   const inventory = useInventory();
@@ -181,18 +197,37 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const nextExpansionLevel = Math.max(3, (roomExpansions + 1) * 3);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      const saved = readPlacements(activeRoom.id);
-      setPlacements(saved);
-      setDraftPlacements(saved);
-      setRoomExpansions(readRoomExpansions(activeRoom.id));
-      setRoomSurfaces(readRoomSurfaces(activeRoom.id));
-      const hasSavedLayout = typeof window !== "undefined"
-        && Boolean(window.localStorage.getItem(getRoomStorageKey(activeRoom.id)));
-      setSaveStatus(hasSavedLayout ? "Loaded saved layout" : "Move-in ready layout");
-    }, 0);
-    return () => window.clearTimeout(timeout);
+    setRoomExpansions(readRoomExpansions(activeRoom.id));
+    setRoomSurfaces(readRoomSurfaces(activeRoom.id));
   }, [activeRoom.id]);
+
+  useEffect(() => {
+    if (realtimePlacements) {
+      setPlacements(realtimePlacements);
+      setDraftPlacements(realtimePlacements);
+      latestPersistedPlacementsRef.current = realtimePlacements;
+      writePlacementsBackup(activeRoom.id, realtimePlacements);
+      setSaveStatus(
+        realtime.placementsVersion > 0
+          ? `Synced room layout · v${realtime.placementsVersion}`
+          : "Synced room layout",
+      );
+      return;
+    }
+
+    if (realtime.placementsLoading) {
+      setSaveStatus("Loading saved room layout...");
+      return;
+    }
+
+    const saved = readPlacements(activeRoom.id);
+    setPlacements(saved);
+    setDraftPlacements(saved);
+    latestPersistedPlacementsRef.current = saved;
+    const hasSavedLayout = typeof window !== "undefined"
+      && Boolean(window.localStorage.getItem(getRoomStorageKey(activeRoom.id)));
+    setSaveStatus(hasSavedLayout ? "Loaded local room layout" : "Move-in ready layout");
+  }, [activeRoom.id, realtimePlacements, realtime.placementsLoading, realtime.placementsVersion]);
 
   useEffect(() => {
     const syncProgression = () => setProgression(readPlayerProgression());
@@ -210,20 +245,67 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     recordActivity("room-visited");
   }, []);
 
-  const handlePlacementsChange = useCallback((next: RoomPlacement[]) => {
-    setDraftPlacements(next);
-    setSaveStatus("Unsaved room changes");
-  }, []);
-
-  function saveRoom() {
+  const commitRoomPlacements = useCallback(async (next: RoomPlacement[], source: "host-save" | "guest-commit" | "reset") => {
     if (!canEditRoom) {
-      setSaveStatus("Ask the host for decorator access before saving room changes.");
+      setSaveStatus("You don't have permission to edit this room.");
       return;
     }
-    window.localStorage.setItem(getRoomStorageKey(activeRoom.id), JSON.stringify(draftPlacements));
-    setPlacements(draftPlacements);
-    setSaveStatus("Room layout saved locally");
-    // TODO: Persist the same placement payload to Supabase placed_items with room ownership checks.
+
+    const previous = latestPersistedPlacementsRef.current;
+    const pendingIds = changedPlacementIds(previous, next);
+    setSavingPlacementIds(pendingIds);
+    setDraftPlacements(next);
+    setPlacements(next);
+    writePlacementsBackup(activeRoom.id, next);
+    setSaveStatus(source === "guest-commit" ? "Saving decorator change..." : "Saving room layout...");
+
+    const result = await saveRealtimePlacements(next);
+    setSavingPlacementIds([]);
+
+    if (result.ok) {
+      latestPersistedPlacementsRef.current = next;
+      setSaveStatus(`Room layout saved · v${result.version}`);
+      return;
+    }
+
+    if (result.reason === "network") {
+      latestPersistedPlacementsRef.current = next;
+      setSaveStatus("Room layout saved locally. Online sync will retry when the room reconnects.");
+      return;
+    }
+
+    const fallback = result.reason === "conflict"
+      ? (realtimePlacements ?? previous)
+      : previous;
+    latestPersistedPlacementsRef.current = fallback;
+    setPlacements(fallback);
+    setDraftPlacements(fallback);
+    writePlacementsBackup(activeRoom.id, fallback);
+
+    if (result.reason === "conflict") {
+      setSaveStatus("Someone else updated this room — reloaded their version. Re-apply your changes.");
+      return;
+    }
+
+    if (result.reason === "unauthorized") {
+      setSaveStatus("You don't have permission to edit this room.");
+      return;
+    }
+
+    setSaveStatus(result.message ?? "Room layout could not be saved.");
+  }, [activeRoom.id, canEditRoom, realtimePlacements, saveRealtimePlacements]);
+
+  const handlePlacementsChange = useCallback((next: RoomPlacement[]) => {
+    setDraftPlacements(next);
+    setPlacements(next);
+    setSaveStatus(isHostRoom ? "Unsaved room changes" : "Saving decorator change...");
+    if (!isHostRoom && canEditRoom) {
+      void commitRoomPlacements(next, "guest-commit");
+    }
+  }, [canEditRoom, commitRoomPlacements, isHostRoom]);
+
+  function saveRoom() {
+    void commitRoomPlacements(draftPlacements, "host-save");
   }
 
   function resetRoom() {
@@ -236,6 +318,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     setDraftPlacements(cozyDefault);
     setPlacements(cozyDefault);
     setSaveStatus("Room restored to its move-in layout");
+    void commitRoomPlacements(cozyDefault, "reset");
   }
 
   function buyRoomExpansion() {
@@ -311,8 +394,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
       zIndex: item.placementType === "wall" ? 0 : 3,
     };
     const next = [...draftPlacements, nextPlacement];
-    setDraftPlacements(next);
-    setPlacements(next);
+    handlePlacementsChange(next);
     setSaveStatus(`${item.name} added. Drag it in the room, then save layout.`);
   }
 
@@ -443,6 +525,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               onAvatarMove={realtime.sendMove}
               onPlacementsChange={handlePlacementsChange}
               onRoomEmote={realtime.sendEmote}
+              pendingPlacementIds={savingPlacementIds}
               placements={placements}
               remotePlayers={realtime.players}
               roomName={activeRoom.name}

@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Gamepad2, Map, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { CompanionCareDock } from "@/components/game/companion-care-dock";
+import { readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
@@ -17,7 +18,7 @@ import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Button } from "@/components/ui/button";
 import { getActiveCompanion } from "@/lib/game/companion-roster";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
-import { isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
+import { getSocialState, isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import { parkGames } from "@/lib/mock-data";
 
@@ -26,6 +27,13 @@ const parkPlots = [
   { id: "park-lavender", name: "Lavender Bend", stage: "Growing", progress: 62, accent: "#8E70BD", status: "Public" },
   { id: "park-clover", name: "Clover Hill", stage: "Sprout", progress: 44, accent: "#6E9651", status: "Public" },
 ];
+
+function changedDecorIds(previous: GardenDecorPlacement[], next: GardenDecorPlacement[]) {
+  const previousById = new Map(previous.map((decoration) => [decoration.id, JSON.stringify(decoration)]));
+  return next
+    .filter((decoration) => previousById.get(decoration.id) !== JSON.stringify(decoration))
+    .map((decoration) => decoration.id);
+}
 
 export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
   const searchParams = useSearchParams();
@@ -37,6 +45,9 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
 
   const [playerName, setPlayerName] = useState(getCachedPublicUsername);
   const [companionName, setCompanionName] = useState(() => getActiveCompanion()?.name ?? "Casper");
+  const [selfFriendCode, setSelfFriendCode] = useState(() =>
+    typeof window === "undefined" ? "" : getSocialState().selfCode,
+  );
 
   useEffect(() => {
     if (!visitTarget || !isFriendCodeShape(visitTarget)) return;
@@ -46,6 +57,12 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
       context: "park-visit",
     });
   }, [visitTarget, allowedVisitTarget?.displayName]);
+
+  useEffect(() => {
+    const sync = () => setSelfFriendCode(getSocialState().selfCode);
+    window.addEventListener("hearthaven:friend-code-regenerated", sync);
+    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+  }, []);
 
   useEffect(() => {
     const syncUsername = () => setPlayerName(getCachedPublicUsername());
@@ -58,13 +75,81 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
     };
   }, []);
 
+  const channelHostCode = visitTarget ?? selfFriendCode;
   const realtime = useGardenRealtime({
+    hostFriendCode: channelHostCode,
     gardenId: isVisitAllowed ? "honeyheart-park" : "friend-only-park-gate",
     gardenName: isVisitAllowed ? "Honeyheart Park" : "Friend-only park",
     invitePath: embedded ? "/app/area" : "/app/park",
     inviteZone: embedded ? "park" : undefined,
   });
   const canEditGarden = !isGuestVisit || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
+  const realtimeDecor = realtime.decor as GardenDecorPlacement[] | null;
+  const [decor, setDecor] = useState<GardenDecorPlacement[]>(() => readGardenDecor("park"));
+  const [pendingDecorIds, setPendingDecorIds] = useState<string[]>([]);
+  const [decorSaveStatus, setDecorSaveStatus] = useState("Park decor ready");
+  const latestPersistedDecorRef = useRef<GardenDecorPlacement[]>(decor);
+  const saveRealtimeDecor = realtime.saveDecor;
+
+  useEffect(() => {
+    if (realtimeDecor) {
+      setDecor(realtimeDecor);
+      latestPersistedDecorRef.current = realtimeDecor;
+      writeGardenDecor("park", realtimeDecor);
+      setDecorSaveStatus(realtime.decorVersion > 0 ? `Park decor synced · v${realtime.decorVersion}` : "Park decor synced");
+      return;
+    }
+
+    if (realtime.decorLoading) {
+      setDecorSaveStatus("Loading park decor...");
+      return;
+    }
+
+    const localDecor = readGardenDecor("park");
+    setDecor(localDecor);
+    latestPersistedDecorRef.current = localDecor;
+    setDecorSaveStatus("Park decor loaded locally");
+  }, [realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
+
+  const handleDecorChange = useCallback(async (next: GardenDecorPlacement[]) => {
+    if (!canEditGarden) {
+      setDecorSaveStatus("You don't have permission to edit this garden.");
+      return;
+    }
+
+    const previous = latestPersistedDecorRef.current;
+    setPendingDecorIds(changedDecorIds(previous, next));
+    setDecor(next);
+    writeGardenDecor("park", next);
+    setDecorSaveStatus("Saving park decor...");
+
+    const result = await saveRealtimeDecor(next);
+    setPendingDecorIds([]);
+
+    if (result.ok) {
+      latestPersistedDecorRef.current = next;
+      setDecorSaveStatus(`Park decor saved · v${result.version}`);
+      return;
+    }
+
+    if (result.reason === "network") {
+      latestPersistedDecorRef.current = next;
+      setDecorSaveStatus("Park decor saved locally. Online sync will retry when the park reconnects.");
+      return;
+    }
+
+    const fallback = result.reason === "conflict" ? (realtimeDecor ?? previous) : previous;
+    latestPersistedDecorRef.current = fallback;
+    setDecor(fallback);
+    writeGardenDecor("park", fallback);
+    setDecorSaveStatus(
+      result.reason === "conflict"
+        ? "Someone else updated this — try again."
+        : result.reason === "unauthorized"
+          ? "You don't have permission to edit this garden."
+          : (result.message ?? "Park decor could not be saved."),
+    );
+  }, [canEditGarden, realtimeDecor, saveRealtimeDecor]);
 
   if (!isVisitAllowed) {
     return (
@@ -151,13 +236,19 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
           <div className="relative min-w-0 overflow-hidden rounded-lg border border-cream-300 bg-cream-50 shadow-sm">
             <GardenCanvasLoader
               canEditGarden={canEditGarden}
+              decor={decor}
               onAvatarMove={realtime.sendMove}
+              onDecorChange={handleDecorChange}
+              pendingDecorIds={pendingDecorIds}
               plots={parkPlots}
               remotePlayers={realtime.players}
               variant="park"
             />
             <ParkHud playerName={playerName} companionName={companionName} />
           </div>
+          <p className="rounded-md border border-honey-300/40 bg-white/70 px-3 py-2 text-xs font-extrabold text-honey-800">
+            {decorSaveStatus}
+          </p>
           <CompanionCareDock compact />
         </div>
 

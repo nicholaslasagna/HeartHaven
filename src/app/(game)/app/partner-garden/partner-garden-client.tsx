@@ -1,18 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { HeartHandshake, LockKeyhole, Sparkles, Sun } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
 import { CompanionCareDock } from "@/components/game/companion-care-dock";
+import { readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
 import { recordActivity } from "@/lib/game/activity";
-import { lookupFriendCode } from "@/lib/game/social";
+import { getSocialState, isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import { creditWallet } from "@/lib/game/wallet-store";
 import type { friendInvite, partnerGardenPlots } from "@/lib/mock-data";
@@ -56,22 +57,116 @@ function writeSunshineState(state: SunshineState) {
   window.localStorage.setItem(SUNSHINE_STORAGE_KEY, JSON.stringify(state));
 }
 
+function changedDecorIds(previous: GardenDecorPlacement[], next: GardenDecorPlacement[]) {
+  const previousById = new Map(previous.map((decoration) => [decoration.id, JSON.stringify(decoration)]));
+  return next
+    .filter((decoration) => previousById.get(decoration.id) !== JSON.stringify(decoration))
+    .map((decoration) => decoration.id);
+}
+
 export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps) {
   const searchParams = useSearchParams();
-  const visitTarget = searchParams.get("visit");
+  const visitTargetRaw = searchParams.get("visit");
+  const visitTarget = visitTargetRaw ? normalizeFriendCode(visitTargetRaw) : null;
   const isGuestVisit = Boolean(visitTarget);
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
-  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget);
+  const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget) || isFriendCodeShape(visitTarget);
   const [sunshine, setSunshine] = useState(readSunshineState);
   const [message, setMessage] = useState(
     "First time? Sunshine spends one daily pulse to warm the shared garden, water every visible plot, cheer your companion, and add a tiny care reward.",
   );
+  useEffect(() => {
+    if (!visitTarget || !isFriendCodeShape(visitTarget)) return;
+    recordPlayedWith({
+      code: visitTarget,
+      displayName: allowedVisitTarget?.displayName ?? "Keeper",
+      context: "partner-garden-visit",
+    });
+  }, [visitTarget, allowedVisitTarget?.displayName]);
+  const [selfFriendCode, setSelfFriendCode] = useState(() =>
+    typeof window === "undefined" ? "" : getSocialState().selfCode,
+  );
+  useEffect(() => {
+    const sync = () => setSelfFriendCode(getSocialState().selfCode);
+    window.addEventListener("hearthaven:friend-code-regenerated", sync);
+    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+  }, []);
+  const channelHostCode = visitTarget ?? selfFriendCode;
   const realtime = useGardenRealtime({
+    hostFriendCode: channelHostCode,
     gardenId: isVisitAllowed ? "shared-heart-garden" : "friend-only-partner-gate",
     gardenName: isVisitAllowed ? "Shared Heart Garden" : "Friend-only shared garden",
     invitePath: "/app/partner-garden",
   });
   const canEditGarden = !isGuestVisit || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
+  const realtimeDecor = realtime.decor as GardenDecorPlacement[] | null;
+  const [decor, setDecor] = useState<GardenDecorPlacement[]>(() => readGardenDecor("partner"));
+  const [pendingDecorIds, setPendingDecorIds] = useState<string[]>([]);
+  const [decorSaveStatus, setDecorSaveStatus] = useState("Shared garden decor ready");
+  const latestPersistedDecorRef = useRef<GardenDecorPlacement[]>(decor);
+  const saveRealtimeDecor = realtime.saveDecor;
+
+  useEffect(() => {
+    if (realtimeDecor) {
+      setDecor(realtimeDecor);
+      latestPersistedDecorRef.current = realtimeDecor;
+      writeGardenDecor("partner", realtimeDecor);
+      setDecorSaveStatus(
+        realtime.decorVersion > 0 ? `Shared garden decor synced · v${realtime.decorVersion}` : "Shared garden decor synced",
+      );
+      return;
+    }
+
+    if (realtime.decorLoading) {
+      setDecorSaveStatus("Loading shared garden decor...");
+      return;
+    }
+
+    const localDecor = readGardenDecor("partner");
+    setDecor(localDecor);
+    latestPersistedDecorRef.current = localDecor;
+    setDecorSaveStatus("Shared garden decor loaded locally");
+  }, [realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
+
+  const handleDecorChange = useCallback(async (next: GardenDecorPlacement[]) => {
+    if (!canEditGarden) {
+      setDecorSaveStatus("You don't have permission to edit this garden.");
+      return;
+    }
+
+    const previous = latestPersistedDecorRef.current;
+    setPendingDecorIds(changedDecorIds(previous, next));
+    setDecor(next);
+    writeGardenDecor("partner", next);
+    setDecorSaveStatus("Saving shared garden decor...");
+
+    const result = await saveRealtimeDecor(next);
+    setPendingDecorIds([]);
+
+    if (result.ok) {
+      latestPersistedDecorRef.current = next;
+      setDecorSaveStatus(`Shared garden decor saved · v${result.version}`);
+      return;
+    }
+
+    if (result.reason === "network") {
+      latestPersistedDecorRef.current = next;
+      setDecorSaveStatus("Shared garden decor saved locally. Online sync will retry when the garden reconnects.");
+      return;
+    }
+
+    const fallback = result.reason === "conflict" ? (realtimeDecor ?? previous) : previous;
+    latestPersistedDecorRef.current = fallback;
+    setDecor(fallback);
+    writeGardenDecor("partner", fallback);
+    setDecorSaveStatus(
+      result.reason === "conflict"
+        ? "Someone else updated this — try again."
+        : result.reason === "unauthorized"
+          ? "You don't have permission to edit this garden."
+          : (result.message ?? "Shared garden decor could not be saved."),
+    );
+  }, [canEditGarden, realtimeDecor, saveRealtimeDecor]);
 
   if (!isVisitAllowed) {
     return (
@@ -149,11 +244,17 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
         <div className="grid min-w-0 gap-3">
           <GardenCanvasLoader
             canEditGarden={canEditGarden}
+            decor={decor}
             onAvatarMove={realtime.sendMove}
+            onDecorChange={handleDecorChange}
+            pendingDecorIds={pendingDecorIds}
             plots={plots}
             remotePlayers={realtime.players}
             variant="partner"
           />
+          <p className="rounded-md border border-blush-300/40 bg-white/70 px-3 py-2 text-xs font-extrabold text-blush-700">
+            {decorSaveStatus}
+          </p>
           <CompanionCareDock compact />
         </div>
         <GardenSocialPanel

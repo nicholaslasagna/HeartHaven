@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { normalizePhone } from "@/lib/auth/phone";
 import { getSupabaseMissingConfigMessage, isSupabaseConfigured } from "@/lib/supabase/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -71,8 +72,36 @@ export async function signUpAction(formData: FormData) {
 
   const email = normalizeEmail(formData);
   const password = String(formData.get("password") ?? "");
+
+  // Phone is optional. When provided it MUST normalize to E.164 — the
+  // shape check on the profiles table will reject otherwise, so we fail
+  // up-front with a friendly message instead of letting the DB write fail
+  // mid-onboarding.
+  const phoneResult = normalizePhone(formData.get("phone")?.toString() ?? null);
+  if (!phoneResult.ok) {
+    redirectWithMessage("/auth/sign-up", phoneResult.reason);
+  }
+  const phone = "phone" in phoneResult ? phoneResult.phone : null;
+
   const origin = await getRequestOrigin();
   const supabase = await getSupabaseServerClient();
+
+  // Door-step ban gate. Anonymous RPC returns true if the email or phone
+  // is already in `permanent_bans`. We deliberately respond with the same
+  // generic "already banned" copy regardless of which identifier matched —
+  // we don't want this endpoint to act as an oracle for which emails or
+  // phones are in the ban list.
+  const [emailBan, phoneBan] = await Promise.all([
+    supabase.rpc("is_email_banned", { p_email: email }),
+    phone ? supabase.rpc("is_phone_banned", { p_phone: phone }) : Promise.resolve({ data: false, error: null }),
+  ]);
+  if (emailBan.data === true || phoneBan.data === true) {
+    redirectWithMessage(
+      "/auth/sign-up",
+      "This account cannot be created. If you believe this is in error, contact support@realfiction.store.",
+    );
+  }
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -83,6 +112,14 @@ export async function signUpAction(formData: FormData) {
 
   if (error) {
     redirectWithMessage("/auth/sign-up", friendlyAuthMessage(error.message));
+  }
+
+  // Persist the optional phone onto the new profile row. The trigger that
+  // creates profiles on auth.users insert already populated the base row,
+  // so we just patch our column in. Failure here is non-fatal — phone is
+  // optional and the account can still be used without it.
+  if (phone && data.user) {
+    await supabase.from("profiles").update({ phone }).eq("id", data.user.id);
   }
 
   if (!data.session) {

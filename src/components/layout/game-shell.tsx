@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Gamepad2, HeartHandshake, Home, Inbox, Megaphone, Package, PawPrint, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { AnnouncementsLoginToast } from "@/components/game/announcements-login-toast";
+import { BanNotificationsHost } from "@/components/game/ban-notifications-host";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
 import { PartyFollowToast } from "@/components/game/party-follow-toast";
 import { RewardToastHost } from "@/components/game/reward-toast-host";
@@ -73,6 +74,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
       <RewardToastHost />
       <PartyFollowToast />
       <AnnouncementsLoginToast />
+      <BanNotificationsHost />
     </div>
   );
 }

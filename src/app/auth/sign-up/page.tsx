@@ -53,6 +53,20 @@ export default async function SignUpPage({
                 Password
                 <Input type="password" name="password" minLength={8} required />
               </label>
+              <label className="grid gap-2 text-sm font-extrabold text-ink-700">
+                Phone <span className="text-xs font-bold text-ink-500">(optional)</span>
+                <Input
+                  type="tel"
+                  name="phone"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="+1 415 555 0100"
+                />
+                <span className="text-xs font-bold leading-5 text-ink-500">
+                  Helps recover your account and prevents banned users from re-joining under
+                  a new email. Never shown to other keepers.
+                </span>
+              </label>
               <Button>
                 Create account <ArrowRight />
               </Button>
