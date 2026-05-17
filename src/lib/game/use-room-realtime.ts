@@ -20,6 +20,8 @@ import { recordActivity } from "@/lib/game/activity";
 type UseRoomRealtimeOptions = {
   roomId: string;
   roomName: string;
+  /** Host friend code owns the persistent room channel across room-to-room navigation. */
+  hostFriendCode?: string | null;
 };
 
 type ConnectionState = "demo" | "connecting" | "connected" | "offline" | "error";
@@ -41,7 +43,7 @@ function normalizeFriendCode(code: string) {
   return code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
 }
 
-export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
+export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRealtimeOptions) {
   const [players, setPlayers] = useState<RealtimeRoomPlayer[]>([]);
   const [messages, setMessages] = useState<GardenChatMessage[]>([]);
   const [approvedDecoratorCodes, setApprovedDecoratorCodes] = useState<string[]>([]);
@@ -49,9 +51,20 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
   // Pick up friend-code regenerates so the invite URL + visitor-side
-  // filters refresh without a reload.
+  // filters refresh without a reload. Also patch
+  // `localPlayerRef.current.friendCode` so the next presence broadcast
+  // carries the NEW code — otherwise remote viewers see the old code
+  // for a frame, and any read-and-cache on their side captures stale
+  // identity.
   useEffect(() => {
-    const sync = () => setLocalFriendCode(getSocialState().selfCode);
+    const sync = () => {
+      const next = getSocialState().selfCode;
+      setLocalFriendCode(next);
+      // sendMove + sendEmote merge `latestFriendCodeRef.current` into the
+      // next payload, so updating this ref is enough — no need to mutate
+      // the larger `localPlayerRef`.
+      latestFriendCodeRef.current = next;
+    };
     window.addEventListener("hearthaven:friend-code-regenerated", sync);
     return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
   }, []);
@@ -59,8 +72,17 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
   const [status, setStatus] = useState("Solo room mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const localPlayerRef = useRef<RealtimeRoomPlayer | null>(null);
+  // Latest friend code (refreshed on regen) — merged into broadcast
+  // payloads so the next presence tick carries the new code without us
+  // having to mutate the larger localPlayerRef.
+  const latestFriendCodeRef = useRef<string>("");
   const lastFriendPointAtRef = useRef(0);
   const normalizedRoomId = useMemo(() => normalizeRoomId(roomId), [roomId]);
+  const normalizedHostCode = useMemo(
+    () => normalizeFriendCode(hostFriendCode ?? (localFriendCode || getSocialState().selfCode)),
+    [hostFriendCode, localFriendCode],
+  );
+  const channelKey = useMemo(() => normalizedHostCode || normalizedRoomId, [normalizedHostCode, normalizedRoomId]);
 
   const inviteUrl = useMemo(() => {
     if (typeof window === "undefined") return `/app/area?zone=room&room=${normalizedRoomId}`;
@@ -73,7 +95,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
     return url.toString();
   }, [normalizedRoomId, localFriendCode]);
 
-  const roomCode = useMemo(() => normalizedRoomId.toUpperCase(), [normalizedRoomId]);
+  const roomCode = useMemo(() => channelKey.toUpperCase(), [channelKey]);
 
   const appendMessage = useCallback((message: GardenChatMessage) => {
     setMessages((current) => [message, ...current.filter((entry) => entry.id !== message.id)].slice(0, 24));
@@ -103,6 +125,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
 
     let cancelled = false;
     let customizationCleanup: (() => void) | null = null;
+    let customizationPoll: number | null = null;
 
     async function connect() {
       setConnectionState("connecting");
@@ -133,7 +156,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
 
         localPlayerRef.current = localPlayer;
 
-        const channel = supabase.channel(`room:${normalizedRoomId}`, {
+        const channel = supabase.channel(`room:${channelKey}`, {
           config: {
             broadcast: { self: false },
             presence: { key: localId },
@@ -222,9 +245,11 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
         // Re-broadcast presence whenever the keeper or pet customization
         // changes (e.g. from the Account customizer) so anyone sharing the
         // room sees the new outfit / fur tone live, without a reload.
+        let lastCustomizationSignature = JSON.stringify(readPresenceCustomization());
         const rebroadcastCustomization = () => {
           const current = localPlayerRef.current;
           if (!current) return;
+          lastCustomizationSignature = JSON.stringify(readPresenceCustomization());
           const payload: RealtimeRoomPlayer = {
             ...current,
             displayName: getCachedPublicUsername(),
@@ -242,10 +267,17 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
         // visitors keep seeing the keeper's old display name above their
         // sprite until they reload.
         window.addEventListener("hearthaven:public-username-changed", rebroadcastCustomization);
+        customizationPoll = window.setInterval(() => {
+          const nextSignature = JSON.stringify(readPresenceCustomization());
+          if (nextSignature === lastCustomizationSignature) return;
+          rebroadcastCustomization();
+        }, 1000);
         customizationCleanup = () => {
           window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, rebroadcastCustomization);
           window.removeEventListener(PET_CUSTOMIZATION_EVENT, rebroadcastCustomization);
           window.removeEventListener("hearthaven:public-username-changed", rebroadcastCustomization);
+          if (customizationPoll) window.clearInterval(customizationPoll);
+          customizationPoll = null;
         };
       } catch (error) {
         setConnectionState("error");
@@ -267,7 +299,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
       localPlayerRef.current = null;
       setPlayers([]);
     };
-  }, [appendMessage, normalizedRoomId, roomCode, roomName]);
+  }, [appendMessage, channelKey, roomCode, roomName]);
 
   const sendMove = useCallback((position: {
     x: number;
@@ -284,6 +316,7 @@ export function useRoomRealtime({ roomId, roomName }: UseRoomRealtimeOptions) {
 
     const payload: RealtimeRoomPlayer = {
       ...localPlayer,
+      friendCode: latestFriendCodeRef.current || localPlayer.friendCode,
       x: Math.round(position.x),
       y: Math.round(position.y),
       facing: position.facing ?? localPlayer.facing,

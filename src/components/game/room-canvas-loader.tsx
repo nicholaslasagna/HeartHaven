@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { RoomSurfaceSelection } from "@/lib/game/room-surfaces";
 import type { RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 
 const RoomCanvas = dynamic(() => import("@/components/game/room-canvas").then((module) => module.RoomCanvas), {
@@ -18,6 +19,14 @@ type RoomCanvasLoaderProps = {
   roomTheme?: RoomBlueprint["theme"];
   placements: RoomPlacement[];
   canEditRoom?: boolean;
+  /** Optional bigger-than-viewport room world. Forwarded to the canvas. */
+  worldWidth?: number;
+  worldHeight?: number;
+  roomPortals?: {
+    left?: { name: string; href: string };
+    right?: { name: string; href: string };
+  };
+  roomSurfaces?: RoomSurfaceSelection;
   onAvatarMove?: (position: {
     x: number;
     y: number;
@@ -37,6 +46,10 @@ export function RoomCanvasLoader({
   roomTheme,
   placements,
   canEditRoom,
+  worldWidth,
+  worldHeight,
+  roomPortals,
+  roomSurfaces,
   onAvatarMove,
   onRoomEmote,
   onPlacementsChange,
@@ -50,7 +63,11 @@ export function RoomCanvasLoader({
       placements={placements}
       remotePlayers={remotePlayers}
       roomName={roomName}
+      roomPortals={roomPortals}
+      roomSurfaces={roomSurfaces}
       roomTheme={roomTheme}
+      worldWidth={worldWidth}
+      worldHeight={worldHeight}
     />
   );
 }

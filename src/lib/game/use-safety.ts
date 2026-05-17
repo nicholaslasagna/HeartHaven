@@ -10,6 +10,7 @@ import {
   quarantineRemainingMs,
   readSafetyState,
   submitReport,
+  syncBlocksFromSupabase,
   unblockKeeper,
   type SafetyState,
 } from "@/lib/game/safety";
@@ -28,6 +29,10 @@ export function useSafety() {
     window.addEventListener(SAFETY_EVENT, sync);
     window.addEventListener("storage", sync);
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    // Pull cross-device blocks down on mount. The local state already has
+    // anything the user did on this device; the server source supplies
+    // blocks added from other devices since the last visit.
+    void syncBlocksFromSupabase();
     return () => {
       window.removeEventListener(SAFETY_EVENT, sync);
       window.removeEventListener("storage", sync);

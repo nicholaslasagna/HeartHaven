@@ -23,6 +23,7 @@
 
 import { creditWallet } from "@/lib/game/wallet-store";
 import { recordActivity, type ActivityType } from "@/lib/game/activity";
+import { getPetFood, type PetFoodId } from "@/lib/game/pet-foods";
 
 export const PET_VITALS_KEY = "hearthaven:pet-vitals";
 export const PET_VITALS_EVENT = "hearthaven:pet-vitals-changed";
@@ -44,7 +45,7 @@ export type PetVitals = {
 export type PetMood = "blissful" | "happy" | "content" | "restless" | "lonely";
 
 export type PetCareResult =
-  | { ok: true; action: PetCareAction; vitals: PetVitals; mood: PetMood; heartsEarned: number }
+  | { ok: true; action: PetCareAction; vitals: PetVitals; mood: PetMood; heartsEarned: number; foodId?: PetFoodId; label?: string }
   | { ok: false; action: PetCareAction; reason: "cooldown"; cooldownRemainingMs: number };
 
 /** Points lost per hour for each vital, with the tab open or closed. */
@@ -196,6 +197,38 @@ export function performPetAction(action: PetCareAction): PetCareResult {
   recordActivity(activity);
 
   return { ok: true, action, vitals: next, mood: getPetMood(next), heartsEarned: hearts };
+}
+
+export function performPetFood(foodId: PetFoodId): PetCareResult {
+  const food = getPetFood(foodId);
+  const stored = rawRead();
+  const cooldownRemainingMs = getCooldownRemaining("feed", stored);
+  if (cooldownRemainingMs > 0) {
+    return { ok: false, action: "feed", reason: "cooldown", cooldownRemainingMs };
+  }
+
+  const now = Date.now();
+  const current = decayed(stored, now);
+  const next: PetVitals = {
+    happiness: clamp(current.happiness + (food.deltas.happiness ?? 0)),
+    fullness: clamp(current.fullness + (food.deltas.fullness ?? 0)),
+    energy: clamp(current.energy + (food.deltas.energy ?? 0)),
+    cleanliness: clamp(current.cleanliness + (food.deltas.cleanliness ?? 0)),
+    updatedAt: now,
+    lastActionAt: { ...current.lastActionAt, feed: now },
+  };
+
+  rawWrite(next);
+  creditWallet({
+    gameId: "pet-care",
+    label: `Companion snack · ${food.name}`,
+    score: 0,
+    coins: 0,
+    hearts: 1,
+  });
+  recordActivity("pet-fed");
+
+  return { ok: true, action: "feed", vitals: next, mood: getPetMood(next), heartsEarned: 1, foodId: food.id, label: food.name };
 }
 
 /** Reset the companion to a content baseline (used by dev/account tools). */

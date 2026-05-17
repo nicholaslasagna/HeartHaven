@@ -7,6 +7,7 @@ import {
   USERNAME_CHANGE_LIMIT,
   USERNAME_CHANGE_WINDOW_MS,
 } from "@/lib/game/username-policy";
+import { isUsernameAppropriate } from "@/lib/game/username-blacklist";
 
 const USERNAME_MAX_LENGTH = 24;
 const USERNAME_MIN_LENGTH = 3;
@@ -58,6 +59,12 @@ export async function updateUsernameAction(formData: FormData) {
   }
   if (!USERNAME_PATTERN.test(requested)) {
     redirectAccount("Usernames may only contain letters, numbers, dots, dashes, and underscores.");
+  }
+  // Appropriateness gate. The server is authoritative even if the client
+  // filter is somehow bypassed (older bundle, REST hit, etc.).
+  const appropriate = isUsernameAppropriate(requested);
+  if (!appropriate.ok) {
+    redirectAccount(appropriate.reason);
   }
 
   if (!isSupabaseConfigured()) {

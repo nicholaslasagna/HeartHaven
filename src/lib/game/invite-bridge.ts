@@ -77,14 +77,50 @@ async function syncFriendCodeToProfile(force = false) {
       codeSyncDone = true;
       return;
     }
-    const { error } = await supabase
-      .from("profiles")
-      .update({ friend_code: local.selfCode })
-      .eq("id", user.id);
-    if (!error) codeSyncDone = true;
+    // Up to 5 collision-retry attempts. With a ~8M code space the
+    // birthday-paradox crossover sits around 2,800 users — improbable
+    // soon, but a regenerator can hit it any day. Without retry the
+    // unique index on `profiles.friend_code` would reject the update
+    // and the keeper would be permanently un-routable for invites.
+    let attempt = 0;
+    let candidate = local.selfCode;
+    while (attempt < 5) {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ friend_code: candidate })
+        .eq("id", user.id);
+      if (!error) {
+        codeSyncDone = true;
+        return;
+      }
+      const isUniqueViolation =
+        error.code === "23505" || /duplicate|unique/i.test(error.message ?? "");
+      if (!isUniqueViolation) {
+        console.warn("[hearthaven invite-bridge] friend_code sync failed:", error.message);
+        return;
+      }
+      // Collision — pick a fresh code locally and try again.
+      const next = generateFreshFriendCode();
+      candidate = next;
+      const social = await import("@/lib/game/social");
+      social.setSelfCode(next);
+      attempt += 1;
+    }
+    console.warn("[hearthaven invite-bridge] friend_code sync gave up after 5 collisions");
   } catch (error) {
     console.warn("[hearthaven invite-bridge] friend_code sync failed:", error);
   }
+}
+
+function generateFreshFriendCode() {
+  // Inline import-style helper — duplicated from social.ts so the bridge
+  // doesn't drag the social module's full surface into its own module
+  // graph. Same alphabet + same shape.
+  const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const DIGITS = "23456789";
+  const pick = (src: string, n: number) =>
+    Array.from({ length: n }, () => src.charAt(Math.floor(Math.random() * src.length))).join("");
+  return `HH-${pick(ALPHABET, 5)}-${pick(DIGITS, 3)}`;
 }
 
 /**
@@ -107,7 +143,13 @@ async function handleFriendCodeRegenerated() {
  */
 export async function pushInviteToSupabase(invite: FriendInvite): Promise<string | null> {
   if (!isSupabaseConfigured()) return null;
-  await syncFriendCodeToProfile();
+  // Force-sync on every send. The send is the moment we MOST need
+  // `profiles.friend_code` to be correct on the sender's row too — both
+  // because the RLS check_constraint on send relies on it, and because
+  // the recipient's UPDATE-event filter reads it as `from_code`. The
+  // performance cost is negligible (one upsert per send) and it removes
+  // a whole class of "sent but never landed" failures.
+  await syncFriendCodeToProfile(true);
   // Sender-side block check — blocking someone means we never want to
   // pester them with another invite. The check is on the SENDER so the
   // server insert is skipped entirely rather than racing the recipient's
@@ -232,10 +274,47 @@ export async function ensureInviteRealtime(): Promise<void> {
       const supabase = getSupabaseBrowserClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      await syncFriendCodeToProfile();
+      // CRITICAL: the recipient SELECT policy on `friend_invites` reads
+      //   to_code = (select friend_code from public.profiles where id = auth.uid())
+      // If `profiles.friend_code` is NULL, the subquery returns NULL and
+      // no row ever matches — the recipient never sees any invite.
+      // Force the sync (rather than the cached-flag short-circuit) so a
+      // fresh signup or a regenerate path always lands a row before we
+      // subscribe.
+      await syncFriendCodeToProfile(true);
       const local = getSocialState();
       const myCode = local.selfCode;
-      if (!myCode) return;
+      if (!myCode) {
+        console.warn("[hearthaven invite-bridge] aborting subscribe — local friend code missing");
+        bootPromise = null;
+        return;
+      }
+      // Double-check the profile row actually has it. If a 1st-time sync
+      // ran into an error (network, RLS), we'd subscribe to a channel
+      // that can never produce rows. Bail out so the next
+      // ensureInviteRealtime() call retries.
+      const { data: profileCheck } = await supabase
+        .from("profiles")
+        .select("friend_code")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!profileCheck?.friend_code) {
+        console.warn("[hearthaven invite-bridge] profiles.friend_code still null after sync — retry needed");
+        bootPromise = null;
+        return;
+      }
+      if (profileCheck.friend_code !== myCode) {
+        // Cross-device case: the keeper regenerated their code on another
+        // device; the server has the new one. Adopt it locally so the
+        // subscription filter matches reality.
+        console.info(
+          "[hearthaven invite-bridge] adopting server-side friend code",
+          profileCheck.friend_code,
+          "over local",
+          myCode,
+        );
+      }
+      const effectiveCode = profileCheck.friend_code;
 
       // 1a. Backfill incoming — anything that arrived while we weren't
       //     connected. Block list is applied client-side so a blocked
@@ -245,7 +324,7 @@ export async function ensureInviteRealtime(): Promise<void> {
       const { data: pending } = await supabase
         .from("friend_invites")
         .select("*")
-        .eq("to_code", myCode)
+        .eq("to_code", effectiveCode)
         .eq("status", "pending")
         .order("created_at", { ascending: false })
         .limit(40);
@@ -263,7 +342,7 @@ export async function ensureInviteRealtime(): Promise<void> {
       const { data: accepted } = await supabase
         .from("friend_invites")
         .select("*")
-        .eq("from_code", myCode)
+        .eq("from_code", effectiveCode)
         .eq("status", "accepted")
         .gte("responded_at", since)
         .order("responded_at", { ascending: false })
@@ -290,14 +369,14 @@ export async function ensureInviteRealtime(): Promise<void> {
         realtimeChannel = null;
       }
       realtimeChannel = supabase
-        .channel(`friend-invites-${myCode}`)
+        .channel(`friend-invites-${effectiveCode}`)
         .on(
           "postgres_changes",
           {
             event: "INSERT",
             schema: "public",
             table: "friend_invites",
-            filter: `to_code=eq.${myCode}`,
+            filter: `to_code=eq.${effectiveCode}`,
           },
           (payload) => {
             const row = payload.new as SupabaseInviteRow;
@@ -315,7 +394,7 @@ export async function ensureInviteRealtime(): Promise<void> {
             event: "UPDATE",
             schema: "public",
             table: "friend_invites",
-            filter: `from_code=eq.${myCode}`,
+            filter: `from_code=eq.${effectiveCode}`,
           },
           (payload) => {
             const row = payload.new as SupabaseInviteRow;
@@ -348,7 +427,7 @@ export async function ensureInviteRealtime(): Promise<void> {
             event: "UPDATE",
             schema: "public",
             table: "friend_invites",
-            filter: `to_code=eq.${myCode}`,
+            filter: `to_code=eq.${effectiveCode}`,
           },
           (payload) => {
             // Incoming-side UPDATE — currently only used to handle SENDER

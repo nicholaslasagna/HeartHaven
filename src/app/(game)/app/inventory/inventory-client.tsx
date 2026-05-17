@@ -108,7 +108,7 @@ export function InventoryClient() {
                 <Badge variant="outline">x{row.entry.quantity}</Badge>
               </div>
               <div
-                className="grid h-28 place-items-center rounded-lg border border-cream-300 bg-cream-50"
+                className="relative grid h-28 max-h-[112px] place-items-center overflow-hidden rounded-lg border border-cream-300 bg-cream-50"
                 style={
                   seasonalItem
                     ? {
@@ -120,7 +120,12 @@ export function InventoryClient() {
               >
                 <Image
                   alt={`${row.catalog.name} preview`}
-                  className={`h-full w-full ${getCatalogItemArtFit(row.catalog) === "cover" ? "object-cover" : "object-contain p-3"} drop-shadow-[0_16px_18px_rgba(91,63,63,0.2)]`}
+                  // Always contain-fit, capped to the tile's actual pixel
+                  // height. Without `max-h-full` the rendered <img> was
+                  // computing its own intrinsic 160×220 dimensions and
+                  // breaking out of the 112px container — that's why
+                  // images were dominating each inventory card.
+                  className="block h-auto max-h-full w-auto max-w-full object-contain p-3 drop-shadow-[0_16px_18px_rgba(91,63,63,0.2)]"
                   height={160}
                   src={getCatalogItemArt(row.catalog)}
                   width={220}

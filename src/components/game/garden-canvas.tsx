@@ -5,8 +5,6 @@ import type { DragEvent } from "react";
 import Image from "next/image";
 import type Phaser from "phaser";
 import {
-  getKeeperHairColor,
-  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
@@ -154,12 +152,51 @@ const gardenTimeOfDayCopy: Record<
 
 const GARDEN_WIDTH = 960;
 const GARDEN_HEIGHT = 620;
-const GARDEN_WORLD_WIDTH = 3400;
-const GARDEN_WORLD_HEIGHT = 1133;
-const GARDEN_STORAGE_PREFIX = "hearthaven:garden-decor:v2:";
+const WORLD_SCALE = 1.25;
+const BASE_GARDEN_WORLD_WIDTH = 3400;
+const BASE_GARDEN_WORLD_HEIGHT = 1133;
+const GARDEN_WORLD_WIDTH = Math.round(BASE_GARDEN_WORLD_WIDTH * WORLD_SCALE);
+const GARDEN_WORLD_HEIGHT = Math.round(BASE_GARDEN_WORLD_HEIGHT * WORLD_SCALE);
+const WORLD_EDGE_INSET = 80;
+const GARDEN_STORAGE_PREFIX = "hearthaven:garden-decor:v3:";
 
 type WalkSegment = { x1: number; y1: number; x2: number; y2: number; radius: number };
 type WalkCircle = { x: number; y: number; radius: number };
+type WorldPolygonPoint = { x: number; y: number };
+
+function worldX(value: number) {
+  return Math.round(value * WORLD_SCALE);
+}
+
+function worldY(value: number) {
+  return Math.round(value * WORLD_SCALE);
+}
+
+function worldRadius(value: number) {
+  return Math.round(value * WORLD_SCALE);
+}
+
+function scaleSegment(segment: WalkSegment): WalkSegment {
+  return {
+    x1: worldX(segment.x1),
+    y1: worldY(segment.y1),
+    x2: worldX(segment.x2),
+    y2: worldY(segment.y2),
+    radius: worldRadius(segment.radius),
+  };
+}
+
+function scaleCircle(circle: WalkCircle): WalkCircle {
+  return {
+    x: worldX(circle.x),
+    y: worldY(circle.y),
+    radius: worldRadius(circle.radius),
+  };
+}
+
+function scalePolygon(points: WorldPolygonPoint[]): WorldPolygonPoint[] {
+  return points.map((point) => ({ x: worldX(point.x), y: worldY(point.y) }));
+}
 
 const sharedWalkSegments: WalkSegment[] = [
   { x1: 132, y1: 690, x2: 500, y2: 570, radius: 74 },
@@ -169,7 +206,7 @@ const sharedWalkSegments: WalkSegment[] = [
   { x1: 1720, y1: 610, x2: 2140, y2: 520, radius: 84 },
   { x1: 2140, y1: 520, x2: 2600, y2: 590, radius: 84 },
   { x1: 2600, y1: 590, x2: 3260, y2: 650, radius: 88 },
-];
+].map(scaleSegment);
 
 const parkWalkSegments: WalkSegment[] = [
   { x1: 118, y1: 620, x2: 520, y2: 488, radius: 82 },
@@ -180,7 +217,7 @@ const parkWalkSegments: WalkSegment[] = [
   { x1: 2140, y1: 430, x2: 2600, y2: 594, radius: 92 },
   { x1: 2600, y1: 594, x2: 3260, y2: 520, radius: 92 },
   { x1: 860, y1: 720, x2: 2350, y2: 722, radius: 76 },
-];
+].map(scaleSegment);
 
 const sharedWalkCircles: WalkCircle[] = [
   { x: 252, y: 418, radius: 118 },
@@ -194,7 +231,7 @@ const sharedWalkCircles: WalkCircle[] = [
   { x: 1348, y: 525, radius: 116 },
   { x: 2140, y: 520, radius: 138 },
   { x: 2860, y: 610, radius: 142 },
-];
+].map(scaleCircle);
 
 const parkWalkCircles: WalkCircle[] = [
   { x: 540, y: 404, radius: 146 },
@@ -205,7 +242,7 @@ const parkWalkCircles: WalkCircle[] = [
   { x: 2580, y: 618, radius: 138 },
   { x: 2860, y: 590, radius: 138 },
   { x: 3140, y: 470, radius: 132 },
-];
+].map(scaleCircle);
 
 /**
  * Expanded walkable footprints used only for movement clamping — the painted
@@ -247,7 +284,7 @@ const parkWalkableExtensions: WalkCircle[] = [
   { x: 1768, y: 929, radius: 200 },  // iridescent feather near cave
   { x: 2720, y: 951, radius: 200 },  // wild strawberries near picnic path
   { x: 2992, y: 249, radius: 220 },  // firefly jar near lantern arch
-];
+].map(scaleCircle);
 
 /**
  * Vertical connectors between the bands so the keeper can walk straight up
@@ -261,7 +298,7 @@ const parkWalkableConnectors: WalkSegment[] = [
   { x1: 1900, y1: 220, x2: 1900, y2: 720, radius: 100 },
   { x1: 2312, y1: 220, x2: 2312, y2: 700, radius: 100 },
   { x1: 2788, y1: 220, x2: 2788, y2: 700, radius: 100 },
-];
+].map(scaleSegment);
 
 /**
  * Garden equivalent — the personal and partner gardens are a single zig-zag
@@ -284,7 +321,37 @@ const sharedWalkableExtensions: WalkCircle[] = [
   { x: 1088, y: 793, radius: 200 },  // moonberry clutch
   { x: 2176, y: 861, radius: 200 },  // pressed flower
   { x: 2584, y: 680, radius: 200 },  // tin soldier
-];
+].map(scaleCircle);
+
+const waterPolygonsByVariant: Record<GardenCanvasProps["variant"], WorldPolygonPoint[][]> = {
+  personal: [
+    scalePolygon([
+      { x: 2460, y: 240 },
+      { x: 3380, y: 220 },
+      { x: 3380, y: 500 },
+      { x: 3020, y: 548 },
+      { x: 2580, y: 470 },
+    ]),
+  ],
+  partner: [
+    scalePolygon([
+      { x: 2460, y: 240 },
+      { x: 3380, y: 220 },
+      { x: 3380, y: 500 },
+      { x: 3020, y: 548 },
+      { x: 2580, y: 470 },
+    ]),
+  ],
+  park: [
+    scalePolygon([
+      { x: 2470, y: 176 },
+      { x: 2840, y: 152 },
+      { x: 2950, y: 324 },
+      { x: 2700, y: 438 },
+      { x: 2420, y: 330 },
+    ]),
+  ],
+};
 
 /**
  * Variant-aware starting position for the keeper. The previous default
@@ -296,16 +363,16 @@ const sharedWalkableExtensions: WalkCircle[] = [
 function getAvatarStartPosition(variant: GardenCanvasProps["variant"]) {
   if (variant === "park") {
     // Inside the first park circle (540, 404, r=210) — center-of-path.
-    return { x: 540, y: 404 };
+    return { x: worldX(540), y: worldY(404) };
   }
   // Both `garden` and `partner` share the same walkable corridor. The first
   // shared circle sits at (500, 570, r=190), which is the natural "you walk
   // in from the path" entry point.
-  return { x: 500, y: 570 };
+  return { x: worldX(500), y: worldY(570) };
 }
 
 function getPlotPositions(variant: GardenCanvasProps["variant"]) {
-  return variant === "partner"
+  const positions = variant === "partner"
     ? [
         [260, 376],
         [700, 376],
@@ -322,6 +389,7 @@ function getPlotPositions(variant: GardenCanvasProps["variant"]) {
         [1042, 348],
         [1360, 486],
       ];
+  return positions.map(([x, y]) => [worldX(x), worldY(y)] as [number, number]);
 }
 
 const gardenDecorItems: Array<{ kind: GardenDecorKind; label: string; description: string; href?: string }> = [
@@ -502,6 +570,16 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private swapRequestHandler?: (event: Event) => void;
         private positionBroadcastTimer = 0;
         private sniffCooldownUntil = 0;
+        /**
+         * Track whether the keyboard-bound sniff handler has been wired.
+         * Phaser's `input.keyboard.on("keydown-Q", …)` does NOT dedupe — and
+         * `createInput` runs on every scene start. Without this flag, HMR /
+         * scene re-init in dev would stack listeners, firing `trySniff()`
+         * dozens of times per key press until the browser hung.
+         */
+        private sniffKeyHandler?: () => void;
+        private deleteKeyHandler?: () => void;
+        private backspaceKeyHandler?: () => void;
 
         constructor() {
           super("HeartHavenGarden");
@@ -646,55 +724,51 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         private drawRoadNetwork() {
           const segments = variant === "park" ? parkWalkSegments : sharedWalkSegments;
           const circles = variant === "park" ? parkWalkCircles : sharedWalkCircles;
-          // Include the broader walkable extensions in a faint wash so the
-          // painted scene visually advertises every area the keeper /
-          // companion can actually step into. Without this, players see a
-          // narrow cream ribbon but can walk into "grass" off it — the
-          // mismatch reads as buggy. The extensions are painted at a much
-          // lower opacity than the main path so they read as "open lawn"
-          // rather than "road".
           const extensionCircles = variant === "park" ? parkWalkableExtensions : sharedWalkableExtensions;
           const extensionSegments = variant === "park" ? parkWalkableConnectors : [];
 
-          const lawn = this.add.graphics().setDepth(-4);
-          lawn.fillStyle(0xfae3a8, 0.07);
-          extensionCircles.forEach((circle) => {
-            lawn.fillCircle(circle.x, circle.y, circle.radius);
-          });
-          lawn.fillStyle(0xfae3a8, 0.06);
-          extensionSegments.forEach((segment) => {
-            lawn.lineStyle(segment.radius * 2, 0xfae3a8, 0.05);
-            lawn.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
-          });
+          // DEV-ONLY corridor overlay. The cream stripes painted across the
+          // scene were originally a "here is where you walk" guide, but
+          // players read them as visual debris — the painted park art
+          // already shows where the paths are. Now they only render with
+          // `?debug=paths` in the URL, leaving the painted scene clean for
+          // everyone else.
+          const debugPaths =
+            typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug-paths");
 
-          // 1. Visible walkable corridor — a soft cream "road" laid down on top
-          //    of the background art so the painted ground and the corridor the
-          //    avatar can actually walk along always match. Drawn at a low
-          //    depth so all entities still render on top.
-          const corridor = this.add.graphics().setDepth(-3);
-          // Outer halo first (wider, fainter) for a gently glowing edge.
-          segments.forEach((segment) => {
-            corridor.lineStyle(segment.radius * 2 + 24, 0xfae3a8, 0.18);
-            corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
-          });
-          circles.forEach((circle) => {
-            corridor.fillStyle(0xfae3a8, 0.18);
-            corridor.fillCircle(circle.x, circle.y, circle.radius + 12);
-          });
-          // Main road body exactly matches the playable corridor width.
-          segments.forEach((segment) => {
-            corridor.lineStyle(segment.radius * 2, 0xfffcf3, 0.64);
-            corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
-          });
-          circles.forEach((circle) => {
-            corridor.fillStyle(0xfffcf3, 0.58);
-            corridor.fillCircle(circle.x, circle.y, circle.radius);
-          });
-          // Painted edge line so the path reads clearly even on light backgrounds.
-          segments.forEach((segment) => {
-            corridor.lineStyle(3, 0xd9a53e, 0.28);
-            corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
-          });
+          if (debugPaths) {
+            const lawn = this.add.graphics().setDepth(-4);
+            lawn.fillStyle(0xfae3a8, 0.18);
+            extensionCircles.forEach((circle) => {
+              lawn.fillCircle(circle.x, circle.y, circle.radius);
+            });
+            extensionSegments.forEach((segment) => {
+              lawn.lineStyle(segment.radius * 2, 0xfae3a8, 0.12);
+              lawn.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+            });
+
+            const corridor = this.add.graphics().setDepth(-3);
+            segments.forEach((segment) => {
+              corridor.lineStyle(segment.radius * 2 + 24, 0xfae3a8, 0.28);
+              corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+            });
+            circles.forEach((circle) => {
+              corridor.fillStyle(0xfae3a8, 0.28);
+              corridor.fillCircle(circle.x, circle.y, circle.radius + 12);
+            });
+            segments.forEach((segment) => {
+              corridor.lineStyle(segment.radius * 2, 0xfffcf3, 0.5);
+              corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+            });
+            circles.forEach((circle) => {
+              corridor.fillStyle(0xfffcf3, 0.45);
+              corridor.fillCircle(circle.x, circle.y, circle.radius);
+            });
+            segments.forEach((segment) => {
+              corridor.lineStyle(3, 0xd9a53e, 0.4);
+              corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+            });
+          }
 
           // 2. Ambient star glints — the original cozy magic — kept on top.
           segments.forEach((segment, segmentIndex) => {
@@ -1112,10 +1186,9 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
         private drawButterflies() {
           const count = variant === "partner" ? 8 : variant === "park" ? 14 : 5;
-          const maxX = variant === "park" ? GARDEN_WORLD_WIDTH - 180 : 830;
           for (let index = 0; index < count; index += 1) {
-            const x = PhaserModule.Math.Between(130, maxX);
-            const y = PhaserModule.Math.Between(160, 408);
+            const x = PhaserModule.Math.Between(130, GARDEN_WORLD_WIDTH - 180);
+            const y = PhaserModule.Math.Between(160, Math.round(GARDEN_WORLD_HEIGHT * 0.36));
             const butterfly = this.add
               .sprite(x, y, "ambient-critter-sprites", index % 5)
               .setDisplaySize(42 + (index % 3) * 10, 42 + (index % 3) * 10)
@@ -1152,17 +1225,17 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             // we can fade-and-destroy them together when sniff succeeds.
             const patchGroup = this.add.container(0, 0).setDepth(2);
             patchGroup.setName(`discovery-patch-${item.id}`);
-            const glow = this.add.circle(worldX, worldY, 36, 0xfae3a8, 0.32);
+            const glow = this.add.circle(worldX, worldY, worldRadius(36), 0xfae3a8, 0.32);
             this.tweens.add({
               targets: glow,
-              radius: 48,
+              radius: worldRadius(48),
               alpha: 0.18,
               duration: 1400,
               yoyo: true,
               repeat: -1,
               ease: "Sine.inOut",
             });
-            const halo = this.add.circle(worldX, worldY, 24, 0xfffcf3, 0.55);
+            const halo = this.add.circle(worldX, worldY, worldRadius(24), 0xfffcf3, 0.55);
             this.tweens.add({
               targets: halo,
               scaleX: 1.18,
@@ -1173,7 +1246,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               ease: "Sine.inOut",
             });
             const tag = this.add
-              .text(worldX, worldY + 36, "Sniff me", {
+              .text(worldX, worldY + worldRadius(36), "Sniff me", {
                 color: "#5B3F76",
                 fontFamily: "Nunito, sans-serif",
                 fontSize: "11px",
@@ -1312,19 +1385,29 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
 
           // Q triggers Sniff while in companion mode — same path as the HUD
           // button. We use the raw keyboard event (not a `wasd` slot) so we
-          // can listen alongside the chat-focus guard.
-          this.input.keyboard?.on("keydown-Q", () => {
+          // can listen alongside the chat-focus guard. Handler references
+          // are saved on the scene so a re-init of `createInput` (HMR or
+          // explicit scene restart) drops the old listeners first — the
+          // old code stacked duplicates, which is how a single Q press
+          // could fire 5–20 sniffs in a row and hard-lock the game loop.
+          if (this.sniffKeyHandler) this.input.keyboard?.off("keydown-Q", this.sniffKeyHandler);
+          this.sniffKeyHandler = () => {
             if (this.textInputFocused || isTextInputFocused()) return;
             if (this.playMode === "companion") this.trySniff();
-          });
-          this.input.keyboard?.on("keydown-DELETE", () => {
+          };
+          this.input.keyboard?.on("keydown-Q", this.sniffKeyHandler);
+          if (this.deleteKeyHandler) this.input.keyboard?.off("keydown-DELETE", this.deleteKeyHandler);
+          this.deleteKeyHandler = () => {
             if (this.textInputFocused || isTextInputFocused()) return;
             this.removeSelectedDecor();
-          });
-          this.input.keyboard?.on("keydown-BACKSPACE", () => {
+          };
+          this.input.keyboard?.on("keydown-DELETE", this.deleteKeyHandler);
+          if (this.backspaceKeyHandler) this.input.keyboard?.off("keydown-BACKSPACE", this.backspaceKeyHandler);
+          this.backspaceKeyHandler = () => {
             if (this.textInputFocused || isTextInputFocused()) return;
             this.removeSelectedDecor();
-          });
+          };
+          this.input.keyboard?.on("keydown-BACKSPACE", this.backspaceKeyHandler);
 
           this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             // Right click — start a swap-or-recall timer. A short tap toggles
@@ -1434,34 +1517,44 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
          * for the HUD to pick up.
          */
         private trySniff() {
+          // Belt + braces: a throwing call inside an input handler can
+          // wedge Phaser's keyboard system because the exception
+          // propagates back into the event-dispatch loop. The cooldown +
+          // try/catch keep the worst case to "sniff did nothing" instead
+          // of "game locked".
           if (this.playMode !== "companion") {
             setStatus("Swap to your companion first — sniffing is a pet ability.");
             return;
           }
           if (this.time.now < this.sniffCooldownUntil) return;
           this.sniffCooldownUntil = this.time.now + 650;
-          const zone = variant === "park" ? "park" : "garden";
-          const pos = this.companionScenePercent();
-          const target = nearestHidden(zone, pos, 12);
-          this.petMood = "happy";
-          this.petMoodTimer = 0;
-          this.spawnSparkleBurst(this.pet.x, this.pet.y - 64, 0xc0a8dc, 10);
-          if (!target) {
-            playCozyCue("petPurr");
-            setStatus("Your companion sniffs the air — nothing nearby this time.");
-            return;
+          try {
+            const zone = variant === "park" ? "park" : "garden";
+            const pos = this.companionScenePercent();
+            const target = nearestHidden(zone, pos, 12);
+            this.petMood = "happy";
+            this.petMoodTimer = 0;
+            if (this.pet) this.spawnSparkleBurst(this.pet.x, this.pet.y - 64, 0xc0a8dc, 10);
+            if (!target) {
+              playCozyCue("petPurr");
+              setStatus("Your companion sniffs the air — nothing nearby this time.");
+              return;
+            }
+            const found = markDiscoveryFound(zone, target.id);
+            if (!found) {
+              setStatus("Already discovered around here.");
+              return;
+            }
+            playCozyCue("score");
+            setStatus(`Sniffed up ${target.name}! ${target.hint}`);
+            this.showLocalBubble(`${target.name} found.`);
+            window.dispatchEvent(new CustomEvent("hearthaven:discovery-revealed", {
+              detail: { id: target.id, name: target.name, emoji: target.emoji },
+            }));
+          } catch (error) {
+            console.warn("[hearthaven sniff] aborted:", error);
+            setStatus("Your companion paused mid-sniff — try again in a moment.");
           }
-          const found = markDiscoveryFound(zone, target.id);
-          if (!found) {
-            setStatus("Already discovered around here.");
-            return;
-          }
-          playCozyCue("score");
-          setStatus(`Sniffed up ${target.name}! ${target.hint}`);
-          this.showLocalBubble(`${target.name} found.`);
-          window.dispatchEvent(new CustomEvent("hearthaven:discovery-revealed", {
-            detail: { id: target.id, name: target.name, emoji: target.emoji },
-          }));
         }
 
         /**
@@ -1679,6 +1772,16 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
             if (this.textInputFocusHandler) window.removeEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
             if (this.swapRequestHandler) window.removeEventListener("hearthaven:request-play-mode-swap", this.swapRequestHandler);
             if (this.parkActionHandler) window.removeEventListener("hearthaven:park-action", this.parkActionHandler);
+            // Detach the keyboard handlers so the next createInput() (HMR,
+            // scene restart) doesn't end up firing both the old and new
+            // closures on every keypress — that stacking was the sniff
+            // softlock root cause.
+            if (this.sniffKeyHandler) this.input.keyboard?.off("keydown-Q", this.sniffKeyHandler);
+            if (this.deleteKeyHandler) this.input.keyboard?.off("keydown-DELETE", this.deleteKeyHandler);
+            if (this.backspaceKeyHandler) this.input.keyboard?.off("keydown-BACKSPACE", this.backspaceKeyHandler);
+            this.sniffKeyHandler = undefined;
+            this.deleteKeyHandler = undefined;
+            this.backspaceKeyHandler = undefined;
             // Stop the breathing tween so the GC can collect the pet
             // container after the scene tears down.
             this.petBobTween?.stop();
@@ -1726,10 +1829,16 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private applyKeeperLayerTints() {
-          const skinTone = getKeeperSkinTone(this.keeperCustomization.skinId);
-          const hairColor = getKeeperHairColor(this.keeperCustomization.hairColorId);
-          this.avatarSkinSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color);
-          this.avatarHairSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color);
+          this.avatarSkinSprite
+            ?.clearTint()
+            .setAlpha(0);
+          this.avatarSprite
+            ?.clearTint()
+            .setAlpha(1);
+          this.avatarHairSprite
+            ?.clearTint()
+            .setAlpha(0)
+            .setDepth((this.avatarSprite?.depth ?? 0) + 1);
         }
 
         private setKeeperLayerFlip(facing: FacingDirection) {
@@ -1985,10 +2094,12 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private applyRemoteKeeperTints(remote: RemoteGardenAvatarObject) {
-          const skinTone = getKeeperSkinTone(remote.skinId);
-          const hairColor = getKeeperHairColor(remote.hairColorId);
-          remote.skinSprite.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color);
-          remote.hairSprite.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color);
+          remote.skinSprite.clearTint().setAlpha(0);
+          remote.sprite.clearTint().setAlpha(1);
+          remote.hairSprite
+            .clearTint()
+            .setAlpha(0)
+            .setDepth(remote.sprite.depth + 1);
         }
 
         private tintPetForTone() {
@@ -2294,72 +2405,92 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private constrainToWorldBounds(x: number, y: number) {
-          // The min-y was 250, which blocked the keeper from ever reaching
-          // the top band of the painted park (swings, claw, sakura, rose
-          // arch — all at y ≈ 130–280). 110 lets them walk all the way up
-          // while still keeping the camera off the sky-decor border.
           return {
-            x: PhaserModule.Math.Clamp(x, 120, GARDEN_WORLD_WIDTH - 120),
-            y: PhaserModule.Math.Clamp(y, 110, GARDEN_WORLD_HEIGHT - 120),
+            x: PhaserModule.Math.Clamp(x, WORLD_EDGE_INSET, GARDEN_WORLD_WIDTH - WORLD_EDGE_INSET),
+            y: PhaserModule.Math.Clamp(y, WORLD_EDGE_INSET, GARDEN_WORLD_HEIGHT - WORLD_EDGE_INSET),
           };
         }
 
         private constrainAvatarToWalkable(x: number, y: number) {
-          const bounded = this.constrainToWorldBounds(x, y);
-          // Movement clamping uses the *expanded* walkable set so the keeper
-          // and companion get free range across the painted scene. The
-          // original `parkWalkSegments` / `parkWalkCircles` arrays stay in
-          // use for the cream-coloured *visual* path overlay only — they
-          // don't gate where you can step anymore.
-          const segments =
-            variant === "park"
-              ? [...parkWalkSegments, ...parkWalkableConnectors]
-              : sharedWalkSegments;
-          const circles =
-            variant === "park"
-              ? [...parkWalkCircles, ...parkWalkableExtensions]
-              : [...sharedWalkCircles, ...sharedWalkableExtensions];
-          let best = { ...bounded };
-          let bestDistance = Number.POSITIVE_INFINITY;
+          let point = this.constrainToWorldBounds(x, y);
 
-          segments.forEach((segment) => {
-            const projected = projectPointToSegment(bounded.x, bounded.y, segment);
-            const dx = bounded.x - projected.x;
-            const dy = bounded.y - projected.y;
-            const distance = Math.hypot(dx, dy);
-            const candidate =
-              distance <= segment.radius || distance === 0
-                ? bounded
-                : {
-                    x: projected.x + (dx / distance) * segment.radius,
-                    y: projected.y + (dy / distance) * segment.radius,
-                  };
-            const correction = Math.hypot(bounded.x - candidate.x, bounded.y - candidate.y);
-            if (correction < bestDistance) {
-              bestDistance = correction;
-              best = candidate;
-            }
+          // Obstacle model: the whole scaled world is walkable except the
+          // edge inset, water, and decor footprints. Loop a few times because
+          // pushing out of one obstacle can land near another.
+          for (let attempts = 0; attempts < 4; attempts += 1) {
+            const before = { ...point };
+            point = this.pushOutOfWater(point.x, point.y);
+            point = this.pushOutOfDecorFootprints(point.x, point.y);
+            point = this.constrainToWorldBounds(point.x, point.y);
+            if (PhaserModule.Math.Distance.Between(before.x, before.y, point.x, point.y) < 0.5) break;
+          }
+
+          return point;
+        }
+
+        private pushOutOfWater(x: number, y: number) {
+          let point = { x, y };
+          for (const points of waterPolygonsByVariant[variant]) {
+            const polygon = new PhaserModule.Geom.Polygon(points.flatMap((p) => [p.x, p.y]));
+            if (!PhaserModule.Geom.Polygon.Contains(polygon, point.x, point.y)) continue;
+
+            let closest = { x: point.x, y: point.y };
+            let bestDistance = Number.POSITIVE_INFINITY;
+            points.forEach((start, index) => {
+              const end = points[(index + 1) % points.length];
+              const projection = projectPointToSegment(point.x, point.y, {
+                x1: start.x,
+                y1: start.y,
+                x2: end.x,
+                y2: end.y,
+                radius: 0,
+              });
+              const distance = PhaserModule.Math.Distance.Between(point.x, point.y, projection.x, projection.y);
+              if (distance < bestDistance) {
+                bestDistance = distance;
+                closest = projection;
+              }
+            });
+
+            const center = points.reduce(
+              (acc, p) => ({ x: acc.x + p.x / points.length, y: acc.y + p.y / points.length }),
+              { x: 0, y: 0 },
+            );
+            const away = new PhaserModule.Math.Vector2(closest.x - center.x, closest.y - center.y).normalize();
+            if (!Number.isFinite(away.x) || !Number.isFinite(away.y)) away.set(0, 1);
+            point = {
+              x: closest.x + away.x * 34,
+              y: closest.y + away.y * 34,
+            };
+          }
+          return point;
+        }
+
+        private pushOutOfDecorFootprints(x: number, y: number) {
+          let point = { x, y };
+          this.decorObjects.forEach((container) => {
+            const placement = container.getData("placement") as GardenDecorPlacement | undefined;
+            if (!placement) return;
+            if (this.selectedDecor?.id === placement.id && this.decorDragging) return;
+            const spriteConfig = worldObjectSprites[placement.kind];
+            const radiusX = spriteConfig.width * 0.48 + 22;
+            const radiusY = Math.max(46, spriteConfig.height * 0.18) + 18;
+            const centerX = container.x;
+            const centerY = container.y + 22;
+            const dx = point.x - centerX;
+            const dy = point.y - centerY;
+            const normalized = (dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY);
+            if (normalized >= 1) return;
+
+            const length = Math.hypot(dx / radiusX, dy / radiusY) || 1;
+            const nx = (dx / radiusX) / length;
+            const ny = (dy / radiusY) / length || 0.2;
+            point = {
+              x: centerX + nx * radiusX,
+              y: centerY + ny * radiusY,
+            };
           });
-
-          circles.forEach((circle) => {
-            const dx = bounded.x - circle.x;
-            const dy = bounded.y - circle.y;
-            const distance = Math.hypot(dx, dy);
-            const candidate =
-              distance <= circle.radius || distance === 0
-                ? bounded
-                : {
-                    x: circle.x + (dx / distance) * circle.radius,
-                    y: circle.y + (dy / distance) * circle.radius,
-                  };
-            const correction = Math.hypot(bounded.x - candidate.x, bounded.y - candidate.y);
-            if (correction < bestDistance) {
-              bestDistance = correction;
-              best = candidate;
-            }
-          });
-
-          return this.constrainToWorldBounds(best.x, best.y);
+          return point;
         }
 
         private applyRemotePetTone(sprite: Phaser.GameObjects.Sprite, toneId: PetToneId) {
@@ -2476,8 +2607,11 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
-            skinSprite.setTint(PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(custom.skinId).color).color);
-            hairSprite.setTint(PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(custom.hairColorId).color).color);
+            skinSprite.clearTint().setAlpha(0);
+            sprite.clearTint().setAlpha(1);
+            hairSprite
+              .clearTint()
+              .setAlpha(0);
             const label = this.add
               .text(0, -102, player.displayName, {
                 align: "center",
@@ -2958,7 +3092,7 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           const primary = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.primary).color;
           const secondary = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.secondary).color;
           const accent = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.accent).color;
-          this.add.rectangle(GARDEN_WORLD_WIDTH / 2, GARDEN_HEIGHT / 2, GARDEN_WORLD_WIDTH, GARDEN_HEIGHT, primary, 0.035).setDepth(-17);
+          this.add.rectangle(GARDEN_WORLD_WIDTH / 2, GARDEN_WORLD_HEIGHT / 2, GARDEN_WORLD_WIDTH, GARDEN_WORLD_HEIGHT, primary, 0.035).setDepth(-17);
 
           if (activeEvent.id === "halloween") {
             this.drawGardenPumpkins(primary, secondary);
@@ -3336,32 +3470,33 @@ function writeGardenDecor(variant: GardenCanvasProps["variant"], decorations: Ga
 
 function defaultGardenDecor(variant: GardenCanvasProps["variant"]): GardenDecorPlacement[] {
   const sharedOffset = variant === "partner" ? 60 : 0;
+  const placement = (x: number, y: number) => ({ x: worldX(x), y: worldY(y) });
   if (variant === "park") {
     return [
-      { id: "decor-gazebo", kind: "gazebo", label: "Gazebo", x: 540, y: 404, rotation: 0 },
-      { id: "decor-swing", kind: "swing", label: "Swing set", x: 860, y: 548, rotation: 0 },
-      { id: "decor-picnic", kind: "picnic", label: "Picnic table", x: 1160, y: 612, rotation: 0 },
-      { id: "decor-fountain", kind: "fountain", label: "Berry fountain", x: 1560, y: 510, rotation: 0 },
-      { id: "decor-fashion", kind: "fashionStage", label: "Fashion stage", href: "/app/fashion-show", x: 2260, y: 510, rotation: 0 },
-      { id: "decor-arcade", kind: "arcadeKiosk", label: "Arcade kiosk", href: "/app/petal-catch", x: 2580, y: 618, rotation: 0 },
-      { id: "decor-bowling", kind: "bowlingKiosk", label: "Bowling kiosk", href: "/app/bowling", x: 2860, y: 590, rotation: 0 },
-      { id: "decor-flower-stand", kind: "flowerStand", label: "Flower stand", x: 3140, y: 470, rotation: 0 },
+      { id: "decor-gazebo", kind: "gazebo", label: "Gazebo", ...placement(540, 404), rotation: 0 },
+      { id: "decor-swing", kind: "swing", label: "Swing set", ...placement(860, 548), rotation: 0 },
+      { id: "decor-picnic", kind: "picnic", label: "Picnic table", ...placement(1160, 612), rotation: 0 },
+      { id: "decor-fountain", kind: "fountain", label: "Berry fountain", ...placement(1560, 510), rotation: 0 },
+      { id: "decor-fashion", kind: "fashionStage", label: "Fashion stage", href: "/app/fashion-show", ...placement(2260, 510), rotation: 0 },
+      { id: "decor-arcade", kind: "arcadeKiosk", label: "Arcade kiosk", href: "/app/petal-catch", ...placement(2580, 618), rotation: 0 },
+      { id: "decor-bowling", kind: "bowlingKiosk", label: "Bowling kiosk", href: "/app/bowling", ...placement(2860, 590), rotation: 0 },
+      { id: "decor-flower-stand", kind: "flowerStand", label: "Flower stand", ...placement(3140, 470), rotation: 0 },
     ];
   }
 
   if (variant === "partner") {
     return [
-      { id: "decor-memory-tree", kind: "memoryTree", label: "Memory tree", x: 560, y: 414, rotation: 0 },
-      { id: "decor-lantern-arch", kind: "lanternArch", label: "Lantern arch", x: 900, y: 470, rotation: 0 },
-      { id: "decor-fountain", kind: "fountain", label: "Berry fountain", x: 1210, y: 500, rotation: 0 },
-      { id: "decor-picnic", kind: "picnic", label: "Picnic table", x: 1480, y: 570, rotation: 0 },
+      { id: "decor-memory-tree", kind: "memoryTree", label: "Memory tree", ...placement(560, 414), rotation: 0 },
+      { id: "decor-lantern-arch", kind: "lanternArch", label: "Lantern arch", ...placement(900, 470), rotation: 0 },
+      { id: "decor-fountain", kind: "fountain", label: "Berry fountain", ...placement(1210, 500), rotation: 0 },
+      { id: "decor-picnic", kind: "picnic", label: "Picnic table", ...placement(1480, 570), rotation: 0 },
     ];
   }
 
   return [
-    { id: "decor-greenhouse", kind: "greenhouse", label: "Greenhouse", x: 860 + sharedOffset, y: 452, rotation: 0 },
-    { id: "decor-bbq", kind: "bbq", label: "BBQ", x: 1180 + sharedOffset, y: 552, rotation: 0 },
-    { id: "decor-swing", kind: "swing", label: "Swing set", x: 1450, y: 500, rotation: 0 },
-    { id: "decor-picnic", kind: "picnic", label: "Picnic table", x: 1280, y: 640, rotation: 0 },
+    { id: "decor-greenhouse", kind: "greenhouse", label: "Greenhouse", ...placement(860 + sharedOffset, 452), rotation: 0 },
+    { id: "decor-bbq", kind: "bbq", label: "BBQ", ...placement(1180 + sharedOffset, 552), rotation: 0 },
+    { id: "decor-swing", kind: "swing", label: "Swing set", ...placement(1450, 500), rotation: 0 },
+    { id: "decor-picnic", kind: "picnic", label: "Picnic table", ...placement(1280, 640), rotation: 0 },
   ];
 }

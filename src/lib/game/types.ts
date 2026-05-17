@@ -110,7 +110,26 @@ export type RoomBlueprint = {
   priceCoins: number;
   priceHearts: number;
   theme: "loft" | "kitchen" | "library" | "patio" | "lodge" | "observatory";
+  /**
+   * Soft visitor count shown in the UI. The realtime channel itself has no
+   * hard cap — this is a hint for the keeper about how the room reads at
+   * full attendance.
+   */
   capacity: number;
   tags: string[];
   href: string;
+  connectedRoomIds?: {
+    left?: string;
+    right?: string;
+  };
+  /**
+   * Optional explicit world size. When set, the canvas mounts a
+   * scrollable world larger than the 960×600 viewport and the camera
+   * follows the keeper. Use it for living rooms / great rooms / lofts
+   * that want the same "walk around with friends" feel as the garden
+   * and park. When omitted, the room falls back to the original
+   * fixed 960×600 layout.
+   */
+  worldWidth?: number;
+  worldHeight?: number;
 };

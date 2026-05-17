@@ -61,9 +61,21 @@ export function useGardenRealtime({
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
   // Refresh local friend code state on regenerate so the invite URL +
-  // any local filters that depend on it update without a reload.
+  // any local filters that depend on it update without a reload. Also
+  // patch `localPlayerRef.current.friendCode` immediately — without
+  // this, the next broadcast carries the OLD code for 1–2 frames and
+  // remote visitors briefly see (and could even record) the stale
+  // identity.
   useEffect(() => {
-    const sync = () => setLocalFriendCode(getSocialState().selfCode);
+    const sync = () => {
+      const next = getSocialState().selfCode;
+      setLocalFriendCode(next);
+      // The broadcast helpers below read `latestFriendCodeRef.current`
+      // when assembling the payload, so updating this ref is sufficient —
+      // we don't need to (and can't, under the immutability rule) write
+      // back into the larger `localPlayerRef`.
+      latestFriendCodeRef.current = next;
+    };
     window.addEventListener("hearthaven:friend-code-regenerated", sync);
     return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
   }, []);
@@ -71,6 +83,10 @@ export function useGardenRealtime({
   const [status, setStatus] = useState("Solo garden mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const localPlayerRef = useRef<RealtimeRoomPlayer | null>(null);
+  // Holds the freshest friend code so the broadcast tick picks it up
+  // without us having to write back into `localPlayerRef.current` (which
+  // tripped the react-hooks/immutability rule because of cascade).
+  const latestFriendCodeRef = useRef<string>("");
   const lastFriendPointAtRef = useRef(0);
   const normalizedGardenId = useMemo(() => normalizeGardenId(gardenId), [gardenId]);
 
@@ -283,6 +299,8 @@ export function useGardenRealtime({
 
     const payload: RealtimeRoomPlayer = {
       ...localPlayer,
+      // Prefer the latest friend code if the keeper regenerated mid-session.
+      friendCode: latestFriendCodeRef.current || localPlayer.friendCode,
       x: Math.round(position.x),
       y: Math.round(position.y),
       facing: position.facing ?? localPlayer.facing,

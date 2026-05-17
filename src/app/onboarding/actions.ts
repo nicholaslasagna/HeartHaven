@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { starterCatalog, starterPlacements } from "@/lib/catalog";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { isUsernameAppropriate } from "@/lib/game/username-blacklist";
 
 function cleanText(value: FormDataEntryValue | null, fallback: string) {
   const text = String(value ?? "").trim();
@@ -48,6 +49,13 @@ export async function createProfileAction(formData: FormData) {
   const { supabase, user } = await requireUser();
   const emailName = user.email?.split("@")[0] ?? "Keeper";
   const username = cleanUsername(formData.get("username"), emailName);
+  // Reject inappropriate usernames at the onboarding step too — otherwise
+  // the keeper gets through the gate with a banned handle and only gets
+  // bounced when they later try to "change" it.
+  const usernameOk = isUsernameAppropriate(username);
+  if (!usernameOk.ok) {
+    redirect(`/onboarding/profile?message=${encodeURIComponent(usernameOk.reason)}`);
+  }
   const displayName = cleanText(formData.get("displayName"), username);
   const havenName = cleanText(formData.get("havenName"), `${displayName}'s Haven`);
   const bio = cleanText(formData.get("bio"), "A cozy keeper building a little world.");
@@ -177,7 +185,7 @@ export async function adoptPetAction(formData: FormData) {
   }
 
   const { supabase, user } = await requireUser();
-  const species = cleanText(formData.get("species"), "cloud-fox");
+  const species = cleanText(formData.get("species"), "kitten");
   const name = cleanText(formData.get("petName"), "Casper");
 
   const { data: existingPet } = await supabase

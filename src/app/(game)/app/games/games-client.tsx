@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { BringPartyButton } from "@/components/game/bring-party-button";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { Badge } from "@/components/ui/badge";
@@ -503,7 +504,7 @@ export function GamesClient() {
             </div>
             <h2 className="font-display text-2xl text-ink-900">{game.title}</h2>
             <p className="mt-2 text-sm font-semibold leading-6 text-ink-700">{game.description}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <CozyButton asChild size="sm" variant="warm">
                 <Link href={lobby ? `${game.href}?party=${encodeURIComponent(lobby.code)}` : game.href}>Play</Link>
               </CozyButton>
@@ -513,6 +514,10 @@ export function GamesClient() {
               <Button onClick={() => copyGameInvite(game.id, game.href, game.title)} size="sm" variant="secondary">
                 <Link2 /> {copiedGameId === game.id ? "Copied" : "Invite"}
               </Button>
+              {/* Pull every friend already in your party along — no link
+                  copying, no re-invite. The party-bridge broadcasts a
+                  follow prompt that lands in their toast immediately. */}
+              <BringPartyButton compact label={game.title} path={game.href} />
             </div>
           </CozyCard>
         ))}

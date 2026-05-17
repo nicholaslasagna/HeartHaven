@@ -3,9 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
-  getKeeperHairColor,
-  getKeeperPalette,
-  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
@@ -38,8 +35,14 @@ import {
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import { PET_VITALS_EVENT, getPetMood, getPetVitals, type PetMood as CompanionMood } from "@/lib/game/pet-state";
+import { defaultRoomSurfaceSelection, type RoomSurfaceSelection } from "@/lib/game/room-surfaces";
 import type { FacingDirection, RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
+
+type RoomPortal = {
+  name: string;
+  href: string;
+};
 
 type RoomCanvasProps = {
   remotePlayers?: RealtimeRoomPlayer[];
@@ -49,6 +52,20 @@ type RoomCanvasProps = {
   /** When false, the keeper is a VISITOR — they can walk + emote but can't
    *  drag, face, or re-layer furniture. Defaults to true (own room). */
   canEditRoom?: boolean;
+  /**
+   * Optional world dimensions. When set (typically by a `RoomBlueprint`
+   * with `worldWidth` + `worldHeight`), the camera scrolls inside a
+   * bigger room — the same feel as the park / garden, but indoors.
+   * When omitted, both default to the legacy 960×600 viewport so the
+   * starter loft still fits a single screen.
+  */
+  worldWidth?: number;
+  worldHeight?: number;
+  roomPortals?: {
+    left?: RoomPortal;
+    right?: RoomPortal;
+  };
+  roomSurfaces?: RoomSurfaceSelection;
   onAvatarMove?: (position: {
     x: number;
     y: number;
@@ -154,7 +171,17 @@ export function RoomCanvas({
   onAvatarMove,
   onRoomEmote,
   onPlacementsChange,
+  worldWidth: worldWidthProp,
+  worldHeight: worldHeightProp,
+  roomPortals,
+  roomSurfaces = defaultRoomSurfaceSelection,
 }: RoomCanvasProps) {
+  // Bigger world for living-room-class blueprints (park-style scroll).
+  // Falls back to the original fixed 960×600 viewport when the blueprint
+  // doesn't opt in, so the starter Moonlit Loft still renders identically.
+  const worldWidth = Math.max(ROOM_WIDTH, worldWidthProp ?? ROOM_WIDTH);
+  const worldHeight = Math.max(ROOM_HEIGHT, worldHeightProp ?? ROOM_HEIGHT);
+  const isLargeRoom = worldWidth > ROOM_WIDTH || worldHeight > ROOM_HEIGHT;
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotePlayersRef = useRef(remotePlayers);
   const [status, setStatus] = useState("Lighting the Moonlit Loft");
@@ -224,7 +251,10 @@ export function RoomCanvas({
         private petCustomizationHandler?: (event: Event) => void;
         private moveBroadcastTimer = 0;
         private footstepTimer = 0;
-        private lastSentPosition = { x: 390, y: 374 };
+        // Initial broadcast position. The real values are set in
+        // `createAvatar` once the world dimensions are known; this is
+        // just the seed for the diff check on the first frame.
+        private lastSentPosition = { x: 0, y: 0 };
         private lastSentPetPosition: { x: number; y: number } | null = null;
         /**
          * Which character WASD is currently driving. Right-click on the room
@@ -239,6 +269,8 @@ export function RoomCanvas({
         private playModeBadge?: Phaser.GameObjects.Container;
         /** Idle pet breathing tween. Paused while controlling the companion. */
         private petBobTween?: Phaser.Tweens.Tween;
+        private portalHotspots: Array<{ x: number; y: number; portal: RoomPortal; side: "left" | "right" }> = [];
+        private portalTraveling = false;
 
         constructor() {
           super("HeartHavenRoom");
@@ -246,6 +278,8 @@ export function RoomCanvas({
 
         preload() {
           this.load.image("cozy-room-bg", "/game-assets/generated/cozy-room-bg.png");
+          this.load.image("room-wall-surface", roomSurfaces.wall.asset);
+          this.load.image("room-floor-surface", roomSurfaces.floor.asset);
           this.load.image("keeper-sprite", "/game-assets/generated/keeper-sprite.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
           this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-base-sheet.png", {
@@ -276,7 +310,14 @@ export function RoomCanvas({
 
         create() {
           this.cameras.main.setBackgroundColor("#fbf3e2");
+          // Big-room camera setup. Setting the camera bounds to the
+          // configured world size lets the 960×600 viewport scroll
+          // through anything bigger — exact same trick the garden /
+          // park canvas uses. We center the camera on the avatar so
+          // the host's perspective always follows them.
+          this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
           this.drawRoomShell();
+          this.drawRoomPortals();
           this.drawAmbientMagic();
           this.drawSeasonalRoomDecor();
           this.createFurniture(normalizedPlacements);
@@ -287,6 +328,13 @@ export function RoomCanvas({
           this.createRealtimeBridge();
           this.syncRemotePlayers(remotePlayersRef.current);
           this.sortDepths();
+          // Only enable camera follow when the world is bigger than the
+          // viewport. Otherwise the camera stays put and the 2.5D room
+          // looks identical to its single-screen heritage.
+          if (isLargeRoom) {
+            this.cameras.main.startFollow(this.avatar, true, 0.08, 0.08);
+            this.cameras.main.setDeadzone(160, 110);
+          }
 
           this.add
             .text(34, 30, roomName, {
@@ -321,22 +369,135 @@ export function RoomCanvas({
         }
 
         private drawRoomShell() {
-          this.add.image(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, "cozy-room-bg").setDisplaySize(ROOM_WIDTH, ROOM_HEIGHT).setDepth(-20);
-          this.add.rectangle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, ROOM_WIDTH, ROOM_HEIGHT, getThemeTint(roomTheme), 0.1).setDepth(-19);
+          // The 2.5D room shell scales with the configured world. For a
+          // starter loft this is still 960×600; for a Great Hall it might
+          // be 2880×880 and the camera scrolls inside it.
+          this.add
+            .image(worldWidth / 2, worldHeight / 2, "cozy-room-bg")
+            .setDisplaySize(worldWidth, worldHeight)
+            .setDepth(-20);
+          this.add
+            .rectangle(worldWidth / 2, worldHeight / 2, worldWidth, worldHeight, getThemeTint(roomTheme), 0.1)
+            .setDepth(-19);
 
+          // Build a floor polygon that fills most of the world width so
+          // big living rooms don't end up with a tiny playable square in
+          // the middle. The original starter ratios are preserved on a
+          // 960×600 room — for bigger rooms we scale the corner inset
+          // proportionally to width.
+          const wallTop = Math.round(worldHeight * 0.4);
+          const floorBottom = Math.round(worldHeight * 0.92);
+          const floorMidY = Math.round(worldHeight * 0.82);
+          const insetTop = Math.max(120, Math.round(worldWidth * 0.07));
+          const insetBottom = Math.max(80, Math.round(worldWidth * 0.05));
           this.floorPolygon = new PhaserModule.Geom.Polygon([
-            154, 238,
-            810, 238,
-            840, 490,
-            480, 552,
-            112, 490,
+            insetTop, wallTop,
+            worldWidth - insetTop, wallTop,
+            worldWidth - insetBottom, floorBottom - 12,
+            worldWidth / 2, floorBottom,
+            insetBottom, floorBottom - 12,
+            insetBottom, floorMidY,
           ]);
+
+          const wallSurface = this.add
+            .tileSprite(worldWidth / 2, wallTop / 2, worldWidth, wallTop + 12, "room-wall-surface")
+            .setDepth(-18)
+            .setAlpha(0.92);
+          wallSurface.setTileScale(0.72, 0.72);
+          this.add
+            .rectangle(worldWidth / 2, wallTop - 8, worldWidth, 18, 0x3a2a2a, 0.08)
+            .setDepth(-16);
+
+          const floorHeight = Math.max(1, floorBottom - wallTop + 72);
+          const floorSurface = this.add
+            .tileSprite(worldWidth / 2, wallTop + floorHeight / 2 - 18, worldWidth, floorHeight, "room-floor-surface")
+            .setDepth(-17)
+            .setAlpha(0.96);
+          floorSurface.setTileScale(0.78, 0.78);
+          const floorMask = this.make.graphics({ x: 0, y: 0 });
+          floorMask.fillStyle(0xffffff, 1);
+          floorMask.fillPoints(this.floorPolygon.points, true);
+          floorSurface.setMask(floorMask.createGeometryMask());
+
+          this.add
+            .rectangle(worldWidth / 2, wallTop / 2, worldWidth, wallTop + 14, 0xffffff, 0.1)
+            .setDepth(-15);
+          this.add
+            .rectangle(worldWidth / 2, wallTop + floorHeight / 2 - 18, worldWidth, floorHeight, getThemeTint(roomTheme), 0.06)
+            .setDepth(-14)
+            .setMask(floorMask.createGeometryMask());
 
           const playableArea = this.add.graphics().setDepth(-5);
           playableArea.fillStyle(0xfffcf3, 0.06);
           playableArea.fillPoints(this.floorPolygon.points, true);
           playableArea.lineStyle(3, 0xffffff, 0.24);
           playableArea.strokePoints(this.floorPolygon.points, true);
+        }
+
+        private drawRoomPortals() {
+          const configs: Array<{ side: "left" | "right"; x: number; y: number; portal?: RoomPortal }> = [
+            { side: "left", x: Math.max(176, Math.round(worldWidth * 0.095)), y: Math.round(worldHeight * 0.62), portal: roomPortals?.left },
+            { side: "right", x: Math.min(worldWidth - 176, Math.round(worldWidth * 0.905)), y: Math.round(worldHeight * 0.62), portal: roomPortals?.right },
+          ];
+
+          configs.forEach((config) => {
+            if (!config.portal) return;
+            const target = this.constrainToFloor(config.x, config.y);
+            const archX = config.side === "left" ? Math.max(70, target.x - 54) : Math.min(worldWidth - 70, target.x + 54);
+            const door = this.add.container(target.x, target.y).setDepth(92);
+            const glow = this.add.ellipse(0, 34, 118, 38, 0xfaebc2, 0.26);
+            const pad = this.add.ellipse(0, 38, 86, 24, 0x3a2a2a, 0.12);
+            const arch = this.add.graphics();
+            arch.fillStyle(0xfffcf3, 0.72);
+            arch.fillRoundedRect(archX - target.x - 32, -118, 64, 132, 30);
+            arch.lineStyle(3, 0xc0a8dc, 0.58);
+            arch.strokeRoundedRect(archX - target.x - 32, -118, 64, 132, 30);
+            const arrow = this.add
+              .text(config.side === "left" ? -38 : 38, -40, config.side === "left" ? "‹" : "›", {
+                color: "#8E70BD",
+                fontFamily: "Caprasimo, Georgia, serif",
+                fontSize: "42px",
+              })
+              .setOrigin(0.5);
+            const label = this.add
+              .text(0, 72, config.portal.name, {
+                align: "center",
+                color: "#5B3F3F",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "12px",
+                fontStyle: "900",
+                wordWrap: { width: 132 },
+              })
+              .setOrigin(0.5);
+            door.add([glow, pad, arch, arrow, label]);
+
+            this.tweens.add({
+              targets: glow,
+              alpha: 0.42,
+              scaleX: 1.14,
+              scaleY: 1.08,
+              duration: 960,
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.inOut",
+            });
+
+            const zone = this.add.zone(target.x, target.y, 132, 178).setInteractive({ useHandCursor: true });
+            zone.setDepth(95);
+            zone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+              pointer.event.stopPropagation();
+              this.target = new PhaserModule.Math.Vector2(target.x, target.y);
+              playCozyCue("move");
+              setStatus(`Walking to ${config.portal?.name}.`);
+            });
+
+            this.portalHotspots.push({
+              x: target.x,
+              y: target.y,
+              portal: config.portal,
+              side: config.side,
+            });
+          });
         }
 
         private drawAmbientMagic() {
@@ -389,7 +550,7 @@ export function RoomCanvas({
           const accent = PhaserModule.Display.Color.HexStringToColor(activeEvent.colors.accent).color;
           const decorLayer = this.add.container(0, 0).setDepth(42);
 
-          this.add.rectangle(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, ROOM_WIDTH, ROOM_HEIGHT, primary, 0.045).setDepth(-18);
+          this.add.rectangle(worldWidth / 2, worldHeight / 2, worldWidth, worldHeight, primary, 0.045).setDepth(-18);
 
           if (activeEvent.id === "halloween") {
             this.drawBunting(decorLayer, primary, secondary, true);
@@ -683,9 +844,15 @@ export function RoomCanvas({
           // Keeper sized as a cozy focal point — tall enough to read clearly,
           // small enough that the room feels like a space you stand inside
           // (Webkinz keeps the pet ~1/5 of the room width).
+          // Start the keeper centered horizontally in the world so big
+          // rooms don't have everyone clumped in the same corner — the
+          // 0.4 vertical ratio keeps them on the front half of the floor
+          // for the same 2.5D feel as the original 960×600 layout.
           this.keeperCustomization = readKeeperCustomization();
-          this.avatarShadow = this.add.ellipse(390, 392, 50, 18, 0x3a2a2a, 0.18).setDepth(350);
-          this.avatar = this.add.container(390, 374).setDepth(374);
+          const startX = Math.round(worldWidth * 0.4);
+          const startY = Math.round(worldHeight * 0.62);
+          this.avatarShadow = this.add.ellipse(startX, startY + 18, 50, 18, 0x3a2a2a, 0.18).setDepth(startY - 24);
+          this.avatar = this.add.container(startX, startY).setDepth(startY);
           this.avatarSkinSprite = this.add
             .sprite(
               0,
@@ -775,7 +942,11 @@ export function RoomCanvas({
               this.rightHoldFired = false;
               return;
             }
-            if (pointer.y < 198 || this.dragStarted) return;
+            // The top-band cutoff (originally 198 for a 600-tall world)
+            // keeps clicks on the wall art from teleporting the keeper.
+            // Scales with the world so big rooms don't accidentally
+            // ignore most of the upper half.
+            if (pointer.y < worldHeight * 0.33 || this.dragStarted) return;
             const target = this.constrainToFloor(pointer.x, pointer.y);
             this.target = new PhaserModule.Math.Vector2(target.x, target.y);
             if (this.playMode !== "companion") this.petMood = "follow";
@@ -932,6 +1103,14 @@ export function RoomCanvas({
             // collected without a dangling tween targeting destroyed sprites.
             this.petBobTween?.stop();
             this.petBobTween = undefined;
+            // Same treatment for every furniture bob tween. Without this,
+            // a room un-mount mid-tween left a handful of yoyo'ing tweens
+            // pointed at destroyed containers — Phaser swallows the
+            // error but the console gets noisy on every navigation.
+            for (const item of this.furniture) {
+              item.bobTween?.stop();
+              item.bobTween = undefined;
+            }
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
@@ -946,30 +1125,11 @@ export function RoomCanvas({
         }
 
         private applyKeeperLayerTints() {
-          const skinTone = getKeeperSkinTone(this.keeperCustomization.skinId);
-          const hairColor = getKeeperHairColor(this.keeperCustomization.hairColorId);
-          const palette = getKeeperPalette(this.keeperCustomization.paletteId);
-          // Skin tint applies to the skin mask AND, multiplied softly, to the
-          // outfit layer so the face/hand pixels that bleed onto the outfit
-          // frame don't show the wrong base hue. The previous code only
-          // tinted the skin-mask sprite, which left the face on the outfit
-          // frame untouched — that was the "skin color not changing all over"
-          // bug.
-          const skinColor = PhaserModule.Display.Color.HexStringToColor(skinTone.color).color;
-          this.avatarSkinSprite?.setTint(skinColor).setAlpha(1);
-          this.avatarSprite?.setAlpha(1);
-          // Palette tint on the outfit base — gives the "signature palette"
-          // selection a visible effect even when the outfit sheet doesn't
-          // ship a per-palette frame variant.
-          const paletteColor = PhaserModule.Display.Color.HexStringToColor(palette.color).color;
-          this.avatarSprite?.setTint(paletteColor);
-          // Force the hair layer fully opaque + on top — the "transparent /
-          // glitched hair" reports were the hair sprite being drawn behind
-          // the outfit (depth same as outfit, draw order undefined) and at
-          // varying alpha because of a tween that targeted siblings.
+          this.avatarSprite?.clearTint().setAlpha(1);
+          this.avatarSkinSprite?.clearTint().setAlpha(0);
           this.avatarHairSprite
-            ?.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color)
-            .setAlpha(1)
+            ?.clearTint()
+            .setAlpha(0)
             .setDepth((this.avatarSprite?.depth ?? 0) + 1);
         }
 
@@ -1226,18 +1386,11 @@ export function RoomCanvas({
         }
 
         private applyRemoteKeeperTints(remote: RemoteAvatarObject) {
-          const skinTone = getKeeperSkinTone(remote.skinId);
-          const hairColor = getKeeperHairColor(remote.hairColorId);
-          const palette = getKeeperPalette(remote.paletteId);
-          remote.skinSprite.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color).setAlpha(1);
-          // Apply the signature palette tint to remote outfits too — so
-          // visitors see each other's chosen palette, not just the local
-          // keeper's. Without this, every remote keeper appeared identical
-          // regardless of their palette pick.
-          remote.sprite.setTint(PhaserModule.Display.Color.HexStringToColor(palette.color).color).setAlpha(1);
+          remote.skinSprite.clearTint().setAlpha(0);
+          remote.sprite.clearTint().setAlpha(1);
           remote.hairSprite
-            .setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color)
-            .setAlpha(1)
+            .clearTint()
+            .setAlpha(0)
             .setDepth(remote.sprite.depth + 1);
         }
 
@@ -1411,8 +1564,11 @@ export function RoomCanvas({
               .setDisplaySize(94, 141)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
-            skinSprite.setTint(PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(custom.skinId).color).color);
-            hairSprite.setTint(PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(custom.hairColorId).color).color);
+            skinSprite.clearTint().setAlpha(0);
+            sprite.clearTint().setAlpha(1);
+            hairSprite
+              .clearTint()
+              .setAlpha(0);
             const label = this.add
               .text(0, -100, player.displayName, {
                 align: "center",
@@ -1621,6 +1777,7 @@ export function RoomCanvas({
           if (this.avatarEmoteTimer === 0) {
             this.applyKeeperLocomotion(moving, delta);
           }
+          this.checkRoomPortalTravel();
 
           this.moveBroadcastTimer += delta;
           this.footstepTimer += delta;
@@ -1666,6 +1823,22 @@ export function RoomCanvas({
 
           const length = Math.hypot(x, y);
           return { x: x / length, y: y / length };
+        }
+
+        private checkRoomPortalTravel() {
+          if (this.portalTraveling || this.playMode !== "keeper") return;
+          for (const hotspot of this.portalHotspots) {
+            const distance = PhaserModule.Math.Distance.Between(this.avatar.x, this.avatar.y, hotspot.x, hotspot.y);
+            if (distance > 46) continue;
+            this.portalTraveling = true;
+            this.target = undefined;
+            playCozyCue("ui");
+            setStatus(`Entering ${hotspot.portal.name}...`);
+            this.time.delayedCall(220, () => {
+              window.location.assign(hotspot.portal.href);
+            });
+            return;
+          }
         }
 
         private updatePet(delta: number) {
@@ -1969,14 +2142,26 @@ export function RoomCanvas({
         }
 
         private constrainToFloor(x: number, y: number) {
+          // Scale the clamps with the configured world so big living
+          // rooms have a correspondingly bigger walkable area. The
+          // ratios match the original 960×600 values (132/828 → ~14%/86%,
+          // 226/500 → ~38%/83%) so the starter loft still feels the same.
+          const minX = Math.round(worldWidth * 0.137);
+          const maxX = Math.round(worldWidth * 0.862);
+          const minY = Math.round(worldHeight * 0.377);
+          const maxY = Math.round(worldHeight * 0.833);
           const clamped = new PhaserModule.Math.Vector2(
-            PhaserModule.Math.Clamp(x, 132, 828),
-            PhaserModule.Math.Clamp(y, 226, 500),
+            PhaserModule.Math.Clamp(x, minX, maxX),
+            PhaserModule.Math.Clamp(y, minY, maxY),
           );
 
           if (this.floorPolygon && !PhaserModule.Geom.Polygon.Contains(this.floorPolygon, clamped.x, clamped.y)) {
-            clamped.x = PhaserModule.Math.Clamp(clamped.x, 178, 782);
-            clamped.y = PhaserModule.Math.Clamp(clamped.y, 250, 454);
+            const tightMinX = Math.round(worldWidth * 0.185);
+            const tightMaxX = Math.round(worldWidth * 0.815);
+            const tightMinY = Math.round(worldHeight * 0.417);
+            const tightMaxY = Math.round(worldHeight * 0.757);
+            clamped.x = PhaserModule.Math.Clamp(clamped.x, tightMinX, tightMaxX);
+            clamped.y = PhaserModule.Math.Clamp(clamped.y, tightMinY, tightMaxY);
           }
 
           return clamped;
@@ -2036,7 +2221,7 @@ export function RoomCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, [activeEvent, canEditRoom, onAvatarMove, onPlacementsChange, onRoomEmote, placements, roomName, roomTheme]);
+  }, [activeEvent, canEditRoom, onAvatarMove, onPlacementsChange, onRoomEmote, placements, roomName, roomPortals, roomSurfaces, roomTheme, worldHeight, worldWidth]);
 
   return (
     <section className="block w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">

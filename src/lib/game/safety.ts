@@ -122,6 +122,10 @@ export function blockKeeper(code: FriendCode, displayName: string) {
   void hardenBlock(code).catch(() => {
     /* best-effort — the block itself has already been written above */
   });
+  // Mirror to Supabase so the block survives across devices AND so the
+  // server-side `is_recipient_blocking()` check (used by the
+  // `friend_invites` RLS) can reject inserts at the database layer.
+  void mirrorBlockToSupabase("block", code, displayName);
 }
 
 async function hardenBlock(code: FriendCode) {
@@ -139,6 +143,77 @@ async function hardenBlock(code: FriendCode) {
 export function unblockKeeper(code: FriendCode) {
   const state = readSafetyState();
   writeState({ ...state, blocks: state.blocks.filter((entry) => entry.code !== code) });
+  void mirrorBlockToSupabase("unblock", code, "");
+}
+
+async function mirrorBlockToSupabase(action: "block" | "unblock", code: FriendCode, displayName: string) {
+  if (!isSupabaseConfigured() || typeof window === "undefined") return;
+  try {
+    const supabase = getSupabaseBrowserClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    if (action === "block") {
+      await supabase.from("keeper_blocks").upsert(
+        {
+          blocker_profile_id: user.id,
+          blocked_code: code,
+          display_name_at_block: displayName || null,
+        },
+        { onConflict: "blocker_profile_id,blocked_code" },
+      );
+    } else {
+      await supabase
+        .from("keeper_blocks")
+        .delete()
+        .eq("blocker_profile_id", user.id)
+        .eq("blocked_code", code);
+    }
+  } catch (error) {
+    // Local block already took effect on THIS device. A failed sync just
+    // means cross-device + server-side enforcement degrade — the user is
+    // still protected here.
+    console.warn("[hearthaven safety] could not mirror block to Supabase:", error);
+  }
+}
+
+/**
+ * Hydrate the local block list from Supabase. Called on app boot so a
+ * block set from another device shows up immediately on this one. Merges
+ * rather than replaces — local-only blocks (e.g. set while offline) are
+ * preserved.
+ */
+export async function syncBlocksFromSupabase(): Promise<void> {
+  if (!isSupabaseConfigured() || typeof window === "undefined") return;
+  try {
+    const supabase = getSupabaseBrowserClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from("keeper_blocks")
+      .select("blocked_code, display_name_at_block, created_at")
+      .eq("blocker_profile_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (!Array.isArray(data)) return;
+    const state = readSafetyState();
+    const merged = new Map(state.blocks.map((entry) => [entry.code, entry] as const));
+    for (const row of data as Array<{
+      blocked_code: string;
+      display_name_at_block: string | null;
+      created_at: string;
+    }>) {
+      if (!merged.has(row.blocked_code)) {
+        merged.set(row.blocked_code, {
+          code: row.blocked_code,
+          displayName: row.display_name_at_block ?? "Keeper",
+          blockedAt: row.created_at,
+        });
+      }
+    }
+    writeState({ ...state, blocks: Array.from(merged.values()).slice(0, 200) });
+  } catch (error) {
+    console.warn("[hearthaven safety] could not hydrate blocks from Supabase:", error);
+  }
 }
 
 export function isBlocked(code: FriendCode, state: SafetyState = readSafetyState()): boolean {

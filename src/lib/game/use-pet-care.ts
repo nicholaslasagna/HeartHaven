@@ -8,11 +8,13 @@ import {
   getNeediestVital,
   getPetMood,
   getPetVitals,
+  performPetFood,
   performPetAction,
   type PetCareAction,
   type PetCareResult,
   type PetVitals,
 } from "@/lib/game/pet-state";
+import type { PetFoodId } from "@/lib/game/pet-foods";
 
 const CARE_ACTIONS: PetCareAction[] = ["feed", "play", "pamper", "rest"];
 
@@ -52,6 +54,12 @@ export function usePetCare() {
     return result;
   }, []);
 
+  const feedFood = useCallback((foodId: PetFoodId): PetCareResult => {
+    const result = performPetFood(foodId);
+    if (result.ok) setVitals(result.vitals);
+    return result;
+  }, []);
+
   const cooldowns = useMemo(() => {
     // `now` is a dependency so this recomputes every tick.
     void now;
@@ -73,7 +81,7 @@ export function usePetCare() {
   const neediest = vitals ? getNeediestVital(vitals) : "happiness";
 
   return useMemo(
-    () => ({ vitals, mood, neediest, cooldowns, care, ready: vitals !== null }),
-    [vitals, mood, neediest, cooldowns, care],
+    () => ({ vitals, mood, neediest, cooldowns, care, feedFood, ready: vitals !== null }),
+    [vitals, mood, neediest, cooldowns, care, feedFood],
   );
 }

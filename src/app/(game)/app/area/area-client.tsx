@@ -8,6 +8,7 @@ import { DoorOpen, Gamepad2, Leaf, Map as MapIcon } from "lucide-react";
 import { GardenClient } from "@/app/(game)/app/garden/garden-client";
 import { ParkClient } from "@/app/(game)/app/park/park-client";
 import { RoomClient } from "@/app/(game)/app/room/room-client";
+import { BringPartyButton } from "@/components/game/bring-party-button";
 import { HavenPulsePanel } from "@/components/game/haven-pulse-panel";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
 import type { gardenPlots, miniGames } from "@/lib/mock-data";
@@ -84,12 +85,24 @@ export function AreaClient({ games, plots }: AreaClientProps) {
             Right-click anywhere in the world to play as your companion. Hold to recall.
           </p>
         </div>
-        <Link
-          className="relative inline-flex items-center gap-2 rounded-md border border-cream-300 bg-cream-50 px-3 py-2 text-sm font-extrabold text-ink-700 transition hover:-translate-y-0.5 hover:border-lavender-300 hover:bg-lavender-100"
-          href="/app/games"
-        >
-          <Gamepad2 className="size-4" /> Open games hub
-        </Link>
+        <div className="relative flex flex-col items-end gap-2">
+          <BringPartyButton
+            label={
+              activeZone === "garden"
+                ? "your garden"
+                : activeZone === "park"
+                  ? "the park"
+                  : "your room"
+            }
+            path={`/app/area?zone=${activeZone}`}
+          />
+          <Link
+            className="inline-flex items-center gap-2 rounded-md border border-cream-300 bg-cream-50 px-3 py-2 text-sm font-extrabold text-ink-700 transition hover:-translate-y-0.5 hover:border-lavender-300 hover:bg-lavender-100"
+            href="/app/games"
+          >
+            <Gamepad2 className="size-4" /> Open games hub
+          </Link>
+        </div>
       </section>
 
       <section className="rounded-3xl border border-cream-300 bg-white/72 p-3 shadow-sm">

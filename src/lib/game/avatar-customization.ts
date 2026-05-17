@@ -3,14 +3,30 @@
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
 
 export type KeeperBodyId = "female" | "male";
-export type KeeperSkinId = "fair" | "warm" | "tan" | "deep";
-export type KeeperHairStyleId = "long-waves" | "soft-curls" | "braids" | "side-part";
-export type KeeperHairColorId = "chestnut" | "black" | "auburn" | "blonde" | "lavender";
+export type KeeperSkinId = "porcelain" | "fair" | "warm" | "olive" | "tan" | "brown" | "deep" | "ebony";
+export type KeeperHairStyleId =
+  | "long-waves"
+  | "soft-curls"
+  | "braids"
+  | "side-part"
+  | "short-curls"
+  | "locs"
+  | "curly-fade"
+  | "straight-bangs";
+export type KeeperHairColorId =
+  | "chestnut"
+  | "dark-brown"
+  | "black"
+  | "auburn"
+  | "blonde"
+  | "silver"
+  | "rose"
+  | "lavender";
 export type KeeperPaletteId = "blush" | "lavender" | "garden" | "honey" | "sky";
 export type KeeperOutfitId = "cardigan" | "overalls" | "cape" | "sweater";
 export type KeeperPose = "idle" | "walk1" | "walk2" | "sit" | "wave" | "heart";
 
-export type PetSpeciesId = "fox" | "bunny" | "bear" | "duck" | "kitten";
+export type PetSpeciesId = "fox" | "bunny" | "bear" | "duck" | "kitten" | "puppy" | "calico" | "lamb" | "panda" | "dragon";
 export type PetToneId = "cream" | "blush" | "lavender" | "honey" | "sky" | "mint";
 export type PetAccessoryId = "moonberry-bow" | "lantern-scarf" | "garden-crown" | "heart-vest";
 export type PetPose = "idle" | "walk1" | "walk2" | "sit" | "sleep" | "happy";
@@ -36,10 +52,14 @@ export const KEEPER_BODY_TYPES: Array<{ id: KeeperBodyId; label: string; frameBl
 ];
 
 export const KEEPER_SKIN_TONES: Array<{ id: KeeperSkinId; label: string; color: string }> = [
+  { id: "porcelain", label: "Porcelain", color: "#FFDCC6" },
   { id: "fair", label: "Fair", color: "#F8CBAE" },
   { id: "warm", label: "Warm", color: "#DFA276" },
+  { id: "olive", label: "Olive", color: "#C99367" },
   { id: "tan", label: "Tan", color: "#B8734F" },
+  { id: "brown", label: "Brown", color: "#965C43" },
   { id: "deep", label: "Deep", color: "#7A4837" },
+  { id: "ebony", label: "Ebony", color: "#4E2F29" },
 ];
 
 export const KEEPER_HAIR_STYLES: Array<{ id: KeeperHairStyleId; label: string }> = [
@@ -47,13 +67,20 @@ export const KEEPER_HAIR_STYLES: Array<{ id: KeeperHairStyleId; label: string }>
   { id: "soft-curls", label: "Soft curls" },
   { id: "braids", label: "Braids" },
   { id: "side-part", label: "Side part" },
+  { id: "short-curls", label: "Short curls" },
+  { id: "locs", label: "Locs" },
+  { id: "curly-fade", label: "Curly fade" },
+  { id: "straight-bangs", label: "Straight bangs" },
 ];
 
 export const KEEPER_HAIR_COLORS: Array<{ id: KeeperHairColorId; label: string; color: string }> = [
   { id: "chestnut", label: "Chestnut", color: "#8B4B2C" },
+  { id: "dark-brown", label: "Dark brown", color: "#4A2D23" },
   { id: "black", label: "Black", color: "#2D211E" },
   { id: "auburn", label: "Auburn", color: "#A45132" },
   { id: "blonde", label: "Blonde", color: "#D9AE63" },
+  { id: "silver", label: "Silver", color: "#BFC1C8" },
+  { id: "rose", label: "Rose", color: "#C06E81" },
   { id: "lavender", label: "Lavender", color: "#9D84C8" },
 ];
 
@@ -78,6 +105,11 @@ export const PET_SPECIES: Array<{ id: PetSpeciesId; label: string; frameRow: num
   { id: "bear", label: "Honey Bear", frameRow: 2 },
   { id: "duck", label: "Sky Duck", frameRow: 3 },
   { id: "kitten", label: "Casper Cat", frameRow: 4 },
+  { id: "puppy", label: "Cocoa Puppy", frameRow: 5 },
+  { id: "calico", label: "Garden Calico", frameRow: 6 },
+  { id: "lamb", label: "Cloud Lamb", frameRow: 7 },
+  { id: "panda", label: "Moon Panda", frameRow: 8 },
+  { id: "dragon", label: "Lantern Dragon", frameRow: 9 },
 ];
 
 export const PET_TONES: Array<{ id: PetToneId; label: string; color: string }> = [
@@ -302,9 +334,7 @@ export function normalizeRemoteCustomization(player: RealtimeRoomPlayer): {
   const skinId = normalizeKeeperSkin(player.skinId);
   const hairStyleId = normalizeKeeperHairStyle(player.hairStyleId);
   const hairColorId = normalizeKeeperHairColor(player.hairColorId);
-  const petSpeciesId: PetSpeciesId = PET_SPECIES.some((species) => species.id === player.petSpeciesId)
-    ? (player.petSpeciesId as PetSpeciesId)
-    : "kitten";
+  const petSpeciesId = normalizePetSpecies(player.petSpeciesId);
   const petToneId: PetToneId = PET_TONES.some((tone) => tone.id === player.petToneId)
     ? (player.petToneId as PetToneId)
     : "cream";
@@ -353,6 +383,13 @@ function normalizeKeeperOutfit(value: string | null): KeeperOutfitId {
 }
 
 export function normalizePetSpecies(value: string | null | undefined): PetSpeciesId {
+  const legacyMap: Record<string, PetSpeciesId> = {
+    "cloud-fox": "fox",
+    "moonberry-fox": "bunny",
+    "honey-fox": "bear",
+    "garden-fox": "duck",
+  };
+  if (value && legacyMap[value]) return legacyMap[value];
   return PET_SPECIES.some((species) => species.id === value) ? (value as PetSpeciesId) : "kitten";
 }
 

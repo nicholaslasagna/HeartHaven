@@ -11,6 +11,7 @@ import {
   resolvePublicUsername,
   setCachedPublicUsername,
 } from "@/lib/game/public-identity";
+import { isUsernameAppropriate } from "@/lib/game/username-blacklist";
 import {
   USERNAME_CHANGE_LIMIT,
   computeStatus,
@@ -90,6 +91,11 @@ export function UsernameSettingsPanel({ serverHistory, serverUsername }: Usernam
     if (candidate.toLowerCase() === username.toLowerCase()) {
       return "That's already your username.";
     }
+    // Local appropriateness check. The same list runs server-side in
+    // `updateUsernameAction`, so this just avoids a round trip + gives
+    // the user instant feedback while they're typing.
+    const appropriate = isUsernameAppropriate(candidate);
+    if (!appropriate.ok) return appropriate.reason;
     return null;
   }
 

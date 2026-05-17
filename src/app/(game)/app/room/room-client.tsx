@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { DoorOpen, Move, PackagePlus, Plus, RotateCcw, Save, Sparkles } from "lucide-react";
+import { Coins, DoorOpen, Maximize2, Move, PackagePlus, Plus, RotateCcw, Save, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
 import { RoomSocialPanel } from "@/components/game/room-social-panel";
@@ -17,11 +17,23 @@ import type { CatalogItem, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { useRoomRealtime } from "@/lib/game/use-room-realtime";
 import { useInventory } from "@/lib/game/use-inventory";
+import { useGameWallet } from "@/lib/game/use-game-wallet";
 import { getCatalogItemArt, getCatalogItemArtFit } from "@/lib/game/item-art";
 import { isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
+import { PROGRESSION_EVENT, readPlayerProgression } from "@/lib/game/progression-store";
+import {
+  defaultRoomSurfaceSelection,
+  readRoomSurfaces,
+  roomFloorSurfaceOptions,
+  roomWallSurfaceOptions,
+  writeRoomSurfaces,
+  type RoomSurfaceOption,
+  type RoomSurfaceSelection,
+} from "@/lib/game/room-surfaces";
 import { isItemVisibleForSeason } from "@/lib/seasonal-events";
 
 const ROOM_STORAGE_PREFIX = "hearthaven:room-placements:v2:";
+const ROOM_EXPANSION_STORAGE_PREFIX = "hearthaven:room-expansions:v1:";
 const ROOM_CANVAS_WIDTH = 960;
 const ROOM_CANVAS_HEIGHT = 600;
 
@@ -31,6 +43,20 @@ function clamp(value: number, min: number, max: number) {
 
 function getRoomStorageKey(roomId: string) {
   return `${ROOM_STORAGE_PREFIX}${roomId}`;
+}
+
+function getRoomExpansionStorageKey(roomId: string) {
+  return `${ROOM_EXPANSION_STORAGE_PREFIX}${roomId}`;
+}
+
+function readRoomExpansions(roomId: string) {
+  if (typeof window === "undefined") return 0;
+  const parsed = Number(window.localStorage.getItem(getRoomExpansionStorageKey(roomId)) ?? 0);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+}
+
+function writeRoomExpansions(roomId: string, expansions: number) {
+  window.localStorage.setItem(getRoomExpansionStorageKey(roomId), String(Math.max(0, Math.floor(expansions))));
 }
 
 function readPlacements(roomId: string): RoomPlacement[] {
@@ -77,9 +103,14 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const [placements, setPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [draftPlacements, setDraftPlacements] = useState<RoomPlacement[]>(starterPlacements);
   const [saveStatus, setSaveStatus] = useState("Move-in ready");
+  const [roomExpansions, setRoomExpansions] = useState(0);
+  const [progression, setProgression] = useState(() => readPlayerProgression());
+  const [roomSurfaces, setRoomSurfaces] = useState<RoomSurfaceSelection>(defaultRoomSurfaceSelection);
   const placementCounter = useRef(0);
   const roomDropRef = useRef<HTMLDivElement | null>(null);
+  const { wallet, spendCurrency } = useGameWallet();
   const realtime = useRoomRealtime({
+    hostFriendCode: visitTarget,
     roomId: isVisitAllowed ? activeRoom.id : "friend-only-gate",
     roomName: isVisitAllowed ? activeRoom.name : "Friend-only room",
   });
@@ -105,18 +136,58 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
       },
     }));
   const roomDrawerItems = inventoryRoomRows.length > 0 ? inventoryRoomRows : starterRoomRows;
+  const activeRoomIndex = roomBlueprints.findIndex((room) => room.id === activeRoom.id);
+  const roomById = useCallback((id?: string) => roomBlueprints.find((room) => room.id === id), []);
+  const roomHref = useCallback(
+    (room: { id: string; href: string }) => embedded ? `/app/area?zone=room&room=${room.id}${visitTarget ? `&visit=${encodeURIComponent(visitTarget)}` : ""}` : `${room.href}${visitTarget ? `&visit=${encodeURIComponent(visitTarget)}` : ""}`,
+    [embedded, visitTarget],
+  );
+  const adjacentRooms = useMemo(() => {
+    const fallbackLeft = roomBlueprints[(activeRoomIndex - 1 + roomBlueprints.length) % roomBlueprints.length];
+    const fallbackRight = roomBlueprints[(activeRoomIndex + 1) % roomBlueprints.length];
+    const left = roomById(activeRoom.connectedRoomIds?.left) ?? fallbackLeft;
+    const right = roomById(activeRoom.connectedRoomIds?.right) ?? fallbackRight;
+    return {
+      left: { name: left.name, href: roomHref(left) },
+      right: { name: right.name, href: roomHref(right) },
+    };
+  }, [activeRoom.connectedRoomIds?.left, activeRoom.connectedRoomIds?.right, activeRoomIndex, roomById, roomHref]);
+
+  const baseRoomWidth = activeRoom.worldWidth ?? ROOM_CANVAS_WIDTH;
+  const baseRoomHeight = activeRoom.worldHeight ?? ROOM_CANVAS_HEIGHT;
+  const maxExpansionsBySize = Math.max(0, Math.floor((baseRoomWidth * 1.6 - baseRoomWidth) / 160));
+  const maxExpansionsByLevel = Math.floor(progression.level / 3);
+  const maxAffordableExpansionSlots = Math.min(maxExpansionsBySize, maxExpansionsByLevel);
+  const effectiveExpansions = Math.min(roomExpansions, maxExpansionsBySize);
+  const expandedWorldWidth = Math.min(Math.round(baseRoomWidth * 1.6), baseRoomWidth + effectiveExpansions * 160);
+  const nextExpansionCost = 200 * (roomExpansions + 1) * (roomExpansions + 1);
+  const canBuyExpansion = isHostRoom && roomExpansions < maxAffordableExpansionSlots && wallet.coins >= nextExpansionCost;
+  const nextExpansionLevel = Math.max(3, (roomExpansions + 1) * 3);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       const saved = readPlacements(activeRoom.id);
       setPlacements(saved);
       setDraftPlacements(saved);
+      setRoomExpansions(readRoomExpansions(activeRoom.id));
+      setRoomSurfaces(readRoomSurfaces(activeRoom.id));
       const hasSavedLayout = typeof window !== "undefined"
         && Boolean(window.localStorage.getItem(getRoomStorageKey(activeRoom.id)));
       setSaveStatus(hasSavedLayout ? "Loaded saved layout" : "Move-in ready layout");
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [activeRoom.id]);
+
+  useEffect(() => {
+    const syncProgression = () => setProgression(readPlayerProgression());
+    syncProgression();
+    window.addEventListener(PROGRESSION_EVENT, syncProgression);
+    window.addEventListener("hearthaven:player-points-earned", syncProgression);
+    return () => {
+      window.removeEventListener(PROGRESSION_EVENT, syncProgression);
+      window.removeEventListener("hearthaven:player-points-earned", syncProgression);
+    };
+  }, []);
 
   // Spending time in your room advances the "spend time in your room" daily task.
   useEffect(() => {
@@ -149,6 +220,43 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     setDraftPlacements(cozyDefault);
     setPlacements(cozyDefault);
     setSaveStatus("Room restored to its move-in layout");
+  }
+
+  function buyRoomExpansion() {
+    if (!isHostRoom) {
+      setSaveStatus("Only the room host can buy permanent room expansions.");
+      return;
+    }
+    if (roomExpansions >= maxExpansionsBySize) {
+      setSaveStatus(`${activeRoom.name} is already at its max expansion size.`);
+      return;
+    }
+    if (roomExpansions >= maxExpansionsByLevel) {
+      setSaveStatus(`Reach level ${nextExpansionLevel} before buying the next room expansion.`);
+      return;
+    }
+    if (!spendCurrency(nextExpansionCost, 0)) {
+      setSaveStatus(`You need ${nextExpansionCost} coins for the next expansion.`);
+      return;
+    }
+    const next = roomExpansions + 1;
+    writeRoomExpansions(activeRoom.id, next);
+    setRoomExpansions(next);
+    setSaveStatus(`${activeRoom.name} expanded by 160px. New width: ${baseRoomWidth + next * 160}px.`);
+  }
+
+  function chooseRoomSurface(kind: "floor" | "wall", option: RoomSurfaceOption) {
+    if (!canEditRoom) {
+      setSaveStatus("Ask the host for decorator access before repainting this room.");
+      return;
+    }
+    const next = {
+      ...roomSurfaces,
+      [kind]: option,
+    };
+    setRoomSurfaces(next);
+    writeRoomSurfaces(activeRoom.id, next);
+    setSaveStatus(kind === "floor" ? `Floor changed to ${option.name}.` : `Walls changed to ${option.name}.`);
   }
 
   function dropPointForItem(item: CatalogItem, event: DragEvent<HTMLDivElement>) {
@@ -249,9 +357,23 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="warm"><Move /> Design</Button>
+            <Button disabled={!canBuyExpansion} onClick={buyRoomExpansion} variant="secondary">
+              <Maximize2 /> Expand · <Coins className="size-4" /> {nextExpansionCost}
+            </Button>
             <Button disabled={!canEditRoom} onClick={saveRoom}><Save /> Save layout</Button>
             <Button disabled={!canEditRoom} onClick={resetRoom} variant="secondary"><RotateCcw /> Reset</Button>
           </div>
+        </div>
+      </section>
+      <section className="rounded-lg border border-honey-300/50 bg-honey-100/55 p-4 text-sm font-bold text-ink-700 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span>
+            Room expansion: {roomExpansions} bought · {expandedWorldWidth}px wide.
+            {" "}One 160px expansion unlocks every 3 levels, up to 1.6x the blueprint width.
+          </span>
+          <span className="rounded-full bg-white/78 px-3 py-1 text-xs font-black text-honey-800">
+            Level {progression.level} · max now {maxAffordableExpansionSlots}/{maxExpansionsBySize}
+          </span>
         </div>
       </section>
       <section className="rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm">
@@ -276,13 +398,77 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               key={room.id}
             >
               <span className="flex items-center gap-2 text-sm font-black"><DoorOpen className="size-4" /> {room.name}</span>
-              <span className="mt-1 block text-xs font-bold">{room.capacity} friends | move-in ready</span>
+              <span className="mt-1 block text-xs font-bold">
+                {room.worldWidth && room.worldWidth > 960 ? "Scrolling " : ""}fits {room.capacity} friends · move-in ready
+              </span>
             </Link>
           ))}
         </div>
       </section>
       <section className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
         <aside className="grid min-w-0 content-start gap-4 xl:sticky xl:top-4">
+          <section className="rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
+            <div className="mb-3">
+              <p className="text-xs font-extrabold uppercase tracking-normal text-lavender-500">Paint and tile</p>
+              <p className="mt-1 text-sm font-bold leading-5 text-ink-700">
+                Swap wallpaper and flooring instantly. These textures tile across expanded rooms.
+              </p>
+            </div>
+            <div className="grid gap-3">
+              <div>
+                <p className="mb-2 text-[11px] font-black uppercase tracking-normal text-ink-500">Walls</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {roomWallSurfaceOptions.map((option) => (
+                    <button
+                      aria-pressed={roomSurfaces.wall.id === option.id}
+                      className={`group overflow-hidden rounded-xl border bg-cream-50 text-left shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-55 ${
+                        roomSurfaces.wall.id === option.id ? "border-lavender-300 ring-2 ring-lavender-200" : "border-cream-300"
+                      }`}
+                      disabled={!canEditRoom}
+                      key={option.id}
+                      onClick={() => chooseRoomSurface("wall", option)}
+                      type="button"
+                    >
+                      <Image
+                        alt={`${option.name} wall texture`}
+                        className="h-14 w-full object-cover"
+                        height={96}
+                        src={option.asset}
+                        width={160}
+                      />
+                      <span className="block px-2 py-1.5 text-xs font-black leading-tight text-ink-800">{option.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-[11px] font-black uppercase tracking-normal text-ink-500">Floors</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {roomFloorSurfaceOptions.map((option) => (
+                    <button
+                      aria-pressed={roomSurfaces.floor.id === option.id}
+                      className={`group overflow-hidden rounded-xl border bg-cream-50 text-left shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-55 ${
+                        roomSurfaces.floor.id === option.id ? "border-honey-300 ring-2 ring-honey-200" : "border-cream-300"
+                      }`}
+                      disabled={!canEditRoom}
+                      key={option.id}
+                      onClick={() => chooseRoomSurface("floor", option)}
+                      type="button"
+                    >
+                      <Image
+                        alt={`${option.name} floor texture`}
+                        className="h-14 w-full object-cover"
+                        height={96}
+                        src={option.asset}
+                        width={160}
+                      />
+                      <span className="block px-2 py-1.5 text-xs font-black leading-tight text-ink-800">{option.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
           <section className="rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
@@ -366,7 +552,11 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               placements={placements}
               remotePlayers={realtime.players}
               roomName={activeRoom.name}
+              roomPortals={adjacentRooms}
+              roomSurfaces={roomSurfaces}
               roomTheme={activeRoom.theme}
+              worldWidth={expandedWorldWidth}
+              worldHeight={baseRoomHeight}
             />
           </div>
           {!canEditRoom && (

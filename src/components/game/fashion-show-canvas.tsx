@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
-  getKeeperHairColor,
-  getKeeperSkinTone,
   getPetTone,
   keeperGaitPose,
   keeperFrame,
@@ -372,10 +370,9 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         }
 
         private applyKeeperLayerTints() {
-          const skinTone = getKeeperSkinTone(this.keeperCustomization.skinId);
-          const hairColor = getKeeperHairColor(this.keeperCustomization.hairColorId);
-          this.keeperSkinSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(skinTone.color).color);
-          this.keeperHairSprite?.setTint(PhaserModule.Display.Color.HexStringToColor(hairColor.color).color);
+          this.keeperSkinSprite?.clearTint().setAlpha(0);
+          this.keeperSprite?.clearTint().setAlpha(1);
+          this.keeperHairSprite?.clearTint().setAlpha(0);
         }
 
         private setKeeperLook(paletteId: KeeperPaletteId, pose: KeeperPose, outfitId: KeeperOutfitId) {

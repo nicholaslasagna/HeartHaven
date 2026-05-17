@@ -5,6 +5,7 @@ import sharp from "sharp";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const generatedDir = path.join(root, "public", "game-assets", "generated");
+
 const sourcePath = path.join(generatedDir, "keeper-custom-sheet.png");
 const baseOut = path.join(generatedDir, "keeper-custom-base-sheet.png");
 const skinOut = path.join(generatedDir, "keeper-skin-mask-sheet.png");
@@ -14,223 +15,170 @@ const frameWidth = 256;
 const frameHeight = 384;
 const columns = 6;
 const sourceRows = 8;
-const hairStyleRows = 8;
+const hairRows = 16;
+
+const metadata = await sharp(sourcePath).metadata();
+
+if (metadata.width !== frameWidth * columns || metadata.height !== frameHeight * sourceRows) {
+  throw new Error(`Unexpected keeper sheet size: ${metadata.width}x${metadata.height}`);
+}
+
 const channels = 4;
+const transparentBackground = { r: 0, g: 0, b: 0, alpha: 0 };
 
-const { data, info } = await sharp(sourcePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+// The visible keeper art must stay painterly. Earlier generated mask layers
+// tried to recolor skin/hair procedurally, but they broke faces, outlines,
+// and hair silhouettes. Use the finished painted sprites as the canonical
+// runtime sheet and keep the experimental recolor layers transparent.
+const { data: baseSheet, info } = await sharp(sourcePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 
-if (info.width !== frameWidth * columns || info.height !== frameHeight * sourceRows) {
-  throw new Error(`Unexpected keeper sheet size: ${info.width}x${info.height}`);
+function frameOffset(column, row, x, y) {
+  return ((row * frameHeight + y) * info.width + column * frameWidth + x) * channels;
 }
 
-const base = Buffer.from(data);
-const skinMask = Buffer.alloc(data.length);
-const hairReference = Buffer.alloc(data.length);
-const hairStyleSheet = Buffer.alloc(info.width * frameHeight * hairStyleRows * channels);
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function hsl(r, g, b) {
-  const rn = r / 255;
-  const gn = g / 255;
-  const bn = b / 255;
-  const max = Math.max(rn, gn, bn);
-  const min = Math.min(rn, gn, bn);
-  const lightness = (max + min) / 2;
-  if (max === min) return { h: 0, s: 0, l: lightness };
-  const delta = max - min;
-  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-  let hue;
-  if (max === rn) hue = (gn - bn) / delta + (gn < bn ? 6 : 0);
-  else if (max === gn) hue = (bn - rn) / delta + 2;
-  else hue = (rn - gn) / delta + 4;
-  return { h: hue * 60, s: saturation, l: lightness };
-}
-
-function sourceIndex(x, y) {
-  return (y * info.width + x) * channels;
-}
-
-function styleIndex(x, y) {
-  return (y * info.width + x) * channels;
-}
-
-function frameBody(row) {
-  return row < 4 ? "female" : "male";
-}
-
-function localPosition(x, y) {
-  return {
-    x: x % frameWidth,
-    y: y % frameHeight,
-    row: Math.floor(y / frameHeight),
-    column: Math.floor(x / frameWidth),
-  };
-}
-
-function isLikelyHair(r, g, b, a, x, y, body) {
-  if (a < 24) return false;
-  const { h, s, l } = hsl(r, g, b);
-  const hairRegion = y <= (body === "female" ? 260 : 190);
-  const brownHue = h >= 8 && h <= 42;
-  const darkEnough = l >= 0.04 && l <= 0.56;
-  const saturated = s >= 0.16;
-  const brownRatio = r > b + 18 && g > b + 5 && r >= g * 0.82;
-  const eyeRegion = x >= 72 && x <= 186 && y >= 92 && y <= 164 && l <= 0.22;
-  return hairRegion && brownHue && darkEnough && saturated && brownRatio && !eyeRegion;
-}
-
-function writeMaskPixel(buffer, index, shade, alpha) {
-  buffer[index] = shade;
-  buffer[index + 1] = shade;
-  buffer[index + 2] = shade;
-  buffer[index + 3] = alpha;
-}
-
-function isLikelyVisibleSkinPixel(r, g, b, a) {
-  if (a < 24) return false;
-  const { h, s, l } = hsl(r, g, b);
-  const warmHue = h >= 0 && h <= 58;
-  const readableSkinLightness = l >= 0.48 && l <= 0.9;
-  const balancedWarmth = r >= g * 0.92 && g >= b * 0.78 && r >= b + 18;
-  return warmHue && readableSkinLightness && s >= 0.08 && balancedWarmth;
-}
-
-for (let y = 0; y < info.height; y += 1) {
-  for (let x = 0; x < info.width; x += 1) {
-    const index = sourceIndex(x, y);
-    const local = localPosition(x, y);
-    const body = frameBody(local.row);
-    const r = data[index];
-    const g = data[index + 1];
-    const b = data[index + 2];
-    const a = data[index + 3];
-    const { l } = hsl(r, g, b);
-    const hair = isLikelyHair(r, g, b, a, local.x, local.y, body);
-
-    if (hair) {
-      const shade = clamp(Math.round(78 + l * 220), 68, 255);
-      writeMaskPixel(hairReference, index, shade, a);
-      base[index] = 0;
-      base[index + 1] = 0;
-      base[index + 2] = 0;
-      base[index + 3] = 0;
-    }
-  }
-}
-
-function paintSkinEllipse(frameColumn, row, cx, cy, rx, ry, shade = 245, alpha = 192) {
-  const startX = Math.floor(cx - rx - 2);
-  const endX = Math.ceil(cx + rx + 2);
-  const startY = Math.floor(cy - ry - 2);
-  const endY = Math.ceil(cy + ry + 2);
-  for (let localY = startY; localY <= endY; localY += 1) {
-    for (let localX = startX; localX <= endX; localX += 1) {
-      const nx = (localX - cx) / rx;
-      const ny = (localY - cy) / ry;
-      const distance = nx * nx + ny * ny;
-      if (distance > 1.12) continue;
-      const softness = clamp((1.12 - distance) / 0.18, 0, 1);
-      const x = frameColumn * frameWidth + localX;
-      const y = row * frameHeight + localY;
-      if (x < 0 || y < 0 || x >= info.width || y >= info.height) continue;
-      if (localY < (frameBody(row) === "female" ? 84 : 76)) continue;
-      const target = sourceIndex(x, y);
-      if (data[target + 3] < 20 || hairReference[target + 3] > 0) continue;
-      if (!isLikelyVisibleSkinPixel(data[target], data[target + 1], data[target + 2], data[target + 3])) continue;
-      const nextAlpha = Math.round(alpha * softness);
-      if (nextAlpha <= skinMask[target + 3]) continue;
-      skinMask[target] = shade;
-      skinMask[target + 1] = shade;
-      skinMask[target + 2] = shade;
-      skinMask[target + 3] = nextAlpha;
-    }
-  }
-}
-
-const handByPose = [
-  [[58, 220], [198, 220]],
-  [[76, 210], [185, 198]],
-  [[62, 200], [184, 212]],
-  [[96, 252], [158, 252]],
-  [[68, 220], [196, 112]],
-  [[108, 218], [148, 218]],
-];
-
-for (let row = 0; row < sourceRows; row += 1) {
-  const body = frameBody(row);
-  const outfit = row % 4;
-  for (let column = 0; column < columns; column += 1) {
-    const bodyShift = body === "female" ? 0 : -2;
-    paintSkinEllipse(column, row, 128, 112 + bodyShift, body === "female" ? 44 : 42, body === "female" ? 52 : 48, 247, 222);
-    paintSkinEllipse(column, row, 76, 122 + bodyShift, 9, 14, 235, 185);
-    paintSkinEllipse(column, row, 180, 122 + bodyShift, 9, 14, 235, 185);
-    paintSkinEllipse(column, row, 128, 166 + bodyShift, 17, 19, 232, 160);
-    handByPose[column].forEach(([x, y]) => {
-      paintSkinEllipse(column, row, x, y + (body === "female" ? 0 : -6), 12, 15, 238, 205);
-    });
-    if (body === "female" || outfit === 1) {
-      paintSkinEllipse(column, row, 104, column === 3 ? 292 : 304, 12, 28, 226, 160);
-      paintSkinEllipse(column, row, 152, column === 3 ? 292 : 304, 12, 28, 226, 160);
-    }
-  }
-}
-
-function copyHairPixel(fromX, fromY, toX, toY, alphaScale = 1) {
-  if (toX < 0 || toY < 0 || toX >= info.width || toY >= frameHeight * hairStyleRows) return;
-  const source = sourceIndex(fromX, fromY);
-  const target = styleIndex(toX, toY);
-  const alpha = Math.round(hairReference[source + 3] * alphaScale);
-  if (alpha <= 0) return;
-  hairStyleSheet[target] = hairReference[source];
-  hairStyleSheet[target + 1] = hairReference[source + 1];
-  hairStyleSheet[target + 2] = hairReference[source + 2];
-  hairStyleSheet[target + 3] = Math.max(hairStyleSheet[target + 3], alpha);
-}
-
-function buildHairStyle(bodyIndex, styleIndexInBody, poseColumn, sourceRow, mode) {
-  const targetRow = bodyIndex * 4 + styleIndexInBody;
-  const sourceFrameY = sourceRow * frameHeight;
-  const targetFrameY = targetRow * frameHeight;
+function extractFrameAlphaComponents(row, column) {
+  const candidates = new Uint8Array(frameWidth * frameHeight);
   for (let y = 0; y < frameHeight; y += 1) {
     for (let x = 0; x < frameWidth; x += 1) {
-      const isSideHair = x < 72 || x > 184;
-      const isLowerSideHair = y > (bodyIndex === 0 ? 170 : 132) && isSideHair;
-      const isFaceFringe = y < (bodyIndex === 0 ? 170 : 134);
-      const isSideTail = isSideHair && y > (bodyIndex === 0 ? 130 : 104) && y < (bodyIndex === 0 ? 258 : 184);
-      const isShortBody = y < (bodyIndex === 0 ? 214 : 156);
-      const isSidePartFall = x > (bodyIndex === 0 ? 144 : 138) && y < (bodyIndex === 0 ? 226 : 172);
-      const shouldCopy =
-        mode === "long-waves" ||
-        (mode === "soft-curls"
-          ? isShortBody || (isSideHair && y < (bodyIndex === 0 ? 230 : 168))
-          : mode === "braids"
-            ? isFaceFringe || isSideTail || !isLowerSideHair
-            : isFaceFringe || isSidePartFall || (!isSideHair && y < (bodyIndex === 0 ? 196 : 152)));
-      if (!shouldCopy) continue;
-      const alphaScale = mode === "side-part" ? 0.96 : mode === "braids" && isSideTail ? 0.92 : 1;
-      copyHairPixel(poseColumn * frameWidth + x, sourceFrameY + y, poseColumn * frameWidth + x, targetFrameY + y, alphaScale);
+      const index = frameOffset(column, row, x, y);
+      if (baseSheet[index + 3] > 12) candidates[y * frameWidth + x] = 1;
+    }
+  }
+
+  const seen = new Uint8Array(candidates.length);
+  const components = [];
+  const queue = [];
+  const neighbors = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+
+  for (let start = 0; start < candidates.length; start += 1) {
+    if (!candidates[start] || seen[start]) continue;
+    const pixels = [];
+    let minX = frameWidth;
+    let minY = frameHeight;
+    let maxX = 0;
+    let maxY = 0;
+    queue.length = 0;
+    queue.push(start);
+    seen[start] = 1;
+
+    while (queue.length > 0) {
+      const current = queue.pop();
+      pixels.push(current);
+      const x = current % frameWidth;
+      const y = Math.floor(current / frameWidth);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+
+      for (const [dx, dy] of neighbors) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= frameWidth || ny >= frameHeight) continue;
+        const next = ny * frameWidth + nx;
+        if (!candidates[next] || seen[next]) continue;
+        seen[next] = 1;
+        queue.push(next);
+      }
+    }
+
+    components.push({ pixels, minX, minY, maxX, maxY });
+  }
+
+  return components.sort((a, b) => b.pixels.length - a.pixels.length);
+}
+
+function frameBounds(row, column) {
+  const components = extractFrameAlphaComponents(row, column);
+  return components[0] ?? { pixels: [], minX: 0, minY: 0, maxX: 0, maxY: 0 };
+}
+
+function repairSeparatedFrame(row, column, referenceColumn, cutoffY = frameHeight) {
+  const [mainComponent] = cutoffY >= frameHeight
+    ? extractFrameAlphaComponents(row, column)
+    : [
+        (() => {
+          const pixels = [];
+          let minX = frameWidth;
+          let minY = frameHeight;
+          let maxX = 0;
+          let maxY = 0;
+          for (let y = 0; y < cutoffY; y += 1) {
+            for (let x = 0; x < frameWidth; x += 1) {
+              const source = frameOffset(column, row, x, y);
+              if (baseSheet[source + 3] <= 12) continue;
+              const pixel = y * frameWidth + x;
+              pixels.push(pixel);
+              minX = Math.min(minX, x);
+              minY = Math.min(minY, y);
+              maxX = Math.max(maxX, x);
+              maxY = Math.max(maxY, y);
+            }
+          }
+          return { pixels, minX, minY, maxX, maxY };
+        })(),
+      ];
+  const reference = frameBounds(row, referenceColumn);
+  if (!mainComponent || reference.pixels.length === 0) return;
+
+  const frameBuffer = Buffer.alloc(frameWidth * frameHeight * channels);
+  const dy = Math.max(0, Math.min(frameHeight - 1, reference.maxY - mainComponent.maxY));
+
+  for (const pixel of mainComponent.pixels) {
+    const x = pixel % frameWidth;
+    const y = Math.floor(pixel / frameWidth);
+    const targetY = y + dy;
+    if (targetY < 0 || targetY >= frameHeight) continue;
+    const source = frameOffset(column, row, x, y);
+    const target = (targetY * frameWidth + x) * channels;
+    frameBuffer[target] = baseSheet[source];
+    frameBuffer[target + 1] = baseSheet[source + 1];
+    frameBuffer[target + 2] = baseSheet[source + 2];
+    frameBuffer[target + 3] = baseSheet[source + 3];
+  }
+
+  for (let y = 0; y < frameHeight; y += 1) {
+    for (let x = 0; x < frameWidth; x += 1) {
+      const target = frameOffset(column, row, x, y);
+      const source = (y * frameWidth + x) * channels;
+      baseSheet[target] = frameBuffer[source];
+      baseSheet[target + 1] = frameBuffer[source + 1];
+      baseSheet[target + 2] = frameBuffer[source + 2];
+      baseSheet[target + 3] = frameBuffer[source + 3];
     }
   }
 }
 
-const hairModes = ["long-waves", "soft-curls", "braids", "side-part"];
-for (let bodyIndex = 0; bodyIndex < 2; bodyIndex += 1) {
-  const sourceRow = bodyIndex * 4;
-  for (let style = 0; style < hairModes.length; style += 1) {
-    for (let pose = 0; pose < columns; pose += 1) {
-      buildHairStyle(bodyIndex, style, pose, sourceRow, hairModes[style]);
-    }
-  }
-}
+repairSeparatedFrame(2, 4, 0, 276);
 
-await sharp(base, { raw: { width: info.width, height: info.height, channels } }).png().toFile(baseOut);
-await sharp(skinMask, { raw: { width: info.width, height: info.height, channels } }).png().toFile(skinOut);
-await sharp(hairStyleSheet, { raw: { width: info.width, height: frameHeight * hairStyleRows, channels } }).png().toFile(hairOut);
+await sharp(baseSheet, { raw: { width: info.width, height: info.height, channels } }).png().toFile(baseOut);
+await sharp({
+  create: {
+    width: frameWidth * columns,
+    height: frameHeight * sourceRows,
+    channels: 4,
+    background: transparentBackground,
+  },
+})
+  .png()
+  .toFile(skinOut);
+await sharp({
+  create: {
+    width: frameWidth * columns,
+    height: frameHeight * hairRows,
+    channels: 4,
+    background: transparentBackground,
+  },
+})
+  .png()
+  .toFile(hairOut);
 
-console.log(`Generated:
+console.log(`Generated painterly keeper runtime sheets:
 - ${path.relative(root, baseOut)}
 - ${path.relative(root, skinOut)}
 - ${path.relative(root, hairOut)}`);

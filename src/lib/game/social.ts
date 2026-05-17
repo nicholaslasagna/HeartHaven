@@ -87,7 +87,14 @@ export function generateFriendCode(): FriendCode {
 }
 
 export function isFriendCodeShape(value: string): boolean {
-  return /^HH-[A-Z]{4,6}-[0-9]{2,4}$/.test(value.trim().toUpperCase());
+  // Generation produces EXACTLY 5 letters + 3 digits. The original regex
+  // (`{4,6}` letters, `{2,4}` digits) was deliberately permissive but it
+  // accepted shapes that the generator never produces — which meant a
+  // mistyped code that happened to land in the lax range would pass
+  // shape validation and then 404 on lookup, confusing senders. Tighten
+  // to the exact shape so failures surface earlier and with a clearer
+  // "double-check the code" message.
+  return /^HH-[A-Z]{5}-[0-9]{3}$/.test(value.trim().toUpperCase());
 }
 
 export function normalizeFriendCode(value: string): FriendCode {
@@ -187,6 +194,18 @@ export function getSocialState(): SocialState {
 export function setSelfDisplayName(displayName: string) {
   const state = rawRead();
   rawWrite({ ...state, selfDisplayName: normalizePublicDisplayName(displayName, state.selfDisplayName) });
+}
+
+/**
+ * Internal-ish setter — used by the invite bridge when a collision-retry
+ * needs to swap the local code out for a fresh one. UI code shouldn't
+ * call this directly; use `regenerateFriendCode` instead.
+ */
+export function setSelfCode(code: FriendCode) {
+  const state = rawRead();
+  const normalized = normalizeFriendCode(code);
+  if (!isFriendCodeShape(normalized)) return;
+  rawWrite({ ...state, selfCode: normalized });
 }
 
 /** Reset the friend code (rarely needed — exposed for the account page). */

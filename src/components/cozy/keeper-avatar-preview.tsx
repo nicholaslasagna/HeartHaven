@@ -2,11 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import {
-  getKeeperHairColor,
-  getKeeperSkinTone,
   keeperFrame,
-  keeperHairFrame,
-  keeperSkinFrame,
   type KeeperBodyId,
   type KeeperHairColorId,
   type KeeperHairStyleId,
@@ -52,40 +48,8 @@ function drawFrame(ctx: CanvasRenderingContext2D, image: HTMLImageElement, frame
   ctx.drawImage(image, sx, sy, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
 }
 
-function drawTintedFrame(
-  ctx: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  frame: number,
-  color: string,
-  blendMode: GlobalCompositeOperation,
-  alpha = 1,
-) {
-  const layer = document.createElement("canvas");
-  layer.width = frameWidth;
-  layer.height = frameHeight;
-  const layerCtx = layer.getContext("2d");
-  if (!layerCtx) return;
-  drawFrame(layerCtx, image, frame);
-  layerCtx.globalCompositeOperation = "source-in";
-  layerCtx.fillStyle = color;
-  layerCtx.fillRect(0, 0, frameWidth, frameHeight);
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.globalCompositeOperation = blendMode;
-  ctx.drawImage(layer, 0, 0);
-  ctx.restore();
-}
-
-export function KeeperAvatarPreview({
-  bodyId,
-  skinId,
-  hairStyleId,
-  hairColorId,
-  paletteId,
-  outfitId,
-  pose = "idle",
-  className,
-}: KeeperAvatarPreviewProps) {
+export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
+  const { bodyId, paletteId, outfitId, pose = "idle", className } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -95,22 +59,16 @@ export function KeeperAvatarPreview({
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const [base, skin, hair] = await Promise.all([
-        loadPreviewImage("/game-assets/generated/keeper-custom-base-sheet.png"),
-        loadPreviewImage("/game-assets/generated/keeper-skin-mask-sheet.png"),
-        loadPreviewImage("/game-assets/generated/keeper-hair-style-sheet.png"),
-      ]);
+      const base = await loadPreviewImage("/game-assets/generated/keeper-custom-base-sheet.png");
       if (!active) return;
       ctx.clearRect(0, 0, frameWidth, frameHeight);
       drawFrame(ctx, base, keeperFrame(paletteId, pose, outfitId, bodyId));
-      drawTintedFrame(ctx, skin, keeperSkinFrame(pose, outfitId, bodyId), getKeeperSkinTone(skinId).color, "source-over", 0.9);
-      drawTintedFrame(ctx, hair, keeperHairFrame(hairStyleId, pose, bodyId), getKeeperHairColor(hairColorId).color, "source-over", 0.96);
     }
     void renderPreview();
     return () => {
       active = false;
     };
-  }, [bodyId, hairColorId, hairStyleId, outfitId, paletteId, pose, skinId]);
+  }, [bodyId, outfitId, paletteId, pose]);
 
   return (
     <canvas

@@ -1,15 +1,18 @@
 import Link from "next/link";
-import { BookHeart, Gamepad2, HeartHandshake, Home, Inbox, Package, PawPrint, ShieldCheck, ShoppingBag, Users } from "lucide-react";
+import { Gamepad2, HeartHandshake, Home, Inbox, Megaphone, Package, PawPrint, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
+import { AnnouncementsLoginToast } from "@/components/game/announcements-login-toast";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
+import { PartyFollowToast } from "@/components/game/party-follow-toast";
 import { RewardToastHost } from "@/components/game/reward-toast-host";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { AnnouncementsNavBadge } from "@/components/layout/announcements-nav-badge";
 import { KeeperAccountButton } from "@/components/layout/keeper-account-button";
 import { SeasonalEventPill } from "@/components/seasonal/seasonal-event-pill";
 import { ThemeModeDock } from "@/components/theme/theme-mode-dock";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+const navItems: Array<{ href: string; label: string; icon: typeof Home; badge?: "announcements" }> = [
   { href: "/app/area", label: "World", icon: Home },
   { href: "/app/pet", label: "Studio", icon: PawPrint },
   { href: "/app/partner-garden", label: "Partner", icon: HeartHandshake },
@@ -18,7 +21,10 @@ const navItems = [
   { href: "/app/shop", label: "Shop", icon: ShoppingBag },
   { href: "/app/inventory", label: "Inventory", icon: Package },
   { href: "/app/mailbox", label: "Mailbox", icon: Inbox },
-  { href: "/app/memory-book", label: "Memory Book", icon: BookHeart },
+  // Memory Book route now houses dev-managed announcements + reward
+  // claims. Path is kept on `/app/memory-book` so existing bookmarks +
+  // analytics survive — only the label and badge are new.
+  { href: "/app/memory-book", label: "Announcements", icon: Megaphone, badge: "announcements" },
   { href: "/app/account", label: "Account", icon: ShieldCheck },
 ];
 
@@ -56,7 +62,8 @@ export function GameShell({ children }: { children: React.ReactNode }) {
                 )}
               >
                 <item.icon className="size-4" />
-                {item.label}
+                <span>{item.label}</span>
+                {item.badge === "announcements" && <AnnouncementsNavBadge />}
               </Link>
             ))}
           </nav>
@@ -64,6 +71,8 @@ export function GameShell({ children }: { children: React.ReactNode }) {
         <main className="min-w-0 max-w-full overflow-x-hidden">{children}</main>
       </div>
       <RewardToastHost />
+      <PartyFollowToast />
+      <AnnouncementsLoginToast />
     </div>
   );
 }
