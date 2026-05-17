@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Gamepad2, HeartHandshake, Home, Inbox, Megaphone, Package, PawPrint, ShieldCheck, ShoppingBag, Users } from "lucide-react";
+import { BanWatchdog } from "@/components/auth/ban-watchdog";
 import { Logo } from "@/components/brand/logo";
 import { AnnouncementsLoginToast } from "@/components/game/announcements-login-toast";
 import { BanNotificationsHost } from "@/components/game/ban-notifications-host";
@@ -75,6 +76,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
       <PartyFollowToast />
       <AnnouncementsLoginToast />
       <BanNotificationsHost />
+      <BanWatchdog />
     </div>
   );
 }

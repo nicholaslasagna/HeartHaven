@@ -120,8 +120,19 @@ export function useGardenRealtime({
     () => normalizeFriendCode(hostFriendCode ?? (localFriendCode || getSocialState().selfCode)),
     [hostFriendCode, localFriendCode],
   );
+  // Channel topic = `garden:<hostCode>.<gardenId>`. We deliberately use `.`
+  // as the inner separator, NOT `:`. Supabase Realtime parses multi-colon
+  // topic names as postgres_changes subscriptions (the canonical form is
+  // `realtime:<schema>:<table>:<filter>`), so a topic like
+  // `garden:HH-XXXXX-NNN:caspers-moonberry-beds` gets misinterpreted and
+  // the subscribe call closes immediately — which is what was producing
+  // the "Garden visit connection closed" status on every load.
+  //
+  // Neither friend codes (regex `[^A-Z0-9-]` stripped) nor garden ids
+  // (regex `[^a-zA-Z0-9_-]` stripped) can contain a dot, so the separator
+  // is unambiguous.
   const channelKey = useMemo(
-    () => `${normalizedHostCode || "anon"}:${normalizedGardenId}`,
+    () => `${normalizedHostCode || "anon"}.${normalizedGardenId}`,
     [normalizedHostCode, normalizedGardenId],
   );
 

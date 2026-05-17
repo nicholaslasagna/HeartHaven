@@ -34,7 +34,15 @@ import {
 } from "@/lib/game/avatar-customization";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
-import { PET_VITALS_EVENT, getPetMood, getPetVitals, type PetMood as CompanionMood } from "@/lib/game/pet-state";
+import {
+  PET_VITALS_EVENT,
+  getPetBehavior,
+  getPetMood,
+  getPetVitals,
+  startPetNap,
+  type PetBehavior,
+  type PetMood as CompanionMood,
+} from "@/lib/game/pet-state";
 import { defaultRoomSurfaceSelection, type RoomSurfaceSelection } from "@/lib/game/room-surfaces";
 import type { FacingDirection, RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
@@ -258,6 +266,13 @@ export function RoomCanvas({
         private petFacing: FacingDirection = "right";
         private companionMood: CompanionMood = getPetMood(getPetVitals());
         private companionMoodHandler?: (event: Event) => void;
+        // Vitals-derived behaviour modifiers. See garden-canvas for the
+        // full reasoning — same model, same five flags, applied every
+        // frame in `updatePet`.
+        private petBehavior: PetBehavior = getPetBehavior();
+        private petFleeing = false;
+        private petFleeTarget?: { x: number; y: number };
+        private petWasNapping = false;
         private textInputFocused = false;
         private textInputFocusHandler?: (event: Event) => void;
         private blinkTimer = 0;
@@ -1220,9 +1235,13 @@ export function RoomCanvas({
           };
           // Companion mood is the vitals-derived "blissful/happy/content/restless/lonely"
           // reading. We keep it cached so the pet's resting pose subtly reflects how
-          // well-tended they've been — Webkinz-soul, on the canvas.
+          // well-tended they've been — Webkinz-soul, on the canvas. The same handler
+          // refreshes the behaviour cache (speed/dirty/disobeys/exhaustion).
           this.companionMoodHandler = () => {
-            this.companionMood = getPetMood(getPetVitals());
+            const vitals = getPetVitals();
+            this.companionMood = getPetMood(vitals);
+            this.petBehavior = getPetBehavior(vitals);
+            this.applyPetAppearance();
           };
           this.textInputFocusHandler = (event: Event) => {
             this.textInputFocused = Boolean((event as CustomEvent<boolean>).detail);
@@ -1585,13 +1604,25 @@ export function RoomCanvas({
         }
 
         private tintPetForTone() {
+          this.applyPetAppearance();
+        }
+
+        /** Combine the customisation tone with a muddy overlay when the
+         *  pet is dirty. Same logic as garden-canvas — single tint per
+         *  sprite, dirty wins. */
+        private applyPetAppearance() {
           if (!this.petSprite) return;
-          const tone = getPetTone(this.petCustomization.toneId);
-          const tint = PhaserModule.Display.Color.HexStringToColor(tone.color).color;
+          if (this.petBehavior.dirty) {
+            const muddy = PhaserModule.Display.Color.HexStringToColor("#7A5A3F").color;
+            this.petSprite.setTint(muddy);
+            return;
+          }
           if (this.petCustomization.toneId === "cream") {
             this.petSprite.clearTint();
             return;
           }
+          const tone = getPetTone(this.petCustomization.toneId);
+          const tint = PhaserModule.Display.Color.HexStringToColor(tone.color).color;
           this.petSprite.setTint(tint);
         }
 
@@ -2029,6 +2060,82 @@ export function RoomCanvas({
         }
 
         private updatePet(delta: number) {
+          // Refresh behaviour cache. See garden-canvas for the full
+          // walkthrough — same model, same exhaustion flow.
+          if (!this.petBehavior.napping) this.petBehavior = getPetBehavior();
+
+          // ── NAPPING ─────────────────────────────────────────────────
+          if (this.petBehavior.napping) {
+            this.petWasNapping = true;
+            this.pet.setVisible(false);
+            this.petShadow?.setVisible(false);
+            this.petBehavior = getPetBehavior();
+            return;
+          }
+
+          // ── WAKING UP ───────────────────────────────────────────────
+          if (this.petWasNapping && !this.petBehavior.napping) {
+            this.petWasNapping = false;
+            this.petFleeing = false;
+            this.petFleeTarget = undefined;
+            // In a room, the safe wake-up spot is beside the keeper at
+            // the canonical offset. Snap to it so the pet doesn't appear
+            // half-inside a couch.
+            this.pet.setPosition(this.avatar.x + 54, this.avatar.y + 24);
+            this.pet.setVisible(true);
+            this.petShadow?.setVisible(true);
+            this.petMood = "follow";
+            this.petMoodTimer = 0;
+            setStatus(`${this.petCustomization.speciesId} woke up refreshed.`);
+          }
+
+          // ── FLEEING ─────────────────────────────────────────────────
+          // Pet shuffles to the nearest world edge, then collapses into
+          // the 5-minute nap. The room world is smaller than the garden
+          // so the edge isn't far away, but the slow pace still gives
+          // the keeper a chance to notice + intervene.
+          if (this.petFleeing) {
+            const target = this.petFleeTarget;
+            if (!target) {
+              this.petFleeing = false;
+            } else {
+              const sleepySpeed = 0.10 * delta;
+              const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, target.x, target.y);
+              if (distance < 12) {
+                this.pet.setVisible(false);
+                this.petShadow?.setVisible(false);
+                this.petFleeing = false;
+                this.petFleeTarget = undefined;
+                startPetNap();
+                this.petBehavior = getPetBehavior();
+                this.petWasNapping = true;
+                return;
+              }
+              const angle = PhaserModule.Math.Angle.Between(this.pet.x, this.pet.y, target.x, target.y);
+              this.pet.setPosition(
+                this.pet.x + Math.cos(angle) * sleepySpeed,
+                this.pet.y + Math.sin(angle) * sleepySpeed,
+              );
+              this.petFacing = Math.cos(angle) < 0 ? "left" : "right";
+              this.petSprite.setFlipX(this.petFacing === "left");
+              this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+              this.applyPetLocomotion(true, "idle");
+              this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
+              this.petShadow.setDepth(this.pet.y - 1);
+              return;
+            }
+          }
+
+          // ── EXHAUSTED → START FLEE ─────────────────────────────────
+          if (this.petBehavior.exhausted && !this.petFleeing) {
+            this.petFleeing = true;
+            const worldWidth = this.cameras.main.worldView.width || ROOM_WIDTH;
+            const fleeLeft = this.pet.x < worldWidth / 2;
+            this.petFleeTarget = { x: fleeLeft ? -80 : worldWidth + 80, y: this.pet.y };
+            setStatus(`${this.petCustomization.speciesId} is exhausted — shuffling off to nap.`);
+            return;
+          }
+
           this.petMoodTimer += delta;
           this.blinkTimer += delta;
 
@@ -2039,10 +2146,10 @@ export function RoomCanvas({
           }
 
           // Companion-controlled branch — WASD drives the pet directly at
-          // ×1.6 speed and the auto-follow is suspended.
+          // ×1.6 speed (modulated by joy) and the auto-follow is suspended.
           if (this.playMode === "companion") {
             const keyboard = this.readKeyboard();
-            const ctlSpeed = 0.23 * 1.6 * delta;
+            const ctlSpeed = 0.23 * 1.6 * delta * this.petBehavior.speedMultiplier;
             const prevX = this.pet.x;
             let petMoving = false;
             if (keyboard.x !== 0 || keyboard.y !== 0) {
@@ -2128,7 +2235,9 @@ export function RoomCanvas({
           const prevPetX = this.pet.x;
 
           if (distance > 10) {
-            const followSpeed = this.petMood === "sleep" ? 0.025 : 0.055;
+            // Joy scales the follow lerp so a sad companion noticeably
+            // drags behind the keeper.
+            const followSpeed = (this.petMood === "sleep" ? 0.025 : 0.055) * this.petBehavior.speedMultiplier;
             this.pet.x = PhaserModule.Math.Linear(this.pet.x, targetX, followSpeed);
             this.pet.y = PhaserModule.Math.Linear(this.pet.y, targetY, followSpeed);
             petMoving = this.petMood !== "sleep";

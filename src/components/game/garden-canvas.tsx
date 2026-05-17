@@ -36,7 +36,15 @@ import {
 } from "@/lib/game/avatar-customization";
 import { recordActivity } from "@/lib/game/activity";
 import { playCozyCue } from "@/lib/game/cozy-audio";
-import { PET_VITALS_EVENT, getPetMood, getPetVitals, type PetMood } from "@/lib/game/pet-state";
+import {
+  PET_VITALS_EVENT,
+  getPetBehavior,
+  getPetMood,
+  getPetVitals,
+  startPetNap,
+  type PetBehavior,
+  type PetMood,
+} from "@/lib/game/pet-state";
 import { ZONE_DISCOVERIES, isItemFound, markDiscoveryFound, nearestHidden } from "@/lib/game/discoveries-store";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import { getGardenDecorArt } from "@/lib/game/item-art";
@@ -574,6 +582,18 @@ export function GardenCanvas({
         private petBobTween?: Phaser.Tweens.Tween;
         private companionMood: PetMood = getPetMood(getPetVitals());
         private companionMoodHandler?: (event: Event) => void;
+        // Vitals-derived behaviour modifiers. Cached at the scene level so
+        // per-frame reads are a property access; refreshed whenever the
+        // PET_VITALS_EVENT fires (care actions, decay events, nap end).
+        private petBehavior: PetBehavior = getPetBehavior();
+        /** True while the companion is shuffling off-screen to nap because
+         *  energy hit 0. Set by the `updatePet` exhaustion branch. */
+        private petFleeing = false;
+        /** Where the fleeing companion is heading. Picked once per flee
+         *  to keep the path stable across frames. */
+        private petFleeTarget?: { x: number; y: number };
+        /** Mirrors `petBehavior.napping` for state-transition detection. */
+        private petWasNapping = false;
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
         private wasd?: Record<"up" | "left" | "down" | "right" | "rotate", Phaser.Input.Keyboard.Key>;
         private target?: Phaser.Math.Vector2;
@@ -1592,6 +1612,17 @@ export function GardenCanvas({
             setStatus("Swap to your companion first — sniffing is a pet ability.");
             return;
           }
+          // Vitals-gated obedience: a hungry companion refuses to focus
+          // and a sleeping one obviously can't sniff. Both states clear
+          // automatically once the keeper feeds / waits out the nap.
+          if (this.petBehavior.napping) {
+            setStatus("Your companion is asleep — let them rest.");
+            return;
+          }
+          if (this.petBehavior.disobeys) {
+            setStatus("Your companion is too hungry to focus — feed them first.");
+            return;
+          }
           if (this.time.now < this.sniffCooldownUntil) return;
           this.sniffCooldownUntil = this.time.now + 650;
           try {
@@ -1819,8 +1850,13 @@ export function GardenCanvas({
           };
           // Vitals-derived companion mood keeps the resting pose in sync with how
           // well-tended the pet has been — the soul of the loop, on the canvas.
+          // Also recomputes the behaviour cache (speed/dirty/disobeys/exhaustion)
+          // so the next frame picks up care actions immediately.
           this.companionMoodHandler = () => {
-            this.companionMood = getPetMood(getPetVitals());
+            const vitals = getPetVitals();
+            this.companionMood = getPetMood(vitals);
+            this.petBehavior = getPetBehavior(vitals);
+            this.applyPetAppearance();
           };
           this.textInputFocusHandler = (event: Event) => {
             this.textInputFocused = Boolean((event as CustomEvent<boolean>).detail);
@@ -2189,13 +2225,27 @@ export function GardenCanvas({
         }
 
         private tintPetForTone() {
+          this.applyPetAppearance();
+        }
+
+        /** Combine the customisation tone with a muddy overlay when the
+         *  pet is dirty. Phaser only supports one tint per sprite, so we
+         *  pick the appropriate single colour and apply it. When clean
+         *  the original tone returns. */
+        private applyPetAppearance() {
           if (!this.petSprite) return;
+          // Dirty wins over tone — the keeper needs to see the neglect.
+          if (this.petBehavior.dirty) {
+            const muddy = PhaserModule.Display.Color.HexStringToColor("#7A5A3F").color;
+            this.petSprite.setTint(muddy);
+            return;
+          }
           const tone = getPetTone(this.petCustomization.toneId);
-          const tint = PhaserModule.Display.Color.HexStringToColor(tone.color).color;
           if (this.petCustomization.toneId === "cream") {
             this.petSprite.clearTint();
             return;
           }
+          const tint = PhaserModule.Display.Color.HexStringToColor(tone.color).color;
           this.petSprite.setTint(tint);
         }
 
@@ -2336,7 +2386,9 @@ export function GardenCanvas({
         private updatePetController(delta: number) {
           if (!this.pet) return;
           const keyboard = this.readKeyboard();
-          const speed = 0.24 * 1.6 * delta;
+          // Joy modulates speed: a sad companion plods, a happy one zips.
+          // `speedMultiplier` ranges 0.5 (no joy) → 1.0 (full joy).
+          const speed = 0.24 * 1.6 * delta * this.petBehavior.speedMultiplier;
           const prevPetX = this.pet.x;
           let petMoving = false;
           let petMoveDx = 0;
@@ -2404,6 +2456,100 @@ export function GardenCanvas({
 
         private updatePet(delta: number) {
           if (!this.pet) return;
+          // Refresh the behaviour cache. Cheap (one localStorage read
+          // through `getPetVitals`), but skips work during nap because
+          // we want the cached `napping` flag to stay sticky until the
+          // PET_VITALS_EVENT from `getPetVitals`'s auto-resolve flips it.
+          if (!this.petBehavior.napping) this.petBehavior = getPetBehavior();
+
+          // ── NAPPING ─────────────────────────────────────────────────
+          // Hide the pet entirely. `getPetVitals` auto-credits +25%
+          // energy and clears `napUntil` when the 5-minute window
+          // elapses, which fires PET_VITALS_EVENT and runs the handler
+          // that flips `petBehavior.napping` back to false.
+          if (this.petBehavior.napping) {
+            this.petWasNapping = true;
+            this.pet.setVisible(false);
+            this.petShadow?.setVisible(false);
+            // Poll the auto-resolve once per second so the nap ends
+            // promptly even without external events firing.
+            if (Math.floor(this.time.now / 1000) % 1 === 0) {
+              this.petBehavior = getPetBehavior();
+            }
+            return;
+          }
+
+          // ── WAKING UP ───────────────────────────────────────────────
+          // Just-resolved nap. Restore visibility and snap the pet back
+          // to a sensible spot beside the keeper so it doesn't "warp in"
+          // halfway through a wall.
+          if (this.petWasNapping && !this.petBehavior.napping) {
+            this.petWasNapping = false;
+            this.petFleeing = false;
+            this.petFleeTarget = undefined;
+            const follow = this.companionFollowTarget();
+            this.pet.setPosition(follow.x, follow.y);
+            this.pet.setVisible(true);
+            this.petShadow?.setVisible(true);
+            this.petMood = "happy";
+            this.petMoodTimer = 0;
+            setStatus(`${this.petCustomization.speciesId} woke up refreshed.`);
+          }
+
+          // ── FLEEING ─────────────────────────────────────────────────
+          // Pet ran out of energy — shuffle off the edge of the world,
+          // then collapse into a nap. The flee uses the dimmest possible
+          // speed so the keeper has time to notice and feed/rest them
+          // before they're gone.
+          if (this.petFleeing) {
+            const target = this.petFleeTarget;
+            if (!target) {
+              this.petFleeing = false;
+            } else {
+              const sleepySpeed = 0.10 * delta;
+              const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, target.x, target.y);
+              if (distance < 12) {
+                // Reached the off-screen target. Hide + start the nap timer.
+                this.pet.setVisible(false);
+                this.petShadow?.setVisible(false);
+                this.petFleeing = false;
+                this.petFleeTarget = undefined;
+                startPetNap();
+                this.petBehavior = getPetBehavior();
+                this.petWasNapping = true;
+                return;
+              }
+              const angle = PhaserModule.Math.Angle.Between(this.pet.x, this.pet.y, target.x, target.y);
+              const nextX = this.pet.x + Math.cos(angle) * sleepySpeed;
+              const nextY = this.pet.y + Math.sin(angle) * sleepySpeed;
+              this.pet.setPosition(nextX, nextY);
+              this.petFacing = Math.cos(angle) < 0 ? "left" : "right";
+              this.petSprite.setFlipX(this.petFacing === "left");
+              this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+              this.applyPetLocomotion(true, "idle");
+              this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
+              this.petShadow.setDepth(this.pet.y - 1);
+              return;
+            }
+          }
+
+          // ── EXHAUSTED → START FLEE ─────────────────────────────────
+          if (this.petBehavior.exhausted && !this.petFleeing) {
+            this.petFleeing = true;
+            // Flee toward whichever world edge is closer. Companion drifts
+            // off the side of the map — easier to "lose" them than to make
+            // them stand in the middle awkwardly.
+            const fleeLeft = this.pet.x < GARDEN_WORLD_WIDTH / 2;
+            this.petFleeTarget = {
+              x: fleeLeft ? -120 : GARDEN_WORLD_WIDTH + 120,
+              y: this.pet.y,
+            };
+            setStatus(`${this.petCustomization.speciesId} is exhausted — wandering off for a nap.`);
+            // Don't continue with normal pet logic this frame; the next
+            // frame will hit the FLEEING branch above.
+            return;
+          }
+
           this.petMoodTimer += delta;
           // Long calm period before flipping mood — the previous 5.2s
           // cycle made the companion feel like it was constantly twitching
@@ -2428,9 +2574,12 @@ export function GardenCanvas({
           let petMoving = false;
           const prevPetX = this.pet.x;
           if (distance > 16) {
+            // Joy scales the lerp factor so a sad companion drifts in
+            // slowly — visible even when the keeper just walks normally.
+            const lerp = 0.055 * this.petBehavior.speedMultiplier;
             const next = this.constrainAvatarToWalkable(
-              PhaserModule.Math.Linear(this.pet.x, targetX, 0.055),
-              PhaserModule.Math.Linear(this.pet.y, targetY, 0.055),
+              PhaserModule.Math.Linear(this.pet.x, targetX, lerp),
+              PhaserModule.Math.Linear(this.pet.y, targetY, lerp),
             );
             this.pet.setPosition(next.x, next.y);
             this.petMood = "follow";

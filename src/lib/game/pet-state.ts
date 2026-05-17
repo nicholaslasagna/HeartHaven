@@ -40,6 +40,36 @@ export type PetVitals = {
   updatedAt: number;
   /** Wall-clock ms of the last time each care action was performed. */
   lastActionAt: Record<PetCareAction, number>;
+  /** When the companion is napping (because energy hit 0), this is the
+   *  wall-clock ms the nap ends. The next `getPetVitals()` read after
+   *  that time auto-credits +25% energy and clears the field. While
+   *  set + in the future, canvases hide the pet (it's "off screen
+   *  asleep"). */
+  napUntil?: number;
+};
+
+/** Derived behaviour modifiers that the canvas reads each frame. Keeps
+ *  the magic numbers in one place so room + garden + park behave
+ *  identically. */
+export type PetBehavior = {
+  /** Multiplier applied to every pet movement speed (follow + companion
+   *  + flee). 1.0 = full joy, 0.5 = miserable. Smooth across the range
+   *  so the player feels the change before joy bottoms out. */
+  speedMultiplier: number;
+  /** True when cleanliness is critically low — the canvas tints the
+   *  pet with a muddy overlay so the keeper can SEE the neglect. */
+  dirty: boolean;
+  /** True when the companion is too hungry to obey commands — sniff
+   *  refuses, companion-mode inputs are ignored. */
+  disobeys: boolean;
+  /** True when energy has bottomed out. The canvas transitions into
+   *  the "wander off-screen + nap" state on the next frame, and a
+   *  napUntil timestamp is recorded so the pet stays asleep for 5
+   *  minutes even across navigation. */
+  exhausted: boolean;
+  /** Whether a nap is currently in progress (napUntil > now). The
+   *  canvas hides the pet sprite while true. */
+  napping: boolean;
 };
 
 export type PetMood = "blissful" | "happy" | "content" | "restless" | "lonely";
@@ -69,6 +99,15 @@ const CARE_ACTIONS: Record<
 
 const VITAL_KEYS: PetVitalKey[] = ["happiness", "fullness", "energy", "cleanliness"];
 
+/** How long a pet stays asleep when energy bottoms out. 5 minutes. */
+export const PET_NAP_DURATION_MS = 5 * 60_000;
+/** How much energy a completed nap restores (as a percent of the 0-100 bar). */
+export const PET_NAP_ENERGY_RESTORE = 25;
+/** Thresholds for derived behaviour (kept here so canvases stay in sync). */
+const DIRTY_THRESHOLD = 10;
+const HUNGRY_THRESHOLD = 5;
+const EXHAUSTED_THRESHOLD = 5;
+
 function clamp(value: number) {
   return Math.max(0, Math.min(100, value));
 }
@@ -92,6 +131,7 @@ function rawRead(): PetVitals {
     if (!raw) return freshVitals();
     const parsed = JSON.parse(raw) as Partial<PetVitals>;
     const base = freshVitals();
+    const napUntilRaw = Number(parsed.napUntil ?? 0);
     return {
       happiness: clamp(Number(parsed.happiness ?? base.happiness)),
       fullness: clamp(Number(parsed.fullness ?? base.fullness)),
@@ -99,6 +139,7 @@ function rawRead(): PetVitals {
       cleanliness: clamp(Number(parsed.cleanliness ?? base.cleanliness)),
       updatedAt: Number(parsed.updatedAt ?? base.updatedAt),
       lastActionAt: { ...base.lastActionAt, ...(parsed.lastActionAt ?? {}) },
+      napUntil: Number.isFinite(napUntilRaw) && napUntilRaw > 0 ? napUntilRaw : undefined,
     };
   } catch {
     return freshVitals();
@@ -131,9 +172,66 @@ function decayed(vitals: PetVitals, now = Date.now()): PetVitals {
   return { ...vitals, happiness, fullness, energy, cleanliness };
 }
 
-/** The current, decay-adjusted vitals. Pure read — does not persist. */
+/** The current, decay-adjusted vitals. Pure read — except for the
+ *  one-shot nap-completion path, which persists the energy bump so the
+ *  next reader sees the restored value. Auto-clearing the `napUntil`
+ *  here means there's only ONE place in the codebase that knows about
+ *  the nap timer; canvases just react to whatever `napping` reports. */
 export function getPetVitals(): PetVitals {
-  return decayed(rawRead());
+  const stored = rawRead();
+  // Resolve a completed nap: if napUntil has passed, credit +25% energy
+  // (capped at 100), clear napUntil, persist, and dispatch the event so
+  // listening UI re-renders.
+  if (stored.napUntil && stored.napUntil <= Date.now()) {
+    const realized = decayed(stored);
+    const next: PetVitals = {
+      ...realized,
+      energy: clamp(realized.energy + PET_NAP_ENERGY_RESTORE),
+      updatedAt: Date.now(),
+      napUntil: undefined,
+    };
+    rawWrite(next);
+    return next;
+  }
+  return decayed(stored);
+}
+
+/** Derive movement / appearance / obedience flags from current vitals. */
+export function getPetBehavior(vitals: PetVitals = getPetVitals()): PetBehavior {
+  // Joy → speed: 100 joy = 1.0×, 0 joy = 0.5×. Smooth linear so the
+  // keeper notices the slowdown across the range, not just at the
+  // bottom.
+  const speedMultiplier = 0.5 + 0.5 * (clamp(vitals.happiness) / 100);
+  const napping = Boolean(vitals.napUntil && vitals.napUntil > Date.now());
+  return {
+    speedMultiplier,
+    dirty: vitals.cleanliness <= DIRTY_THRESHOLD,
+    disobeys: vitals.fullness <= HUNGRY_THRESHOLD,
+    // An already-napping pet isn't "exhausted" in the trigger sense —
+    // it's already addressing the exhaustion. This prevents the canvas
+    // from re-triggering the flee animation every frame mid-nap.
+    exhausted: !napping && vitals.energy <= EXHAUSTED_THRESHOLD,
+    napping,
+  };
+}
+
+/** Start a 5-minute nap. Idempotent: a nap already in progress returns
+ *  its existing end timestamp. Returns the wall-clock ms when the nap
+ *  ends so the caller can schedule a wake-up if it wants to. */
+export function startPetNap(): number {
+  const stored = rawRead();
+  if (stored.napUntil && stored.napUntil > Date.now()) return stored.napUntil;
+  const napUntil = Date.now() + PET_NAP_DURATION_MS;
+  rawWrite({ ...stored, napUntil, updatedAt: Date.now() });
+  return napUntil;
+}
+
+/** Cancel an in-progress nap without crediting energy. Used by dev/reset
+ *  flows; the keeper-facing app doesn't currently call it. */
+export function cancelPetNap(): void {
+  const stored = rawRead();
+  if (!stored.napUntil) return;
+  rawWrite({ ...stored, napUntil: undefined, updatedAt: Date.now() });
 }
 
 export function getPetMood(vitals: PetVitals = getPetVitals()): PetMood {

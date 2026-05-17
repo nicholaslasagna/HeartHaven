@@ -4,7 +4,9 @@ Operational playbook for issuing, reversing, and escalating moderation actions. 
 
 ## One-time setup
 
-1. Apply migration `supabase/migrations/0023_permanent_bans.sql` via `supabase db push` or paste it into Studio.
+1. Apply migrations via `supabase db push` or paste each into Studio in order:
+   - `supabase/migrations/0023_permanent_bans.sql` — core ban tables + RPCs.
+   - `supabase/migrations/0026_ban_keeper_fix_and_instant_alerts.sql` — fixes the `auth.users` JOIN bug in `ban_keeper` and adds the realtime self-alert table that powers instant sign-out on the banned user's screen.
 2. In Resend ([https://resend.com](https://resend.com)):
    - Add and verify the sending domain (e.g. `realfiction.store`).
    - Create an API key, save it as `RESEND_API_KEY`.
@@ -55,9 +57,10 @@ select public.ban_keeper(
 Returns the `ban_id` (UUID). Effects:
 
 - A row is inserted into `permanent_bans` with the offender's email + phone copied out of `profiles`. The row stays even if the account is deleted.
+- A row is inserted into `ban_self_alerts` scoped to the banned profile. If the keeper has a tab open right now, the realtime `BanWatchdog` listening on `postgres_changes` receives the INSERT within ~1s, signs them out, and redirects them to `/account-suspended?ref=<ban_id>` — no waiting for the next page navigation.
 - Every distinct reporter who filed against this keeper gets a row in `ban_notifications` (reason_category only — never the free-text reason).
 - All open / reviewing reports against this keeper are marked `actioned`.
-- The keeper's next request to `/app/*` or `/onboarding/*` will trip the middleware ban check, sign them out, and redirect to `/account-suspended?ref=<ban_id>`.
+- For idle / closed-tab keepers: the middleware ban check (cached 60s) catches them on their next protected-route request and redirects.
 - New signups using the banned email or phone are rejected at the door (`is_email_banned` / `is_phone_banned` RPCs called by the signup action).
 
 The call is **idempotent** — running it again with the same friend code returns the existing ban id and does nothing else.
