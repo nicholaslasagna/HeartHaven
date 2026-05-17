@@ -5,6 +5,8 @@ import type { DragEvent } from "react";
 import Image from "next/image";
 import type Phaser from "phaser";
 import {
+  getKeeperHairColor,
+  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
@@ -1259,19 +1261,38 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           });
 
           // When a sniff reveals an item, fade out and destroy the matching
-          // patch. Previously the glow + "Sniff me" tag lingered forever,
-          // even after the discovery was logged.
+          // patch. The previous version kicked off the destroy tween but
+          // never killed the two yoyo:-1 child tweens (glow radius pulse
+          // + halo scale pulse) — those kept running for one more frame
+          // AFTER the container destroyed its children, touching freed
+          // objects and stalling the input loop (the sniff softlock).
+          // Now we kill all child tweens BEFORE the destroy lands.
           const reveal = (event: Event) => {
             const id = (event as CustomEvent<{ id?: string }>).detail?.id;
             if (!id) return;
             const patch = this.children.getByName(`discovery-patch-${id}`) as Phaser.GameObjects.Container | null;
             if (!patch) return;
+            // Stop any in-flight tweens that target the patch OR its
+            // children. `killTweensOf` is recursive-safe for arrays.
+            this.tweens.killTweensOf(patch);
+            const childTargets = (patch.list as Phaser.GameObjects.GameObject[]) ?? [];
+            for (const child of childTargets) {
+              this.tweens.killTweensOf(child);
+            }
             this.tweens.add({
               targets: patch,
               alpha: 0,
               duration: 700,
               ease: "Sine.out",
-              onComplete: () => patch.destroy(true),
+              onComplete: () => {
+                // Defensive: double-kill in case onComplete races with a
+                // late-arriving yoyo iteration we couldn't predict.
+                this.tweens.killTweensOf(patch);
+                for (const child of childTargets) {
+                  this.tweens.killTweensOf(child);
+                }
+                patch.destroy(true);
+              },
             });
           };
           window.addEventListener("hearthaven:discovery-revealed", reveal);
@@ -1829,16 +1850,25 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private applyKeeperLayerTints() {
-          this.avatarSkinSprite
-            ?.clearTint()
-            .setAlpha(0);
+          // Skin + hair sprites are alpha-mask layers shipped as white silhouettes.
+          // We tint each one with the keeper's chosen colour so the customisation
+          // actually shows up on the canvas. Without this they ship as bright
+          // white blobs (or, as before, invisible) and the picker becomes a no-op.
+          const skinHex = getKeeperSkinTone(this.keeperCustomization.skinId).color;
+          const hairHex = getKeeperHairColor(this.keeperCustomization.hairColorId).color;
+          const skinTint = PhaserModule.Display.Color.HexStringToColor(skinHex).color;
+          const hairTint = PhaserModule.Display.Color.HexStringToColor(hairHex).color;
           this.avatarSprite
             ?.clearTint()
             .setAlpha(1);
-          this.avatarHairSprite
-            ?.clearTint()
-            .setAlpha(0)
+          this.avatarSkinSprite
+            ?.setAlpha(0.92)
+            .setTint(skinTint)
             .setDepth((this.avatarSprite?.depth ?? 0) + 1);
+          this.avatarHairSprite
+            ?.setAlpha(0.95)
+            .setTint(hairTint)
+            .setDepth((this.avatarSprite?.depth ?? 0) + 2);
         }
 
         private setKeeperLayerFlip(facing: FacingDirection) {
@@ -2094,12 +2124,21 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private applyRemoteKeeperTints(remote: RemoteGardenAvatarObject) {
-          remote.skinSprite.clearTint().setAlpha(0);
+          // Same fix as the local keeper — tint the silhouette sheets with the
+          // remote's chosen colours so visitors render as themselves.
+          const skinHex = getKeeperSkinTone(remote.skinId).color;
+          const hairHex = getKeeperHairColor(remote.hairColorId).color;
+          const skinTint = PhaserModule.Display.Color.HexStringToColor(skinHex).color;
+          const hairTint = PhaserModule.Display.Color.HexStringToColor(hairHex).color;
           remote.sprite.clearTint().setAlpha(1);
-          remote.hairSprite
-            .clearTint()
-            .setAlpha(0)
+          remote.skinSprite
+            .setAlpha(0.92)
+            .setTint(skinTint)
             .setDepth(remote.sprite.depth + 1);
+          remote.hairSprite
+            .setAlpha(0.95)
+            .setTint(hairTint)
+            .setDepth(remote.sprite.depth + 2);
         }
 
         private tintPetForTone() {
@@ -2607,11 +2646,17 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
-            skinSprite.clearTint().setAlpha(0);
+            // Day-one tints for a freshly-spawned visiting keeper.
+            // applyRemoteKeeperTints will keep these refreshed afterwards.
+            const initialSkinTint = PhaserModule.Display.Color.HexStringToColor(
+              getKeeperSkinTone(custom.skinId).color,
+            ).color;
+            const initialHairTint = PhaserModule.Display.Color.HexStringToColor(
+              getKeeperHairColor(custom.hairColorId).color,
+            ).color;
+            skinSprite.setTint(initialSkinTint).setAlpha(0.92);
             sprite.clearTint().setAlpha(1);
-            hairSprite
-              .clearTint()
-              .setAlpha(0);
+            hairSprite.setTint(initialHairTint).setAlpha(0.95);
             const label = this.add
               .text(0, -102, player.displayName, {
                 align: "center",

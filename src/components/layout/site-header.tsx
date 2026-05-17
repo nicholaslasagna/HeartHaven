@@ -1,9 +1,14 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, UserRound } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 
-export function SiteHeader() {
+type SiteHeaderProps = {
+  /** When true, swap auth CTAs for "Open your world" + account shortcut. */
+  signedIn?: boolean;
+};
+
+export function SiteHeader({ signedIn = false }: SiteHeaderProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-cream-300/60 bg-cream-50/85 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
@@ -15,14 +20,31 @@ export function SiteHeader() {
           <Link href="/roadmap">Roadmap</Link>
         </nav>
         <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" className="hidden sm:inline-flex">
-            <Link href="/auth/sign-in">Sign in</Link>
-          </Button>
-          <Button asChild>
-            <Link href="/auth/sign-up">
-              Begin <ArrowRight />
-            </Link>
-          </Button>
+          {signedIn ? (
+            <>
+              <Button asChild variant="ghost" className="hidden sm:inline-flex">
+                <Link href="/app/account">
+                  <UserRound /> Account
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link href="/app/area">
+                  Open your world <ArrowRight />
+                </Link>
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button asChild variant="ghost" className="hidden sm:inline-flex">
+                <Link href="/auth/sign-in">Sign in</Link>
+              </Button>
+              <Button asChild>
+                <Link href="/auth/sign-up">
+                  Begin <ArrowRight />
+                </Link>
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </header>

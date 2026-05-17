@@ -5,6 +5,25 @@ import { FloatingPetals } from "@/components/brand/floating-petals";
 import { SiteHeader } from "@/components/layout/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
+
+/**
+ * Detect a logged-in keeper server-side so the home page's CTAs route
+ * straight to /app/area instead of bouncing through sign-in/sign-up. The
+ * check is a single auth.getUser() call — cheap, and gives us the same
+ * cookie session the rest of the app uses.
+ */
+async function detectSignedIn(): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return Boolean(user);
+  } catch {
+    return false;
+  }
+}
 
 const features = [
   {
@@ -31,11 +50,20 @@ const features = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const signedIn = await detectSignedIn();
+  // When the keeper is signed in, both primary CTAs take them straight
+  // into the world. The label on the secondary button also flips from
+  // "Enter the world" to "Continue playing" so the difference between
+  // the two buttons isn't confusing.
+  const primaryCtaHref = signedIn ? "/app/area" : "/auth/sign-up";
+  const primaryCtaLabel = signedIn ? "Open your world" : "Plant your garden";
+  const secondaryCtaHref = "/app/area";
+  const secondaryCtaLabel = signedIn ? "Continue playing" : "Enter the world";
   return (
     <div className="relative min-h-screen overflow-hidden bg-meadow text-foreground">
       <FloatingPetals />
-      <SiteHeader />
+      <SiteHeader signedIn={signedIn} />
       <main className="relative z-10">
         <section className="relative min-h-[calc(100svh-76px)] overflow-hidden border-b border-cream-300/70">
           <Image
@@ -62,12 +90,12 @@ export default function Home() {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg">
-                <Link href="/auth/sign-up">
-                  Plant your garden <ArrowRight />
+                <Link href={primaryCtaHref}>
+                  {primaryCtaLabel} <ArrowRight />
                 </Link>
               </Button>
               <Button asChild size="lg" variant="warm">
-                <Link href="/app/area">Enter the world</Link>
+                <Link href={secondaryCtaHref}>{secondaryCtaLabel}</Link>
               </Button>
             </div>
           </div>

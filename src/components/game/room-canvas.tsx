@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
+  getKeeperHairColor,
+  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
@@ -1125,12 +1127,22 @@ export function RoomCanvas({
         }
 
         private applyKeeperLayerTints() {
+          // Skin + hair sheets are white silhouettes — tint them with the
+          // keeper's chosen colours so the customisation panel actually shows
+          // up on the canvas instead of leaving the layers invisible.
+          const skinHex = getKeeperSkinTone(this.keeperCustomization.skinId).color;
+          const hairHex = getKeeperHairColor(this.keeperCustomization.hairColorId).color;
+          const skinTint = PhaserModule.Display.Color.HexStringToColor(skinHex).color;
+          const hairTint = PhaserModule.Display.Color.HexStringToColor(hairHex).color;
           this.avatarSprite?.clearTint().setAlpha(1);
-          this.avatarSkinSprite?.clearTint().setAlpha(0);
-          this.avatarHairSprite
-            ?.clearTint()
-            .setAlpha(0)
+          this.avatarSkinSprite
+            ?.setAlpha(0.92)
+            .setTint(skinTint)
             .setDepth((this.avatarSprite?.depth ?? 0) + 1);
+          this.avatarHairSprite
+            ?.setAlpha(0.95)
+            .setTint(hairTint)
+            .setDepth((this.avatarSprite?.depth ?? 0) + 2);
         }
 
         private setKeeperLayerFlip(facing: FacingDirection) {
@@ -1386,12 +1398,21 @@ export function RoomCanvas({
         }
 
         private applyRemoteKeeperTints(remote: RemoteAvatarObject) {
-          remote.skinSprite.clearTint().setAlpha(0);
+          // Match the local-keeper logic — tint the skin/hair silhouettes with
+          // the remote's chosen palette so visitors actually look like themselves.
+          const skinHex = getKeeperSkinTone(remote.skinId).color;
+          const hairHex = getKeeperHairColor(remote.hairColorId).color;
+          const skinTint = PhaserModule.Display.Color.HexStringToColor(skinHex).color;
+          const hairTint = PhaserModule.Display.Color.HexStringToColor(hairHex).color;
           remote.sprite.clearTint().setAlpha(1);
-          remote.hairSprite
-            .clearTint()
-            .setAlpha(0)
+          remote.skinSprite
+            .setAlpha(0.92)
+            .setTint(skinTint)
             .setDepth(remote.sprite.depth + 1);
+          remote.hairSprite
+            .setAlpha(0.95)
+            .setTint(hairTint)
+            .setDepth(remote.sprite.depth + 2);
         }
 
         private showChatBubble(message: GardenChatMessage) {
@@ -1564,11 +1585,17 @@ export function RoomCanvas({
               .setDisplaySize(94, 141)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
-            skinSprite.clearTint().setAlpha(0);
+            // Initial tints — applyRemoteKeeperTints will refresh whenever the
+            // visitor's customisation changes; these are just the day-one values.
+            const initialSkinTint = PhaserModule.Display.Color.HexStringToColor(
+              getKeeperSkinTone(custom.skinId).color,
+            ).color;
+            const initialHairTint = PhaserModule.Display.Color.HexStringToColor(
+              getKeeperHairColor(custom.hairColorId).color,
+            ).color;
+            skinSprite.setTint(initialSkinTint).setAlpha(0.92);
             sprite.clearTint().setAlpha(1);
-            hairSprite
-              .clearTint()
-              .setAlpha(0);
+            hairSprite.setTint(initialHairTint).setAlpha(0.95);
             const label = this.add
               .text(0, -100, player.displayName, {
                 align: "center",

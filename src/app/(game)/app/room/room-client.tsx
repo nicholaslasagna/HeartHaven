@@ -19,7 +19,7 @@ import { useRoomRealtime } from "@/lib/game/use-room-realtime";
 import { useInventory } from "@/lib/game/use-inventory";
 import { useGameWallet } from "@/lib/game/use-game-wallet";
 import { getCatalogItemArt, getCatalogItemArtFit } from "@/lib/game/item-art";
-import { isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
+import { getSocialState, isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
 import { PROGRESSION_EVENT, readPlayerProgression } from "@/lib/game/progression-store";
 import {
   defaultRoomSurfaceSelection,
@@ -109,8 +109,23 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const placementCounter = useRef(0);
   const roomDropRef = useRef<HTMLDivElement | null>(null);
   const { wallet, spendCurrency } = useGameWallet();
+  // Resolve the channel-owning host friend code up-front so the realtime hook
+  // never has to fall back to the room id. When a guest follows a ?visit=
+  // link we honour their target host; otherwise we are the host so we key on
+  // our own code. Without this, an early render with empty `localFriendCode`
+  // could let the hook fall through to `room:<roomId>` while the visitor sits
+  // on `room:<hostCode>`, and the two never meet on the same channel.
+  const [selfFriendCode, setSelfFriendCode] = useState(() =>
+    typeof window === "undefined" ? "" : getSocialState().selfCode,
+  );
+  useEffect(() => {
+    const sync = () => setSelfFriendCode(getSocialState().selfCode);
+    window.addEventListener("hearthaven:friend-code-regenerated", sync);
+    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+  }, []);
+  const channelHostCode = visitTarget ?? selfFriendCode;
   const realtime = useRoomRealtime({
-    hostFriendCode: visitTarget,
+    hostFriendCode: channelHostCode,
     roomId: isVisitAllowed ? activeRoom.id : "friend-only-gate",
     roomName: isVisitAllowed ? activeRoom.name : "Friend-only room",
   });
