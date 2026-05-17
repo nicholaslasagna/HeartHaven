@@ -356,7 +356,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   }
 
   return (
-    <div className="grid max-w-full gap-5 overflow-hidden">
+    <div className="grid min-w-0 max-w-full grid-cols-[minmax(0,1fr)] gap-5 overflow-hidden">
       {!embedded && <SeasonalEventBanner compact />}
       {!embedded && <WorldZoneDock active="room" />}
       <section className="hh-card relative overflow-hidden p-5">
@@ -421,9 +421,49 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
           ))}
         </div>
       </section>
-      <section className="grid min-w-0 max-w-full gap-4 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[260px_minmax(0,1fr)_320px]">
-        <div className="grid min-w-0 content-start gap-4 md:col-span-2 xl:col-span-1 xl:sticky xl:top-4">
-          <section className="rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
+      <section className="grid w-full min-w-0 max-w-full grid-cols-[minmax(0,1fr)] gap-4 overflow-hidden xl:grid-cols-[minmax(0,980px)_minmax(300px,360px)] xl:items-start xl:justify-center">
+        <div
+          className="grid w-full min-w-0 max-w-full grid-cols-[minmax(0,1fr)] content-start gap-3 overflow-hidden"
+          onDragOver={(event) => {
+            if (!canEditRoom) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={handleRoomDrop}
+          ref={roomDropRef}
+        >
+          <div className="relative mx-auto min-w-0 w-full max-w-[980px] overflow-visible">
+            {canEditRoom && (
+              <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-white/70 bg-white/82 px-3 py-1 text-xs font-black text-ink-700 shadow-sm backdrop-blur">
+                Drop furniture here
+              </div>
+            )}
+            <RoomCanvasLoader
+              canEditRoom={canEditRoom}
+              onAvatarMove={realtime.sendMove}
+              onPlacementsChange={handlePlacementsChange}
+              onRoomEmote={realtime.sendEmote}
+              placements={placements}
+              remotePlayers={realtime.players}
+              roomName={activeRoom.name}
+              roomPortals={adjacentRooms}
+              roomSurfaces={roomSurfaces}
+              roomTheme={activeRoom.theme}
+              worldWidth={expandedWorldWidth}
+              worldHeight={baseRoomHeight}
+            />
+          </div>
+          {!canEditRoom && (
+            <p className="rounded-md border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-xs font-extrabold text-honey-700">
+              You&apos;re a guest in this room. Walk around, send emotes, and chat. The host can approve your username for
+              decorator access if they want you to move furniture.
+            </p>
+          )}
+        </div>
+
+        <aside className="grid min-w-0 content-start gap-4 xl:max-h-[820px] xl:overflow-y-auto xl:pr-1">
+          <CompanionCareDock compact />
+          <section className="order-3 rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
             <div className="mb-3">
               <p className="text-xs font-extrabold uppercase tracking-normal text-lavender-500">Paint and tile</p>
               <p className="mt-1 text-sm font-bold leading-5 text-ink-700">
@@ -485,48 +525,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               </div>
             </div>
           </section>
-        </div>
-        <div
-          className="grid min-w-0 max-w-full content-start gap-3 overflow-hidden md:col-start-1 md:row-start-2 xl:col-start-auto xl:row-start-auto"
-          onDragOver={(event) => {
-            if (!canEditRoom) return;
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "copy";
-          }}
-          onDrop={handleRoomDrop}
-          ref={roomDropRef}
-        >
-          <div className="relative min-w-0 max-w-full overflow-hidden">
-            {canEditRoom && (
-              <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-white/70 bg-white/82 px-3 py-1 text-xs font-black text-ink-700 shadow-sm backdrop-blur">
-                Drop furniture here
-              </div>
-            )}
-            <RoomCanvasLoader
-              canEditRoom={canEditRoom}
-              onAvatarMove={realtime.sendMove}
-              onPlacementsChange={handlePlacementsChange}
-              onRoomEmote={realtime.sendEmote}
-              placements={placements}
-              remotePlayers={realtime.players}
-              roomName={activeRoom.name}
-              roomPortals={adjacentRooms}
-              roomSurfaces={roomSurfaces}
-              roomTheme={activeRoom.theme}
-              worldWidth={expandedWorldWidth}
-              worldHeight={baseRoomHeight}
-            />
-          </div>
-          <CompanionCareDock compact />
-          {!canEditRoom && (
-            <p className="rounded-md border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-xs font-extrabold text-honey-700">
-              You&apos;re a guest in this room. Walk around, send emotes, and chat. The host can approve your username for
-              decorator access if they want you to move furniture.
-            </p>
-          )}
-        </div>
-        <aside className="grid min-w-0 content-start gap-4 md:col-start-2 md:row-start-2 xl:col-start-auto xl:row-start-auto xl:sticky xl:top-4">
-          <section className="rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
+          <section className="order-2 rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
                 <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-blush-500">
@@ -538,7 +537,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               </div>
               <span className="rounded-full bg-cream-100 px-2.5 py-1 text-xs font-black text-ink-700">{roomDrawerItems.length}</span>
             </div>
-            <div className="grid max-h-[460px] gap-2 overflow-y-auto pr-1">
+            <div className="grid max-h-[390px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2 2xl:grid-cols-3">
               {roomDrawerItems.length === 0 && (
                 <div className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-3 text-sm font-bold text-ink-600">
                   Your placeable inventory is empty. Buy room items in the shop or open daily gifts to stock this drawer.
@@ -584,18 +583,20 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               ))}
             </div>
           </section>
-        <RoomSocialPanel
-          approvedDecoratorCodes={realtime.approvedDecoratorCodes}
-          canManagePlacement={isHostRoom}
-          connectionState={realtime.connectionState}
-          inviteUrl={realtime.inviteUrl}
-          messages={realtime.messages}
-          onToggleDecorator={realtime.toggleDecoratorPermission}
-          players={realtime.players}
-          roomCode={realtime.roomCode}
-          sendChat={realtime.sendChat}
-          status={realtime.status}
-        />
+          <aside className="order-4 grid min-w-0 content-start gap-4">
+            <RoomSocialPanel
+              approvedDecoratorCodes={realtime.approvedDecoratorCodes}
+              canManagePlacement={isHostRoom}
+              connectionState={realtime.connectionState}
+              inviteUrl={realtime.inviteUrl}
+              messages={realtime.messages}
+              onToggleDecorator={realtime.toggleDecoratorPermission}
+              players={realtime.players}
+              roomCode={realtime.roomCode}
+              sendChat={realtime.sendChat}
+              status={realtime.status}
+            />
+          </aside>
         </aside>
       </section>
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">

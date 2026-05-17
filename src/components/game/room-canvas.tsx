@@ -2386,13 +2386,25 @@ export function RoomCanvas({
         height: ROOM_HEIGHT,
         backgroundColor: "#fbf3e2",
         scale: {
-          mode: PhaserModule.Scale.FIT,
+          // Keep Phaser's logical viewport fixed at 960x600 and let the
+          // React/CSS shell scale the canvas. Phaser.Scale.FIT can compute
+          // stale parent sizes while the app shell is still laying out, which
+          // was pushing the room off-canvas inside the unified area view.
+          mode: PhaserModule.Scale.NONE,
           autoCenter: PhaserModule.Scale.NO_CENTER,
         },
         input: {
           activePointers: 3,
         },
         scene: HeartHavenRoomScene,
+      });
+
+      requestAnimationFrame(() => {
+        if (!game?.canvas || destroyed) return;
+        game.canvas.style.display = "block";
+        game.canvas.style.width = "100%";
+        game.canvas.style.height = "100%";
+        game.canvas.style.maxWidth = "100%";
       });
     }
 
@@ -2427,15 +2439,13 @@ export function RoomCanvas({
       <div
         ref={mountRef}
         aria-label="Interactive 2.5D room canvas with player movement, Casper, and draggable furniture"
-        className="mx-auto block w-full min-w-0 max-w-full overflow-hidden bg-cream-100 [&>canvas]:!h-auto [&>canvas]:!max-w-full [&>canvas]:!w-full"
+        className="mx-auto block aspect-[960/600] w-full min-w-0 max-w-[960px] overflow-hidden bg-cream-100 [&>canvas]:!block [&>canvas]:!h-full [&>canvas]:!max-w-full [&>canvas]:!w-full"
         role="application"
         style={{
           // Take 100% of whatever column we land in, capped at the native
-          // 960px the scene was painted for. `min-w-0` + `max-width: 100%`
-          // up the chain protects us from the canvas pushing the page wider
-          // than the viewport. Phaser's Scale.FIT handles the rest.
+          // 960px the scene was painted for. The canvas itself is scaled by
+          // CSS, not Phaser, so it cannot push the room layout wider.
           maxWidth: 960,
-          aspectRatio: "960 / 600",
         }}
         tabIndex={0}
       />

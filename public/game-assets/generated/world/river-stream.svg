@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="190" viewBox="0 0 640 190">
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#93d4e9"/><stop offset=".55" stop-color="#5ca9cf"/><stop offset="1" stop-color="#78c7e3"/></linearGradient>
+    <filter id="s"><feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#236378" flood-opacity=".2"/></filter>
+  </defs>
+  <path d="M18 100 C118 20 218 42 310 86 C410 134 510 154 622 78 L622 130 C514 188 406 166 304 122 C198 76 116 64 18 150 Z" fill="url(#water)" stroke="#d8f4ff" stroke-width="9" filter="url(#s)"/>
+  <path d="M74 104 C172 74 252 92 342 128" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" opacity=".42"/>
+  <path d="M390 132 C462 150 522 138 586 106" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity=".35"/>
+</svg>

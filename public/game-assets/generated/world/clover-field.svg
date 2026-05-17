@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="260" viewBox="0 0 380 260">
+  <defs><filter id="s"><feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#3f5a32" flood-opacity=".13"/></filter></defs>
+  <ellipse cx="190" cy="150" rx="150" ry="72" fill="#9acb72" opacity=".72" filter="url(#s)"/>
+  <g fill="#fff7d1" opacity=".75">
+    <circle cx="78" cy="128" r="6"/><circle cx="126" cy="92" r="5"/><circle cx="184" cy="154" r="6"/><circle cx="238" cy="108" r="5"/><circle cx="304" cy="158" r="6"/>
+  </g>
+  <g fill="#6c9f55" opacity=".7">
+    <ellipse cx="112" cy="142" rx="18" ry="10" transform="rotate(-22 112 142)"/>
+    <ellipse cx="210" cy="122" rx="20" ry="11" transform="rotate(17 210 122)"/>
+    <ellipse cx="274" cy="172" rx="18" ry="10" transform="rotate(-15 274 172)"/>
+  </g>
+</svg>
