@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Coins, DoorOpen, Maximize2, Move, PackagePlus, Plus, RotateCcw, Save, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import { CompanionCareDock } from "@/components/game/companion-care-dock";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
 import { RoomSocialPanel } from "@/components/game/room-social-panel";
 import { WorldZoneDock } from "@/components/game/world-zone-dock";
@@ -138,7 +139,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     .slice(0, 18);
   const starterRoomRows = starterCatalog
     .filter((catalog) => catalog.placementType === "floor" || catalog.placementType === "wall")
-    .slice(0, 12)
+    .slice(0, 18)
     .map((catalog, index) => ({
       catalog,
       entry: {
@@ -420,8 +421,8 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
           ))}
         </div>
       </section>
-      <section className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
-        <aside className="grid min-w-0 content-start gap-4 xl:sticky xl:top-4">
+      <section className="grid min-w-0 max-w-full gap-4 md:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+        <div className="grid min-w-0 content-start gap-4 md:col-span-2 xl:col-span-1 xl:sticky xl:top-4">
           <section className="rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
             <div className="mb-3">
               <p className="text-xs font-extrabold uppercase tracking-normal text-lavender-500">Paint and tile</p>
@@ -484,6 +485,47 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               </div>
             </div>
           </section>
+        </div>
+        <div
+          className="grid min-w-0 max-w-full content-start gap-3 overflow-hidden md:col-start-1 md:row-start-2 xl:col-start-auto xl:row-start-auto"
+          onDragOver={(event) => {
+            if (!canEditRoom) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={handleRoomDrop}
+          ref={roomDropRef}
+        >
+          <div className="relative min-w-0 max-w-full overflow-hidden">
+            {canEditRoom && (
+              <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-white/70 bg-white/82 px-3 py-1 text-xs font-black text-ink-700 shadow-sm backdrop-blur">
+                Drop furniture here
+              </div>
+            )}
+            <RoomCanvasLoader
+              canEditRoom={canEditRoom}
+              onAvatarMove={realtime.sendMove}
+              onPlacementsChange={handlePlacementsChange}
+              onRoomEmote={realtime.sendEmote}
+              placements={placements}
+              remotePlayers={realtime.players}
+              roomName={activeRoom.name}
+              roomPortals={adjacentRooms}
+              roomSurfaces={roomSurfaces}
+              roomTheme={activeRoom.theme}
+              worldWidth={expandedWorldWidth}
+              worldHeight={baseRoomHeight}
+            />
+          </div>
+          <CompanionCareDock compact />
+          {!canEditRoom && (
+            <p className="rounded-md border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-xs font-extrabold text-honey-700">
+              You&apos;re a guest in this room. Walk around, send emotes, and chat. The host can approve your username for
+              decorator access if they want you to move furniture.
+            </p>
+          )}
+        </div>
+        <aside className="grid min-w-0 content-start gap-4 md:col-start-2 md:row-start-2 xl:col-start-auto xl:row-start-auto xl:sticky xl:top-4">
           <section className="rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
@@ -542,45 +584,6 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               ))}
             </div>
           </section>
-        </aside>
-        <div
-          className="grid min-w-0 max-w-full content-start gap-3 overflow-hidden"
-          onDragOver={(event) => {
-            if (!canEditRoom) return;
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "copy";
-          }}
-          onDrop={handleRoomDrop}
-          ref={roomDropRef}
-        >
-          <div className="relative min-w-0 max-w-full overflow-hidden">
-            {canEditRoom && (
-              <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-white/70 bg-white/82 px-3 py-1 text-xs font-black text-ink-700 shadow-sm backdrop-blur">
-                Drop furniture here
-              </div>
-            )}
-            <RoomCanvasLoader
-              canEditRoom={canEditRoom}
-              onAvatarMove={realtime.sendMove}
-              onPlacementsChange={handlePlacementsChange}
-              onRoomEmote={realtime.sendEmote}
-              placements={placements}
-              remotePlayers={realtime.players}
-              roomName={activeRoom.name}
-              roomPortals={adjacentRooms}
-              roomSurfaces={roomSurfaces}
-              roomTheme={activeRoom.theme}
-              worldWidth={expandedWorldWidth}
-              worldHeight={baseRoomHeight}
-            />
-          </div>
-          {!canEditRoom && (
-            <p className="rounded-md border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-xs font-extrabold text-honey-700">
-              You&apos;re a guest in this room. Walk around, send emotes, and chat. The host can approve your username for
-              decorator access if they want you to move furniture.
-            </p>
-          )}
-        </div>
         <RoomSocialPanel
           approvedDecoratorCodes={realtime.approvedDecoratorCodes}
           canManagePlacement={isHostRoom}
@@ -593,6 +596,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
           sendChat={realtime.sendChat}
           status={realtime.status}
         />
+        </aside>
       </section>
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-lavender-500" />

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight, Leaf, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
+import { CompanionCareDock } from "@/components/game/companion-care-dock";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
@@ -127,7 +128,7 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
             </ul>
           </section>
         </div>
-        <div className="min-w-0 overflow-hidden">
+        <div className="grid min-w-0 gap-3 overflow-hidden">
           <GardenCanvasLoader
             canEditGarden={canEditGarden}
             onAvatarMove={realtime.sendMove}
@@ -135,6 +136,7 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
             remotePlayers={realtime.players}
             variant="personal"
           />
+          <CompanionCareDock compact />
         </div>
         <GardenSocialPanel
           canManagePlacement={!isGuestVisit}

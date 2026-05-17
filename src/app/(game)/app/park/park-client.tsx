@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Gamepad2, Map, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import { CompanionCareDock } from "@/components/game/companion-care-dock";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
@@ -146,15 +147,18 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
           </section>
         </div>
 
-        <div className="relative min-w-0 overflow-hidden rounded-lg border border-cream-300 bg-cream-50 shadow-sm">
-          <GardenCanvasLoader
-            canEditGarden={canEditGarden}
-            onAvatarMove={realtime.sendMove}
-            plots={parkPlots}
-            remotePlayers={realtime.players}
-            variant="park"
-          />
-          <ParkHud playerName={playerName} companionName={companionName} />
+        <div className="grid min-w-0 gap-3">
+          <div className="relative min-w-0 overflow-hidden rounded-lg border border-cream-300 bg-cream-50 shadow-sm">
+            <GardenCanvasLoader
+              canEditGarden={canEditGarden}
+              onAvatarMove={realtime.sendMove}
+              plots={parkPlots}
+              remotePlayers={realtime.players}
+              variant="park"
+            />
+            <ParkHud playerName={playerName} companionName={companionName} />
+          </div>
+          <CompanionCareDock compact />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:flex xl:flex-col">

@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
+import { CompanionCareDock } from "@/components/game/companion-care-dock";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
@@ -145,13 +146,16 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
         </CozyButton>
       </CozyCard>
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <GardenCanvasLoader
-          canEditGarden={canEditGarden}
-          onAvatarMove={realtime.sendMove}
-          plots={plots}
-          remotePlayers={realtime.players}
-          variant="partner"
-        />
+        <div className="grid min-w-0 gap-3">
+          <GardenCanvasLoader
+            canEditGarden={canEditGarden}
+            onAvatarMove={realtime.sendMove}
+            plots={plots}
+            remotePlayers={realtime.players}
+            variant="partner"
+          />
+          <CompanionCareDock compact />
+        </div>
         <GardenSocialPanel
           canManagePlacement={!isGuestVisit}
           approvedDecoratorCodes={realtime.approvedDecoratorCodes}

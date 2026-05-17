@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
-  getKeeperHairColor,
-  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
@@ -81,7 +79,9 @@ type RoomCanvasProps = {
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
 
-type FurnitureKind = "rug" | "window" | "lantern" | "chair" | "bed" | "table" | "shelf" | "plant" | "generic";
+type FurnitureKind = "rug" | "window" | "lantern" | "chair" | "bed" | "petBed" | "sofa" | "swing" | "table" | "shelf" | "plant" | "generic";
+type FurnitureActor = "keeper" | "companion";
+type FurnitureAction = "sit" | "sleep";
 
 type PlayablePlacement = RoomPlacement & {
   label: string;
@@ -98,6 +98,12 @@ type FurnitureObject = {
   baseY: number;
   /** Reference to the breathing bob tween so we can pause/resume it during drag. */
   bobTween?: Phaser.Tweens.Tween;
+};
+
+type ActiveFurnitureInteraction = {
+  placementId: string;
+  actor: FurnitureActor;
+  action: FurnitureAction;
 };
 
 type PetMood = "idle" | "follow" | "sit" | "sleep" | "react";
@@ -236,12 +242,14 @@ export function RoomCanvas({
         private textInputFocusHandler?: (event: Event) => void;
         private blinkTimer = 0;
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-        private wasd?: Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown", Phaser.Input.Keyboard.Key>;
+        private wasd?: Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown" | "remove", Phaser.Input.Keyboard.Key>;
         private target?: Phaser.Math.Vector2;
         private floorPolygon!: Phaser.Geom.Polygon;
         private furniture: FurnitureObject[] = [];
         private selectedFurniture?: FurnitureObject;
         private interactionBubble?: Phaser.GameObjects.Container;
+        private keeperFurnitureInteraction?: ActiveFurnitureInteraction;
+        private petFurnitureInteraction?: ActiveFurnitureInteraction;
         private dragStarted = false;
         private sparkleLayer!: Phaser.GameObjects.Container;
         private remoteAvatars = new Map<string, RemoteAvatarObject>();
@@ -308,6 +316,12 @@ export function RoomCanvas({
             frameWidth: 384,
             frameHeight: 512,
           });
+          this.load.image("furniture-canopy-bed", "/game-assets/generated/furniture/canopy-bed.png");
+          this.load.image("furniture-blush-loveseat", "/game-assets/generated/furniture/blush-loveseat.png");
+          this.load.image("furniture-moonberry-pet-bed", "/game-assets/generated/furniture/moonberry-pet-bed.png");
+          this.load.image("furniture-garden-swing", "/game-assets/generated/furniture/garden-swing-bench.png");
+          this.load.image("furniture-honey-tea-set", "/game-assets/generated/furniture/honey-tea-set.png");
+          this.load.image("furniture-lavender-armchair", "/game-assets/generated/furniture/lavender-armchair-v2.png");
         }
 
         create() {
@@ -936,7 +950,8 @@ export function RoomCanvas({
             rotate: PhaserModule.Input.Keyboard.KeyCodes.R,
             layerUp: PhaserModule.Input.Keyboard.KeyCodes.E,
             layerDown: PhaserModule.Input.Keyboard.KeyCodes.Q,
-          }) as Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown", Phaser.Input.Keyboard.Key> | undefined;
+            remove: PhaserModule.Input.Keyboard.KeyCodes.DELETE,
+          }) as Record<"up" | "left" | "down" | "right" | "rotate" | "layerUp" | "layerDown" | "remove", Phaser.Input.Keyboard.Key> | undefined;
 
           this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             if (pointer.rightButtonDown()) {
@@ -950,6 +965,8 @@ export function RoomCanvas({
             // ignore most of the upper half.
             if (pointer.y < worldHeight * 0.33 || this.dragStarted) return;
             const target = this.constrainToFloor(pointer.x, pointer.y);
+            this.clearFurnitureInteraction("keeper");
+            if (this.playMode === "companion") this.clearFurnitureInteraction("companion");
             this.target = new PhaserModule.Math.Vector2(target.x, target.y);
             if (this.playMode !== "companion") this.petMood = "follow";
             playCozyCue("move");
@@ -989,6 +1006,7 @@ export function RoomCanvas({
 
         private recallCompanion() {
           if (!this.pet || !this.avatar) return;
+          this.clearFurnitureInteraction("companion");
           this.pet.setPosition(this.avatar.x + 54, this.avatar.y + 24);
           this.petMood = "follow";
           this.petMoodTimer = 0;
@@ -1127,21 +1145,18 @@ export function RoomCanvas({
         }
 
         private applyKeeperLayerTints() {
-          // Skin + hair sheets are white silhouettes — tint them with the
-          // keeper's chosen colours so the customisation panel actually shows
-          // up on the canvas instead of leaving the layers invisible.
-          const skinHex = getKeeperSkinTone(this.keeperCustomization.skinId).color;
-          const hairHex = getKeeperHairColor(this.keeperCustomization.hairColorId).color;
-          const skinTint = PhaserModule.Display.Color.HexStringToColor(skinHex).color;
-          const hairTint = PhaserModule.Display.Color.HexStringToColor(hairHex).color;
+          // The current keeper sheet is full painterly art. The old mask tint
+          // pass produced visible "paint spill" over the face/hair on several
+          // skin and hair choices, so we keep those layers transparent until
+          // full generated variant sheets replace them.
           this.avatarSprite?.clearTint().setAlpha(1);
           this.avatarSkinSprite
-            ?.setAlpha(0.92)
-            .setTint(skinTint)
+            ?.clearTint()
+            .setAlpha(0)
             .setDepth((this.avatarSprite?.depth ?? 0) + 1);
           this.avatarHairSprite
-            ?.setAlpha(0.95)
-            .setTint(hairTint)
+            ?.clearTint()
+            .setAlpha(0)
             .setDepth((this.avatarSprite?.depth ?? 0) + 2);
         }
 
@@ -1398,20 +1413,16 @@ export function RoomCanvas({
         }
 
         private applyRemoteKeeperTints(remote: RemoteAvatarObject) {
-          // Match the local-keeper logic — tint the skin/hair silhouettes with
-          // the remote's chosen palette so visitors actually look like themselves.
-          const skinHex = getKeeperSkinTone(remote.skinId).color;
-          const hairHex = getKeeperHairColor(remote.hairColorId).color;
-          const skinTint = PhaserModule.Display.Color.HexStringToColor(skinHex).color;
-          const hairTint = PhaserModule.Display.Color.HexStringToColor(hairHex).color;
+          // Match local keeper logic: keep legacy tint masks hidden so remote
+          // avatars do not get the broken blotchy overlay either.
           remote.sprite.clearTint().setAlpha(1);
           remote.skinSprite
-            .setAlpha(0.92)
-            .setTint(skinTint)
+            .clearTint()
+            .setAlpha(0)
             .setDepth(remote.sprite.depth + 1);
           remote.hairSprite
-            .setAlpha(0.95)
-            .setTint(hairTint)
+            .clearTint()
+            .setAlpha(0)
             .setDepth(remote.sprite.depth + 2);
         }
 
@@ -1585,17 +1596,9 @@ export function RoomCanvas({
               .setDisplaySize(94, 141)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
-            // Initial tints — applyRemoteKeeperTints will refresh whenever the
-            // visitor's customisation changes; these are just the day-one values.
-            const initialSkinTint = PhaserModule.Display.Color.HexStringToColor(
-              getKeeperSkinTone(custom.skinId).color,
-            ).color;
-            const initialHairTint = PhaserModule.Display.Color.HexStringToColor(
-              getKeeperHairColor(custom.hairColorId).color,
-            ).color;
-            skinSprite.setTint(initialSkinTint).setAlpha(0.92);
             sprite.clearTint().setAlpha(1);
-            hairSprite.setTint(initialHairTint).setAlpha(0.95);
+            skinSprite.clearTint().setAlpha(0);
+            hairSprite.clearTint().setAlpha(0);
             const label = this.add
               .text(0, -100, player.displayName, {
                 align: "center",
@@ -1748,6 +1751,9 @@ export function RoomCanvas({
           }
 
           const keyboard = this.readKeyboard();
+          if (this.keeperFurnitureInteraction && (keyboard.x !== 0 || keyboard.y !== 0 || this.target)) {
+            this.clearFurnitureInteraction("keeper");
+          }
           const speed = 0.23 * delta;
           let moving = false;
           // Horizontal intent this frame — drives the left/right sprite mirror.
@@ -1775,6 +1781,27 @@ export function RoomCanvas({
             }
           }
 
+          if (this.keeperFurnitureInteraction && !moving) {
+            const furniture = this.findFurnitureById(this.keeperFurnitureInteraction.placementId);
+            if (furniture) {
+              const anchor = getFurnitureAnchor(furniture.placement, "keeper", this.keeperFurnitureInteraction.action);
+              const target = this.constrainToFloor(furniture.container.x + anchor.x, furniture.container.y + anchor.y);
+              this.avatar.setPosition(
+                PhaserModule.Math.Linear(this.avatar.x, target.x, 0.18),
+                PhaserModule.Math.Linear(this.avatar.y, target.y, 0.18),
+              );
+              this.avatarFacing = isFacingLeft(furniture.placement.rotation) ? "right" : "left";
+              this.setKeeperLayerFlip(this.avatarFacing);
+              this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
+              this.avatarShadow.setDepth(this.avatar.y - 1);
+              this.setAvatarPose("sit");
+              this.setKeeperLayerMotion(this.keeperFurnitureInteraction.action === "sleep" ? -52 : -54, 0);
+              this.checkRoomPortalTravel();
+              return;
+            }
+            this.clearFurnitureInteraction("keeper");
+          }
+
           // Face the way we're walking. A small deadzone keeps the sprite from
           // flickering when movement is almost purely vertical.
           if (moving && Math.abs(moveDx) > 0.05) {
@@ -1795,6 +1822,9 @@ export function RoomCanvas({
             }
             if (this.wasd?.layerDown && PhaserModule.Input.Keyboard.JustDown(this.wasd.layerDown)) {
               this.changeSelectedLayer(-1);
+            }
+            if (this.wasd?.remove && PhaserModule.Input.Keyboard.JustDown(this.wasd.remove)) {
+              this.removeSelectedFurniture();
             }
           }
 
@@ -1886,6 +1916,7 @@ export function RoomCanvas({
             const prevX = this.pet.x;
             let petMoving = false;
             if (keyboard.x !== 0 || keyboard.y !== 0) {
+              this.clearFurnitureInteraction("companion");
               const next = this.constrainToFloor(this.pet.x + keyboard.x * ctlSpeed, this.pet.y + keyboard.y * ctlSpeed);
               this.pet.setPosition(next.x, next.y);
               petMoving = true;
@@ -1924,6 +1955,31 @@ export function RoomCanvas({
               });
             }
             return;
+          }
+
+          if (this.petFurnitureInteraction) {
+            const furniture = this.findFurnitureById(this.petFurnitureInteraction.placementId);
+            if (furniture) {
+              const anchor = getFurnitureAnchor(furniture.placement, "companion", this.petFurnitureInteraction.action);
+              const target = this.constrainToFloor(furniture.container.x + anchor.x, furniture.container.y + anchor.y);
+              const prevPetX = this.pet.x;
+              this.pet.x = PhaserModule.Math.Linear(this.pet.x, target.x, 0.12);
+              this.pet.y = PhaserModule.Math.Linear(this.pet.y, target.y, 0.12);
+              const petDx = this.pet.x - prevPetX;
+              if (Math.abs(petDx) > 0.05) this.petFacing = petDx < 0 ? "left" : "right";
+              else this.petFacing = isFacingLeft(furniture.placement.rotation) ? "right" : "left";
+              this.petSprite.setFlipX(this.petFacing === "left");
+              this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+              const pose: PetPose = this.petFurnitureInteraction.action === "sleep" ? "sleep" : "sit";
+              this.petMood = pose === "sleep" ? "sleep" : "sit";
+              this.pet.setScale(1, pose === "sleep" ? 0.84 : 0.96);
+              this.petEyes.forEach((eye) => eye.setScale(1, pose === "sleep" ? 0.1 : 1));
+              this.applyPetLocomotion(PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, target.x, target.y) > 8, pose);
+              this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
+              this.petShadow.setDepth(this.pet.y - 1);
+              return;
+            }
+            this.clearFurnitureInteraction("companion");
           }
 
           // Settled lounging cycle — 14 seconds between idle/sit
@@ -1995,17 +2051,14 @@ export function RoomCanvas({
           this.selectedFurniture = furniture;
           furniture.glow.setVisible(true);
           setSelected(furniture.placement.label);
-          setStatus(`${furniture.placement.label}: drag to place, press R to face left/right, Q/E to adjust depth.`);
+          const options = getFurnitureInteractionOptions(furniture.placement.kind);
+          setStatus(
+            options.length > 0
+              ? `${furniture.placement.label}: choose an action, drag to move, or face it left/right.`
+              : `${furniture.placement.label}: drag to place, press R to face left/right, Q/E to adjust depth.`,
+          );
 
-          if (furniture.placement.kind === "bed") {
-            this.petMood = "sleep";
-            playCozyCue("petSleep");
-            setStatus("Casper curls up near the canopy bed.");
-          } else if (furniture.placement.kind === "chair") {
-            this.petMood = "sit";
-            playCozyCue("petPurr");
-            setStatus("Casper sits beside the lavender chair.");
-          } else if (["lantern", "table", "plant"].includes(furniture.placement.kind)) {
+          if (["lantern", "table", "plant"].includes(furniture.placement.kind)) {
             this.petMood = "react";
             playCozyCue("petChirp");
             this.playInteractionSparkles(furniture.container.x, furniture.container.y);
@@ -2017,15 +2070,17 @@ export function RoomCanvas({
         private showInteractionBubble(furniture: FurnitureObject) {
           this.interactionBubble?.destroy(true);
 
-          const bubble = this.add.container(furniture.container.x, furniture.container.y - furniture.placement.height * 0.72).setDepth(6000);
+          const actions = getFurnitureInteractionOptions(furniture.placement.kind);
+          const bubbleHeight = actions.length > 0 ? 112 : 78;
+          const bubble = this.add.container(furniture.container.x, furniture.container.y - furniture.placement.height * 0.78).setDepth(6000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.95);
-          bg.fillRoundedRect(-146, -34, 292, 68, 18);
+          bg.fillRoundedRect(-162, -bubbleHeight / 2, 324, bubbleHeight, 18);
           bg.lineStyle(2, 0xf6cfd2, 0.9);
-          bg.strokeRoundedRect(-146, -34, 292, 68, 18);
+          bg.strokeRoundedRect(-162, -bubbleHeight / 2, 324, bubbleHeight, 18);
 
           const label = this.add
-            .text(0, -18, furniture.placement.label, {
+            .text(0, -bubbleHeight / 2 + 17, furniture.placement.label, {
               color: "#3A2A2A",
               fontFamily: "Nunito, sans-serif",
               fontSize: "13px",
@@ -2034,7 +2089,7 @@ export function RoomCanvas({
             .setOrigin(0.5);
 
           const leftButton = this.add
-            .text(-42, 12, "Face L", {
+            .text(-48, bubbleHeight / 2 - 22, "Face L", {
               color: "#8E70BD",
               fontFamily: "Nunito, sans-serif",
               fontSize: "12px",
@@ -2050,7 +2105,7 @@ export function RoomCanvas({
           });
 
           const rightButton = this.add
-            .text(42, 12, "Face R", {
+            .text(48, bubbleHeight / 2 - 22, "Face R", {
               color: "#8E70BD",
               fontFamily: "Nunito, sans-serif",
               fontSize: "12px",
@@ -2066,7 +2121,7 @@ export function RoomCanvas({
           });
 
           const downButton = this.add
-            .text(-110, 12, "Depth -", {
+            .text(-124, bubbleHeight / 2 - 22, "Depth -", {
               color: "#5B3F3F",
               fontFamily: "Nunito, sans-serif",
               fontSize: "12px",
@@ -2082,7 +2137,7 @@ export function RoomCanvas({
           });
 
           const upButton = this.add
-            .text(110, 12, "Depth +", {
+            .text(124, bubbleHeight / 2 - 22, "Depth +", {
               color: "#5B3F3F",
               fontFamily: "Nunito, sans-serif",
               fontSize: "12px",
@@ -2097,8 +2152,109 @@ export function RoomCanvas({
             this.changeSelectedLayer(1);
           });
 
-          bubble.add([bg, label, downButton, leftButton, rightButton, upButton]);
+          const children: Phaser.GameObjects.GameObject[] = [bg, label, downButton, leftButton, rightButton, upButton];
+          if (canEditRoom) {
+            const removeButton = this.add
+              .text(0, bubbleHeight / 2 - 22, "Remove", {
+                color: "#9F4D5D",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "12px",
+                fontStyle: "900",
+                backgroundColor: "#FCE6E9",
+                padding: { x: 10, y: 5 },
+              })
+              .setOrigin(0.5)
+              .setInteractive({ useHandCursor: true });
+            removeButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+              pointer.event.stopPropagation();
+              this.removeSelectedFurniture();
+            });
+            children.push(removeButton);
+          }
+
+          actions.forEach((action, index) => {
+            const x = (index - (actions.length - 1) / 2) * 104;
+            const actionButton = this.add
+              .text(x, 13, action.label, {
+                color: action.actor === "keeper" ? "#5B3F3F" : "#8E70BD",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "12px",
+                fontStyle: "900",
+                backgroundColor: action.actor === "keeper" ? "#F5E9D0" : "#EFE6F7",
+                padding: { x: 10, y: 5 },
+              })
+              .setOrigin(0.5)
+              .setInteractive({ useHandCursor: true });
+            actionButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+              pointer.event.stopPropagation();
+              this.activateFurnitureInteraction(furniture, action.actor, action.action);
+            });
+            children.push(actionButton);
+          });
+
+          bubble.add(children);
           this.interactionBubble = bubble;
+        }
+
+        private activateFurnitureInteraction(furniture: FurnitureObject, actor: FurnitureActor, action: FurnitureAction) {
+          const anchor = getFurnitureAnchor(furniture.placement, actor, action);
+          const target = this.constrainToFloor(furniture.container.x + anchor.x, furniture.container.y + anchor.y);
+          const facing = isFacingLeft(furniture.placement.rotation) ? "right" : "left";
+          const label = actor === "keeper" ? "keeper" : "companion";
+          if (actor === "keeper") {
+            this.playMode = "keeper";
+            this.target = undefined;
+            this.keeperFurnitureInteraction = { placementId: furniture.placement.id, actor, action };
+            this.avatarFacing = facing;
+            this.setKeeperLayerFlip(this.avatarFacing);
+            this.tweens.killTweensOf([this.avatar, this.avatarShadow]);
+            this.tweens.add({ targets: this.avatar, x: target.x, y: target.y, duration: 360, ease: "Sine.out" });
+            this.tweens.add({ targets: this.avatarShadow, x: target.x, y: target.y + 22, duration: 360, ease: "Sine.out" });
+            this.setAvatarPose("sit");
+            playCozyCue(action === "sleep" ? "petSleep" : "place");
+          } else {
+            this.petFurnitureInteraction = { placementId: furniture.placement.id, actor, action };
+            this.petMood = action === "sleep" ? "sleep" : "sit";
+            this.petMoodTimer = 0;
+            this.petFacing = facing;
+            this.petSprite.setFlipX(this.petFacing === "left");
+            this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+            this.tweens.killTweensOf([this.pet, this.petShadow]);
+            this.tweens.add({ targets: this.pet, x: target.x, y: target.y, duration: 420, ease: "Sine.out" });
+            this.tweens.add({ targets: this.petShadow, x: target.x, y: target.y + 18, duration: 420, ease: "Sine.out" });
+            playCozyCue(action === "sleep" ? "petSleep" : "petPurr");
+          }
+          this.playInteractionSparkles(target.x, target.y - 34, action === "sleep" ? 0xc0a8dc : 0xfaebc2);
+          setStatus(`${furniture.placement.label}: ${label} ${action === "sleep" ? "settles in for a nap" : "sits down"}.`);
+        }
+
+        private clearFurnitureInteraction(actor?: FurnitureActor) {
+          if (!actor || actor === "keeper") this.keeperFurnitureInteraction = undefined;
+          if (!actor || actor === "companion") this.petFurnitureInteraction = undefined;
+        }
+
+        private findFurnitureById(id: string) {
+          return this.furniture.find((item) => item.placement.id === id);
+        }
+
+        private removeSelectedFurniture() {
+          if (!this.selectedFurniture) return;
+          if (!canEditRoom) {
+            setStatus("Only the room host or an approved decorator can remove furniture here.");
+            return;
+          }
+          const item = this.selectedFurniture;
+          item.bobTween?.stop();
+          item.container.destroy(true);
+          this.furniture = this.furniture.filter((entry) => entry !== item);
+          this.selectedFurniture = undefined;
+          this.interactionBubble?.destroy(true);
+          this.interactionBubble = undefined;
+          this.clearFurnitureInteraction();
+          playCozyCue("place");
+          setSelected("No item selected");
+          setStatus(`${item.placement.label} removed from this room.`);
+          onPlacementsChange?.(this.exportPlacements());
         }
 
         private moveBubbleToSelection() {
@@ -2231,7 +2387,7 @@ export function RoomCanvas({
         backgroundColor: "#fbf3e2",
         scale: {
           mode: PhaserModule.Scale.FIT,
-          autoCenter: PhaserModule.Scale.CENTER_BOTH,
+          autoCenter: PhaserModule.Scale.NO_CENTER,
         },
         input: {
           activePointers: 3,
@@ -2271,7 +2427,7 @@ export function RoomCanvas({
       <div
         ref={mountRef}
         aria-label="Interactive 2.5D room canvas with player movement, Casper, and draggable furniture"
-        className="mx-auto block w-full min-w-0 max-w-full overflow-hidden bg-cream-100"
+        className="mx-auto block w-full min-w-0 max-w-full overflow-hidden bg-cream-100 [&>canvas]:!h-auto [&>canvas]:!max-w-full [&>canvas]:!w-full"
         role="application"
         style={{
           // Take 100% of whatever column we land in, capped at the native
@@ -2321,6 +2477,9 @@ function getFurnitureKind(id: string): FurnitureKind {
   if (id.includes("rug")) return "rug";
   if (id.includes("window")) return "window";
   if (id.includes("lantern")) return "lantern";
+  if (id.includes("loveseat") || id.includes("sofa")) return "sofa";
+  if (id.includes("pet-bed") || id.includes("boo-bed")) return "petBed";
+  if (id.includes("swing")) return "swing";
   if (id.includes("chair")) return "chair";
   if (id.includes("bed")) return "bed";
   if (id.includes("table")) return "table";
@@ -2336,6 +2495,9 @@ function getFurnitureSize(kind: FurnitureKind) {
     lantern: { width: 58, height: 94 },
     chair: { width: 100, height: 92 },
     bed: { width: 164, height: 118 },
+    petBed: { width: 126, height: 86 },
+    sofa: { width: 176, height: 104 },
+    swing: { width: 184, height: 150 },
     table: { width: 96, height: 78 },
     shelf: { width: 128, height: 76 },
     plant: { width: 72, height: 104 },
@@ -2354,8 +2516,101 @@ function labelFromCatalogId(id: string) {
     .join(" ");
 }
 
+function getFurnitureImageConfig(id: string, kind: FurnitureKind) {
+  const configs: Record<string, { key: string; width: number; height: number; yOffset: number }> = {
+    "bed-cream-canopy": { key: "furniture-canopy-bed", width: 230, height: 178, yOffset: -42 },
+    "loveseat-blush-heart": { key: "furniture-blush-loveseat", width: 206, height: 142, yOffset: -34 },
+    "sofa-blush-cloud": { key: "furniture-blush-loveseat", width: 206, height: 142, yOffset: -34 },
+    "pet-bed-moonberry": { key: "furniture-moonberry-pet-bed", width: 146, height: 114, yOffset: -26 },
+    "casper-boo-bed": { key: "furniture-moonberry-pet-bed", width: 146, height: 114, yOffset: -26 },
+    "swing-rose-garden-bench": { key: "furniture-garden-swing", width: 218, height: 170, yOffset: -52 },
+    "tea-set-honey-stools": { key: "furniture-honey-tea-set", width: 182, height: 134, yOffset: -32 },
+    "table-honey-tea": { key: "furniture-honey-tea-set", width: 182, height: 134, yOffset: -32 },
+    "game-table-garden": { key: "furniture-honey-tea-set", width: 182, height: 134, yOffset: -32 },
+    "peppermint-cocoa-table": { key: "furniture-honey-tea-set", width: 182, height: 134, yOffset: -32 },
+    "sparkling-toast-table": { key: "furniture-honey-tea-set", width: 182, height: 134, yOffset: -32 },
+    "armchair-lavender-heart": { key: "furniture-lavender-armchair", width: 132, height: 130, yOffset: -32 },
+    "chair-lavender-cushion": { key: "furniture-lavender-armchair", width: 132, height: 130, yOffset: -32 },
+  };
+  const direct = configs[id];
+  if (direct) return direct;
+  if (kind === "bed") return configs["bed-cream-canopy"];
+  if (kind === "petBed") return configs["pet-bed-moonberry"];
+  if (kind === "sofa") return configs["loveseat-blush-heart"];
+  if (kind === "swing") return configs["swing-rose-garden-bench"];
+  return undefined;
+}
+
+function getFurnitureInteractionOptions(kind: FurnitureKind): Array<{ actor: FurnitureActor; action: FurnitureAction; label: string }> {
+  if (kind === "bed") {
+    return [
+      { actor: "keeper", action: "sleep", label: "Keeper nap" },
+      { actor: "companion", action: "sleep", label: "Pet nap" },
+    ];
+  }
+  if (kind === "petBed") {
+    return [{ actor: "companion", action: "sleep", label: "Pet nap" }];
+  }
+  if (kind === "chair" || kind === "sofa" || kind === "swing") {
+    return [
+      { actor: "keeper", action: "sit", label: "Keeper sit" },
+      { actor: "companion", action: "sit", label: "Pet sit" },
+    ];
+  }
+  if (kind === "table") {
+    return [{ actor: "keeper", action: "sit", label: "Sit nearby" }];
+  }
+  return [];
+}
+
+function getFurnitureAnchor(placement: PlayablePlacement, actor: FurnitureActor, action: FurnitureAction) {
+  const facingSign = isFacingLeft(placement.rotation) ? -1 : 1;
+  const anchors: Partial<Record<FurnitureKind, Partial<Record<FurnitureActor, { x: number; y: number }>>>> = {
+    bed: {
+      keeper: { x: -20, y: -18 },
+      companion: { x: 44, y: -20 },
+    },
+    petBed: {
+      companion: { x: 0, y: -6 },
+    },
+    chair: {
+      keeper: { x: 0, y: -10 },
+      companion: { x: 42, y: 18 },
+    },
+    sofa: {
+      keeper: { x: -28, y: -12 },
+      companion: { x: 46, y: 18 },
+    },
+    swing: {
+      keeper: { x: -18, y: -24 },
+      companion: { x: 44, y: 10 },
+    },
+    table: {
+      keeper: { x: -56, y: 24 },
+    },
+  };
+  const anchor = anchors[placement.kind]?.[actor] ?? { x: 0, y: 0 };
+  return {
+    x: anchor.x * facingSign,
+    y: action === "sleep" && actor === "keeper" ? anchor.y - 2 : anchor.y,
+  };
+}
+
 function drawFurnitureShape(scene: Phaser.Scene, container: Phaser.GameObjects.Container, placement: PlayablePlacement) {
   const add = scene.add;
+  const imageConfig = getFurnitureImageConfig(placement.catalogItemId, placement.kind);
+  if (imageConfig) {
+    if (["lantern", "swing", "bed", "petBed"].includes(placement.kind)) {
+      container.add(add.circle(0, imageConfig.yOffset + imageConfig.height * 0.14, Math.max(46, imageConfig.width * 0.22), 0xfaebc2, 0.12));
+    }
+    container.add(
+      add
+        .image(0, imageConfig.yOffset, imageConfig.key)
+        .setDisplaySize(imageConfig.width, imageConfig.height),
+    );
+    return;
+  }
+
   const spriteFrame = getFurnitureSpriteFrame(placement.kind);
 
   if (spriteFrame !== undefined) {
@@ -2380,6 +2635,9 @@ function getFurnitureSpriteFrame(kind: FurnitureKind) {
     rug: 0,
     chair: 1,
     bed: 2,
+    petBed: 2,
+    sofa: 1,
+    swing: 1,
     table: 3,
     window: 4,
     lantern: 5,
@@ -2399,6 +2657,9 @@ function getFurnitureSpriteDisplaySize(kind: FurnitureKind) {
     rug: { width: 224, height: 150 },
     chair: { width: 122, height: 166 },
     bed: { width: 178, height: 178 },
+    petBed: { width: 136, height: 132 },
+    sofa: { width: 192, height: 156 },
+    swing: { width: 204, height: 180 },
     table: { width: 156, height: 150 },
     window: { width: 152, height: 170 },
     lantern: { width: 90, height: 160 },
@@ -2416,6 +2677,9 @@ function getFurnitureSpriteOffsetY(kind: FurnitureKind) {
     rug: -3,
     chair: -25,
     bed: -35,
+    petBed: -24,
+    sofa: -28,
+    swing: -48,
     table: -25,
     window: -12,
     lantern: -25,

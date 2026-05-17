@@ -5,8 +5,6 @@ import type { DragEvent } from "react";
 import Image from "next/image";
 import type Phaser from "phaser";
 import {
-  getKeeperHairColor,
-  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
@@ -201,24 +199,33 @@ function scalePolygon(points: WorldPolygonPoint[]): WorldPolygonPoint[] {
 }
 
 const sharedWalkSegments: WalkSegment[] = [
-  { x1: 132, y1: 690, x2: 500, y2: 570, radius: 74 },
-  { x1: 500, y1: 570, x2: 900, y2: 462, radius: 76 },
-  { x1: 900, y1: 462, x2: 1280, y2: 555, radius: 78 },
-  { x1: 1280, y1: 555, x2: 1720, y2: 610, radius: 82 },
-  { x1: 1720, y1: 610, x2: 2140, y2: 520, radius: 84 },
-  { x1: 2140, y1: 520, x2: 2600, y2: 590, radius: 84 },
-  { x1: 2600, y1: 590, x2: 3260, y2: 650, radius: 88 },
+  { x1: 104, y1: 694, x2: 500, y2: 570, radius: 100 },
+  { x1: 500, y1: 570, x2: 900, y2: 462, radius: 104 },
+  { x1: 900, y1: 462, x2: 1280, y2: 555, radius: 106 },
+  { x1: 1280, y1: 555, x2: 1720, y2: 610, radius: 112 },
+  { x1: 1720, y1: 610, x2: 2140, y2: 520, radius: 112 },
+  { x1: 2140, y1: 520, x2: 2600, y2: 590, radius: 114 },
+  { x1: 2600, y1: 590, x2: 3260, y2: 650, radius: 118 },
+  { x1: 470, y1: 385, x2: 1140, y2: 360, radius: 118 },
+  { x1: 1140, y1: 360, x2: 1740, y2: 430, radius: 116 },
+  { x1: 1740, y1: 430, x2: 2380, y2: 390, radius: 118 },
+  { x1: 720, y1: 802, x2: 2800, y2: 806, radius: 128 },
 ].map(scaleSegment);
 
 const parkWalkSegments: WalkSegment[] = [
-  { x1: 118, y1: 620, x2: 520, y2: 488, radius: 82 },
-  { x1: 520, y1: 488, x2: 870, y2: 420, radius: 86 },
-  { x1: 870, y1: 420, x2: 1260, y2: 440, radius: 84 },
-  { x1: 1260, y1: 440, x2: 1660, y2: 520, radius: 86 },
-  { x1: 1660, y1: 520, x2: 2140, y2: 430, radius: 88 },
-  { x1: 2140, y1: 430, x2: 2600, y2: 594, radius: 92 },
-  { x1: 2600, y1: 594, x2: 3260, y2: 520, radius: 92 },
-  { x1: 860, y1: 720, x2: 2350, y2: 722, radius: 76 },
+  { x1: 70, y1: 650, x2: 410, y2: 645, radius: 132 },
+  { x1: 410, y1: 645, x2: 720, y2: 515, radius: 130 },
+  { x1: 720, y1: 515, x2: 1040, y2: 380, radius: 126 },
+  { x1: 1040, y1: 380, x2: 1320, y2: 386, radius: 126 },
+  { x1: 1320, y1: 386, x2: 1660, y2: 520, radius: 126 },
+  { x1: 1660, y1: 520, x2: 2060, y2: 420, radius: 132 },
+  { x1: 2060, y1: 420, x2: 2320, y2: 510, radius: 132 },
+  { x1: 2320, y1: 510, x2: 2620, y2: 600, radius: 142 },
+  { x1: 2620, y1: 600, x2: 3280, y2: 515, radius: 140 },
+  { x1: 690, y1: 752, x2: 2520, y2: 752, radius: 132 },
+  { x1: 420, y1: 292, x2: 870, y2: 230, radius: 150 },
+  { x1: 1390, y1: 246, x2: 1910, y2: 252, radius: 160 },
+  { x1: 2220, y1: 780, x2: 2920, y2: 780, radius: 164 },
 ].map(scaleSegment);
 
 const sharedWalkCircles: WalkCircle[] = [
@@ -236,14 +243,19 @@ const sharedWalkCircles: WalkCircle[] = [
 ].map(scaleCircle);
 
 const parkWalkCircles: WalkCircle[] = [
-  { x: 540, y: 404, radius: 146 },
-  { x: 860, y: 548, radius: 132 },
-  { x: 1160, y: 612, radius: 126 },
-  { x: 1560, y: 510, radius: 136 },
-  { x: 2260, y: 510, radius: 146 },
-  { x: 2580, y: 618, radius: 138 },
-  { x: 2860, y: 590, radius: 138 },
-  { x: 3140, y: 470, radius: 132 },
+  { x: 230, y: 652, radius: 270 },
+  { x: 540, y: 404, radius: 206 },
+  { x: 780, y: 225, radius: 258 },
+  { x: 860, y: 548, radius: 188 },
+  { x: 1160, y: 612, radius: 222 },
+  { x: 1570, y: 246, radius: 286 },
+  { x: 1560, y: 510, radius: 210 },
+  { x: 2220, y: 510, radius: 294 },
+  { x: 2380, y: 760, radius: 318 },
+  { x: 2580, y: 618, radius: 210 },
+  { x: 2860, y: 590, radius: 232 },
+  { x: 3030, y: 264, radius: 202 },
+  { x: 3140, y: 470, radius: 190 },
 ].map(scaleCircle);
 
 /**
@@ -259,33 +271,33 @@ const parkWalkCircles: WalkCircle[] = [
  */
 const parkWalkableExtensions: WalkCircle[] = [
   // Top band — near swings, rose arch, claw machine, sakura
-  { x: 612, y: 220, radius: 240 },
-  { x: 1530, y: 220, radius: 240 },
-  { x: 1904, y: 280, radius: 220 },
-  { x: 2788, y: 220, radius: 240 },
+  { x: 612, y: 220, radius: 270 },
+  { x: 1530, y: 220, radius: 300 },
+  { x: 1904, y: 280, radius: 255 },
+  { x: 2788, y: 220, radius: 270 },
   // Upper-middle band — picnic, stage, conservatory
-  { x: 220, y: 380, radius: 240 },
-  { x: 1020, y: 380, radius: 260 },
-  { x: 2312, y: 380, radius: 240 },
+  { x: 220, y: 380, radius: 280 },
+  { x: 1020, y: 380, radius: 300 },
+  { x: 2312, y: 380, radius: 290 },
   // Wider open lawns connecting plots laterally
-  { x: 800, y: 460, radius: 240 },
-  { x: 1340, y: 460, radius: 240 },
-  { x: 1860, y: 450, radius: 240 },
-  { x: 2520, y: 460, radius: 240 },
+  { x: 800, y: 460, radius: 270 },
+  { x: 1340, y: 460, radius: 270 },
+  { x: 1860, y: 450, radius: 280 },
+  { x: 2520, y: 460, radius: 280 },
   // Lower band — gazebo, flower cart, bowling, the bottom strip
-  { x: 380, y: 720, radius: 220 },
-  { x: 720, y: 720, radius: 220 },
-  { x: 2080, y: 740, radius: 220 },
-  { x: 2780, y: 720, radius: 220 },
+  { x: 380, y: 720, radius: 270 },
+  { x: 720, y: 720, radius: 260 },
+  { x: 2080, y: 740, radius: 280 },
+  { x: 2780, y: 720, radius: 280 },
   // Discovery glow-patch positions — derived from ZONE_DISCOVERIES.park
   // coordinates (0–100 % of the painted scene, projected onto the 3400×1133
   // world). Each has a generous walkable bubble so the companion can step
   // onto the "Sniff me" marker directly even when it sits off the main
   // road overlay.
-  { x: 816, y: 884, radius: 200 },   // acorn pile near swings
-  { x: 1768, y: 929, radius: 200 },  // iridescent feather near cave
-  { x: 2720, y: 951, radius: 200 },  // wild strawberries near picnic path
-  { x: 2992, y: 249, radius: 220 },  // firefly jar near lantern arch
+  { x: 816, y: 884, radius: 240 },   // acorn pile near swings
+  { x: 1768, y: 929, radius: 240 },  // iridescent feather near cave
+  { x: 2720, y: 951, radius: 250 },  // wild strawberries near picnic path
+  { x: 2992, y: 249, radius: 250 },  // firefly jar near lantern arch
 ].map(scaleCircle);
 
 /**
@@ -294,12 +306,12 @@ const parkWalkableExtensions: WalkCircle[] = [
  * road between every plot column.
  */
 const parkWalkableConnectors: WalkSegment[] = [
-  { x1: 540, y1: 220, x2: 540, y2: 720, radius: 100 },
-  { x1: 1020, y1: 220, x2: 1020, y2: 700, radius: 100 },
-  { x1: 1560, y1: 220, x2: 1560, y2: 700, radius: 100 },
-  { x1: 1900, y1: 220, x2: 1900, y2: 720, radius: 100 },
-  { x1: 2312, y1: 220, x2: 2312, y2: 700, radius: 100 },
-  { x1: 2788, y1: 220, x2: 2788, y2: 700, radius: 100 },
+  { x1: 540, y1: 220, x2: 540, y2: 720, radius: 126 },
+  { x1: 1020, y1: 220, x2: 1020, y2: 700, radius: 126 },
+  { x1: 1560, y1: 220, x2: 1560, y2: 700, radius: 132 },
+  { x1: 1900, y1: 220, x2: 1900, y2: 720, radius: 132 },
+  { x1: 2312, y1: 220, x2: 2312, y2: 700, radius: 132 },
+  { x1: 2788, y1: 220, x2: 2788, y2: 700, radius: 132 },
 ].map(scaleSegment);
 
 /**
@@ -308,21 +320,21 @@ const parkWalkableConnectors: WalkSegment[] = [
  * can step off-path to reach planters and decor.
  */
 const sharedWalkableExtensions: WalkCircle[] = [
-  { x: 400, y: 380, radius: 200 },
-  { x: 900, y: 360, radius: 220 },
-  { x: 1400, y: 380, radius: 200 },
-  { x: 1900, y: 400, radius: 220 },
-  { x: 2400, y: 380, radius: 220 },
-  { x: 2900, y: 400, radius: 200 },
-  { x: 700, y: 800, radius: 200 },
-  { x: 1500, y: 800, radius: 220 },
-  { x: 2300, y: 800, radius: 200 },
-  { x: 3000, y: 800, radius: 200 },
+  { x: 400, y: 380, radius: 240 },
+  { x: 900, y: 360, radius: 260 },
+  { x: 1400, y: 380, radius: 240 },
+  { x: 1900, y: 400, radius: 260 },
+  { x: 2400, y: 380, radius: 260 },
+  { x: 2900, y: 400, radius: 240 },
+  { x: 700, y: 800, radius: 250 },
+  { x: 1500, y: 800, radius: 270 },
+  { x: 2300, y: 800, radius: 250 },
+  { x: 3000, y: 800, radius: 250 },
   // Garden discovery patches — derived from ZONE_DISCOVERIES.garden coords
   // so the "Sniff me" markers always sit inside a walkable bubble.
-  { x: 1088, y: 793, radius: 200 },  // moonberry clutch
-  { x: 2176, y: 861, radius: 200 },  // pressed flower
-  { x: 2584, y: 680, radius: 200 },  // tin soldier
+  { x: 1088, y: 793, radius: 240 },  // moonberry clutch
+  { x: 2176, y: 861, radius: 240 },  // pressed flower
+  { x: 2584, y: 680, radius: 240 },  // tin soldier
 ].map(scaleCircle);
 
 const waterPolygonsByVariant: Record<GardenCanvasProps["variant"], WorldPolygonPoint[][]> = {
@@ -1850,24 +1862,19 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private applyKeeperLayerTints() {
-          // Skin + hair sprites are alpha-mask layers shipped as white silhouettes.
-          // We tint each one with the keeper's chosen colour so the customisation
-          // actually shows up on the canvas. Without this they ship as bright
-          // white blobs (or, as before, invisible) and the picker becomes a no-op.
-          const skinHex = getKeeperSkinTone(this.keeperCustomization.skinId).color;
-          const hairHex = getKeeperHairColor(this.keeperCustomization.hairColorId).color;
-          const skinTint = PhaserModule.Display.Color.HexStringToColor(skinHex).color;
-          const hairTint = PhaserModule.Display.Color.HexStringToColor(hairHex).color;
+          // The painterly keeper sheet is the art source of truth. Hide the
+          // old tint-mask layers so skin/hair choices never paint glitched
+          // blotches over the character while generated variants are pending.
           this.avatarSprite
             ?.clearTint()
             .setAlpha(1);
           this.avatarSkinSprite
-            ?.setAlpha(0.92)
-            .setTint(skinTint)
+            ?.clearTint()
+            .setAlpha(0)
             .setDepth((this.avatarSprite?.depth ?? 0) + 1);
           this.avatarHairSprite
-            ?.setAlpha(0.95)
-            .setTint(hairTint)
+            ?.clearTint()
+            .setAlpha(0)
             .setDepth((this.avatarSprite?.depth ?? 0) + 2);
         }
 
@@ -2124,20 +2131,14 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
         }
 
         private applyRemoteKeeperTints(remote: RemoteGardenAvatarObject) {
-          // Same fix as the local keeper — tint the silhouette sheets with the
-          // remote's chosen colours so visitors render as themselves.
-          const skinHex = getKeeperSkinTone(remote.skinId).color;
-          const hairHex = getKeeperHairColor(remote.hairColorId).color;
-          const skinTint = PhaserModule.Display.Color.HexStringToColor(skinHex).color;
-          const hairTint = PhaserModule.Display.Color.HexStringToColor(hairHex).color;
           remote.sprite.clearTint().setAlpha(1);
           remote.skinSprite
-            .setAlpha(0.92)
-            .setTint(skinTint)
+            .clearTint()
+            .setAlpha(0)
             .setDepth(remote.sprite.depth + 1);
           remote.hairSprite
-            .setAlpha(0.95)
-            .setTint(hairTint)
+            .clearTint()
+            .setAlpha(0)
             .setDepth(remote.sprite.depth + 2);
         }
 
@@ -2450,17 +2451,77 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
           };
         }
 
-        private constrainAvatarToWalkable(x: number, y: number) {
-          let point = this.constrainToWorldBounds(x, y);
+        private activeWalkSegments() {
+          return variant === "park"
+            ? [...parkWalkSegments, ...parkWalkableConnectors]
+            : sharedWalkSegments;
+        }
 
-          // Obstacle model: the whole scaled world is walkable except the
-          // edge inset, water, and decor footprints. Loop a few times because
-          // pushing out of one obstacle can land near another.
+        private activeWalkCircles() {
+          return variant === "park"
+            ? [...parkWalkCircles, ...parkWalkableExtensions]
+            : [...sharedWalkCircles, ...sharedWalkableExtensions];
+        }
+
+        private isInsidePaintedWalkable(x: number, y: number) {
+          const inCircle = this.activeWalkCircles().some((circle) => {
+            return PhaserModule.Math.Distance.Between(x, y, circle.x, circle.y) <= circle.radius;
+          });
+          if (inCircle) return true;
+          return this.activeWalkSegments().some((segment) => {
+            const projection = projectPointToSegment(x, y, segment);
+            return PhaserModule.Math.Distance.Between(x, y, projection.x, projection.y) <= segment.radius;
+          });
+        }
+
+        private projectToPaintedWalkable(x: number, y: number) {
+          if (this.isInsidePaintedWalkable(x, y)) return { x, y };
+          let closest = { x, y };
+          let bestDistance = Number.POSITIVE_INFINITY;
+
+          this.activeWalkCircles().forEach((circle) => {
+            const angle = PhaserModule.Math.Angle.Between(circle.x, circle.y, x, y);
+            const candidate = {
+              x: circle.x + Math.cos(angle) * circle.radius,
+              y: circle.y + Math.sin(angle) * circle.radius,
+            };
+            const distance = PhaserModule.Math.Distance.Between(x, y, candidate.x, candidate.y);
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              closest = candidate;
+            }
+          });
+
+          this.activeWalkSegments().forEach((segment) => {
+            const projection = projectPointToSegment(x, y, segment);
+            const away = new PhaserModule.Math.Vector2(x - projection.x, y - projection.y);
+            if (away.lengthSq() < 0.001) away.set(0, 1);
+            away.normalize();
+            const candidate = {
+              x: projection.x + away.x * segment.radius,
+              y: projection.y + away.y * segment.radius,
+            };
+            const distance = PhaserModule.Math.Distance.Between(x, y, candidate.x, candidate.y);
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              closest = candidate;
+            }
+          });
+
+          return this.constrainToWorldBounds(closest.x, closest.y);
+        }
+
+        private constrainAvatarToWalkable(x: number, y: number) {
+          let point = this.projectToPaintedWalkable(x, y);
+
+          // Painted-path model: keep the keeper on roads, pads, and discovery
+          // bubbles, then push out of water/decor. Loop because pushing away
+          // from one obstacle can land near another.
           for (let attempts = 0; attempts < 4; attempts += 1) {
             const before = { ...point };
             point = this.pushOutOfWater(point.x, point.y);
             point = this.pushOutOfDecorFootprints(point.x, point.y);
-            point = this.constrainToWorldBounds(point.x, point.y);
+            point = this.projectToPaintedWalkable(point.x, point.y);
             if (PhaserModule.Math.Distance.Between(before.x, before.y, point.x, point.y) < 0.5) break;
           }
 
@@ -2646,17 +2707,9 @@ export function GardenCanvas({ canEditGarden = true, onAvatarMove, remotePlayers
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
-            // Day-one tints for a freshly-spawned visiting keeper.
-            // applyRemoteKeeperTints will keep these refreshed afterwards.
-            const initialSkinTint = PhaserModule.Display.Color.HexStringToColor(
-              getKeeperSkinTone(custom.skinId).color,
-            ).color;
-            const initialHairTint = PhaserModule.Display.Color.HexStringToColor(
-              getKeeperHairColor(custom.hairColorId).color,
-            ).color;
-            skinSprite.setTint(initialSkinTint).setAlpha(0.92);
             sprite.clearTint().setAlpha(1);
-            hairSprite.setTint(initialHairTint).setAlpha(0.95);
+            skinSprite.clearTint().setAlpha(0);
+            hairSprite.clearTint().setAlpha(0);
             const label = this.add
               .text(0, -102, player.displayName, {
                 align: "center",

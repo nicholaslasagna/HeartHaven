@@ -75,7 +75,7 @@ export function CompanionMiniCard() {
       </div>
       <p className="mt-3 flex items-center gap-1 text-[11px] font-bold text-ink-600">
         <Heart className="size-3 text-blush-500" />
-        Care actions over at /app/pet earn hearts and lift mood.
+        Use the care dock beside the world to earn hearts and lift mood.
       </p>
     </section>
   );
