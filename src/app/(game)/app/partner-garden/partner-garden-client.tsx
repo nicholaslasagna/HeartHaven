@@ -6,10 +6,10 @@ import { useSearchParams } from "next/navigation";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
-import { CompanionCareDock } from "@/components/game/companion-care-dock";
 import { readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
+import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
 import { recordActivity } from "@/lib/game/activity";
@@ -106,6 +106,10 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
   const latestPersistedDecorRef = useRef<GardenDecorPlacement[]>(decor);
   const saveRealtimeDecor = realtime.saveDecor;
 
+  // Mirror server-canonical decor for the partner-garden (variant="partner").
+  // Same external-subscription justification — the realtime hook is the
+  // external system whose updates we sync into local state.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (realtimeDecor) {
       setDecor(realtimeDecor);
@@ -127,6 +131,7 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
     latestPersistedDecorRef.current = localDecor;
     setDecorSaveStatus("Shared garden decor loaded locally");
   }, [realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleDecorChange = useCallback(async (next: GardenDecorPlacement[]) => {
     if (!canEditGarden) {
@@ -255,7 +260,7 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
           <p className="rounded-md border border-blush-300/40 bg-white/70 px-3 py-2 text-xs font-extrabold text-blush-700">
             {decorSaveStatus}
           </p>
-          <CompanionCareDock compact />
+          <CompanionMiniCard />
         </div>
         <GardenSocialPanel
           canManagePlacement={!isGuestVisit}

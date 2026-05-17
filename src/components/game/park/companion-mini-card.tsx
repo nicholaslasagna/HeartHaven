@@ -1,81 +1,186 @@
 "use client";
 
-import { Heart, PawPrint } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Apple, Heart, Moon, PawPrint, Sparkles, Wind, type LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getActiveCompanion, COMPANION_ROSTER_EVENT } from "@/lib/game/companion-roster";
-import { getPetMood, getPetVitals, PET_VITALS_EVENT } from "@/lib/game/pet-state";
-
-const moodCopy: Record<ReturnType<typeof getPetMood>, { label: string; tone: string }> = {
-  blissful: { label: "Blissful", tone: "text-blush-500" },
-  happy: { label: "Happy", tone: "text-garden-700" },
-  content: { label: "Content", tone: "text-ink-700" },
-  restless: { label: "Restless", tone: "text-honey-700" },
-  lonely: { label: "Lonely", tone: "text-lavender-500" },
-};
+import {
+  getCooldownRemaining,
+  getPetMood,
+  getPetVitals,
+  performPetAction,
+  PET_VITALS_EVENT,
+  type PetCareAction,
+  type PetMood,
+  type PetVitals,
+} from "@/lib/game/pet-state";
 
 /**
- * Compact "your companion right now" card for the left column. Shows the
- * active companion's name, species, mood, and a vitals strip — so the
- * player has a glanceable status without leaving the park view.
+ * The single companion surface for in-world pages — shows the active
+ * companion's identity + mood + vitals, AND the four care actions
+ * (Feed / Play / Pamper / Rest) so the keeper never has to leave the
+ * scene to top up vitals. Previously this UI was split across a
+ * left-sidebar mini card and a separate "Companion Care" dock below the
+ * canvas; both surfaces showed the same numbers, which read as
+ * duplicated noise. Merged here so the sidebar tells the whole story.
  */
-export function CompanionMiniCard() {
-  const [companion, setCompanion] = useState(() => getActiveCompanion());
-  const [vitals, setVitals] = useState(getPetVitals);
-  const mood = getPetMood(vitals);
-  const moodInfo = moodCopy[mood];
 
-  useEffect(() => {
-    const syncRoster = () => setCompanion(getActiveCompanion());
-    const syncVitals = () => setVitals(getPetVitals());
-    window.addEventListener(COMPANION_ROSTER_EVENT, syncRoster);
-    window.addEventListener(PET_VITALS_EVENT, syncVitals);
-    return () => {
-      window.removeEventListener(COMPANION_ROSTER_EVENT, syncRoster);
-      window.removeEventListener(PET_VITALS_EVENT, syncVitals);
-    };
+const moodCopy: Record<PetMood, { label: string; tone: string; phrase: string }> = {
+  blissful: { label: "Blissful", tone: "text-blush-500", phrase: "glowing" },
+  happy: { label: "Happy", tone: "text-garden-700", phrase: "happy" },
+  content: { label: "Content", tone: "text-ink-700", phrase: "content" },
+  restless: { label: "Restless", tone: "text-honey-700", phrase: "restless" },
+  lonely: { label: "Lonely", tone: "text-lavender-500", phrase: "needs love" },
+};
+
+const careActions: Array<{
+  id: PetCareAction;
+  label: string;
+  hint: string;
+  className: string;
+  Icon: LucideIcon;
+}> = [
+  { id: "feed", label: "Feed", hint: "Adds fullness and a little joy.", className: "bg-honey-100 text-honey-800 border-honey-300", Icon: Apple },
+  { id: "play", label: "Play", hint: "Boosts happiness, but uses energy.", className: "bg-blush-100 text-blush-700 border-blush-300", Icon: Sparkles },
+  { id: "pamper", label: "Pamper", hint: "Restores freshness and comfort.", className: "bg-garden-100 text-garden-800 border-garden-300", Icon: Wind },
+  { id: "rest", label: "Rest", hint: "Restores energy and settles your companion.", className: "bg-lavender-100 text-lavender-700 border-lavender-300", Icon: Moon },
+];
+
+const statsRows: Array<{
+  key: keyof Pick<PetVitals, "happiness" | "fullness" | "energy" | "cleanliness">;
+  label: string;
+  tint: string;
+}> = [
+  { key: "fullness", label: "Fed", tint: "bg-honey-500" },
+  { key: "energy", label: "Rest", tint: "bg-sky-500" },
+  { key: "happiness", label: "Joy", tint: "bg-blush-500" },
+  { key: "cleanliness", label: "Fresh", tint: "bg-garden-500" },
+];
+
+function formatCooldown(ms: number) {
+  if (ms <= 0) return "Ready";
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.ceil((ms % 60_000) / 1000);
+  if (minutes <= 0) return `${seconds}s`;
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+}
+
+function readSnapshot() {
+  const vitals = getPetVitals();
+  return {
+    vitals,
+    mood: getPetMood(vitals),
+    cooldowns: Object.fromEntries(careActions.map((action) => [action.id, getCooldownRemaining(action.id)])) as Record<PetCareAction, number>,
+    companion: getActiveCompanion(),
+  };
+}
+
+export function CompanionMiniCard() {
+  const [snapshot, setSnapshot] = useState(readSnapshot);
+  const [status, setStatus] = useState("Care right here without leaving the world.");
+
+  const refresh = useCallback(() => {
+    setSnapshot(readSnapshot());
   }, []);
 
-  const stats: Array<{ key: string; label: string; value: number; tint: string }> = [
-    { key: "fullness", label: "Fed", value: vitals.fullness, tint: "bg-honey-500" },
-    { key: "energy", label: "Rest", value: vitals.energy, tint: "bg-sky-500" },
-    { key: "happiness", label: "Joy", value: vitals.happiness, tint: "bg-blush-500" },
-    { key: "cleanliness", label: "Fresh", value: vitals.cleanliness, tint: "bg-garden-500" },
-  ];
+  useEffect(() => {
+    const onVitals = () => refresh();
+    const onRoster = () => refresh();
+    window.addEventListener(PET_VITALS_EVENT, onVitals);
+    window.addEventListener(COMPANION_ROSTER_EVENT, onRoster);
+    // 1s tick keeps cooldown labels counting down without us wiring up a
+    // per-button timer per render.
+    const timer = window.setInterval(refresh, 1000);
+    return () => {
+      window.removeEventListener(PET_VITALS_EVENT, onVitals);
+      window.removeEventListener(COMPANION_ROSTER_EVENT, onRoster);
+      window.clearInterval(timer);
+    };
+  }, [refresh]);
+
+  const lowestStat = useMemo(
+    () =>
+      statsRows.reduce(
+        (lowest, row) => (snapshot.vitals[row.key] < snapshot.vitals[lowest.key] ? row : lowest),
+        statsRows[0],
+      ),
+    [snapshot.vitals],
+  );
+
+  function handleCare(action: PetCareAction) {
+    const result = performPetAction(action);
+    refresh();
+    const label = careActions.find((entry) => entry.id === action)?.label ?? "Care";
+    if (!result.ok) {
+      setStatus(`${label} needs ${formatCooldown(result.cooldownRemainingMs)} more.`);
+      return;
+    }
+    const name = snapshot.companion?.name ?? "Casper";
+    setStatus(`${label} helped ${name}. +${result.heartsEarned} heart.`);
+  }
+
+  const moodInfo = moodCopy[snapshot.mood];
+  const speciesLabel = snapshot.companion?.speciesId
+    ? snapshot.companion.speciesId.replace(/-/g, " ")
+    : "Casper cat";
 
   return (
     <section className="hh-card p-4">
       <div className="flex items-center justify-between gap-2">
         <p className="hh-eyebrow text-blush-500">Your companion</p>
-        <span className={`text-xs font-extrabold uppercase tracking-normal ${moodInfo?.tone ?? "text-ink-700"}`}>
-          {moodInfo?.label ?? mood}
+        <span className={`text-xs font-extrabold uppercase tracking-normal ${moodInfo.tone}`}>
+          {moodInfo.label}
         </span>
       </div>
       <div className="mt-2 flex items-center gap-2">
         <PawPrint className="size-5 text-lavender-500" />
-        <h3 className="hh-display text-2xl text-ink-900">{companion?.name ?? "Casper"}</h3>
+        <h3 className="hh-display text-2xl text-ink-900">{snapshot.companion?.name ?? "Casper"}</h3>
       </div>
-      <p className="text-xs font-bold text-ink-500">
-        {companion?.speciesId ? companion.speciesId.replace(/-/g, " ") : "Casper cat"}
+      <p className="text-xs font-bold text-ink-500">{speciesLabel}</p>
+
+      <p className="mt-3 inline-flex items-center gap-1 rounded-full bg-cream-100 px-2.5 py-0.5 text-[11px] font-black text-ink-700">
+        Needs {lowestStat.label.toLowerCase()}
       </p>
+
       <div className="mt-3 grid gap-2">
-        {stats.map((stat) => (
+        {statsRows.map((stat) => (
           <div key={stat.key}>
             <div className="flex items-center justify-between text-xs font-extrabold text-ink-700">
               <span className="uppercase tracking-normal">{stat.label}</span>
-              <span>{Math.round(stat.value)}</span>
+              <span>{Math.round(snapshot.vitals[stat.key])}</span>
             </div>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-cream-200">
               <div
                 className={`h-full rounded-full ${stat.tint}`}
-                style={{ width: `${Math.max(0, Math.min(100, stat.value))}%` }}
+                style={{ width: `${Math.max(0, Math.min(100, snapshot.vitals[stat.key]))}%` }}
               />
             </div>
           </div>
         ))}
       </div>
-      <p className="mt-3 flex items-center gap-1 text-[11px] font-bold text-ink-600">
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        {careActions.map(({ id, label, hint, className, Icon }) => {
+          const cooldown = snapshot.cooldowns[id];
+          const disabled = cooldown > 0;
+          return (
+            <button
+              className={`inline-flex items-center justify-center gap-1.5 rounded-full border px-2.5 py-2 text-xs font-black shadow-sm transition disabled:cursor-not-allowed disabled:border-cream-300 disabled:bg-cream-100 disabled:text-ink-400 ${className}`}
+              disabled={disabled}
+              key={id}
+              onClick={() => handleCare(id)}
+              title={disabled ? `${label} ready in ${formatCooldown(cooldown)}` : hint}
+              type="button"
+            >
+              <Icon className="size-3.5" />
+              {disabled ? formatCooldown(cooldown) : label}
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="mt-3 flex items-center gap-1 text-[11px] font-bold leading-5 text-ink-600">
         <Heart className="size-3 text-blush-500" />
-        Use the care dock beside the world to earn hearts and lift mood.
+        {status}
       </p>
     </section>
   );

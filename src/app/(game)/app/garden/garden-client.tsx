@@ -4,7 +4,6 @@ import Link from "next/link";
 import { ArrowRight, Leaf, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
-import { CompanionCareDock } from "@/components/game/companion-care-dock";
 import { readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
@@ -89,6 +88,11 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
     };
   }, []);
 
+  // Mirror server-canonical decor (from `useGardenRealtime`) into local
+  // state so the canvas + drawer see one truth. The realtime hook is the
+  // external subscription source — set-state-in-effect is the documented
+  // pattern for this case.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (realtimeDecor) {
       setDecor(realtimeDecor);
@@ -110,6 +114,7 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
     latestPersistedDecorRef.current = localDecor;
     setDecorSaveStatus("Garden decor loaded locally");
   }, [realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleDecorChange = useCallback(async (next: GardenDecorPlacement[]) => {
     if (!canEditGarden) {
@@ -228,7 +233,6 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
           <p className="rounded-md border border-garden-300/40 bg-white/70 px-3 py-2 text-xs font-extrabold text-garden-800">
             {decorSaveStatus}
           </p>
-          <CompanionCareDock compact />
         </div>
         <GardenSocialPanel
           canManagePlacement={!isGuestVisit}

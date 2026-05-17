@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Gamepad2, Map, Sparkles } from "lucide-react";
+import { ArrowLeft, Gamepad2, Map as MapIcon, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { CompanionCareDock } from "@/components/game/companion-care-dock";
 import { readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
@@ -91,6 +90,9 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
   const latestPersistedDecorRef = useRef<GardenDecorPlacement[]>(decor);
   const saveRealtimeDecor = realtime.saveDecor;
 
+  // Mirror server-canonical decor for the park (variant="park"). Same
+  // external-subscription justification as the room + garden clients.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (realtimeDecor) {
       setDecor(realtimeDecor);
@@ -110,6 +112,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
     latestPersistedDecorRef.current = localDecor;
     setDecorSaveStatus("Park decor loaded locally");
   }, [realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleDecorChange = useCallback(async (next: GardenDecorPlacement[]) => {
     if (!canEditGarden) {
@@ -193,7 +196,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
             </Button>
             <Button asChild variant="warm">
               <Link href="/app/games">
-                <Map /> Invite party
+                <MapIcon /> Invite party
               </Link>
             </Button>
           </div>
@@ -249,7 +252,6 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
           <p className="rounded-md border border-honey-300/40 bg-white/70 px-3 py-2 text-xs font-extrabold text-honey-800">
             {decorSaveStatus}
           </p>
-          <CompanionCareDock compact />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:flex xl:flex-col">

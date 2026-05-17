@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Coins, DoorOpen, Maximize2, Move, PackagePlus, Plus, RotateCcw, Save, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { CompanionCareDock } from "@/components/game/companion-care-dock";
+import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
 import { RoomSocialPanel } from "@/components/game/room-social-panel";
 import { WorldZoneDock } from "@/components/game/world-zone-dock";
@@ -196,11 +196,25 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const canBuyExpansion = isHostRoom && roomExpansions < maxAffordableExpansionSlots && wallet.coins >= nextExpansionCost;
   const nextExpansionLevel = Math.max(3, (roomExpansions + 1) * 3);
 
+  // Sync room-scoped local prefs (expansions, surfaces) from localStorage
+  // whenever the active room changes. These are external-storage reads, so
+  // the `set-state-in-effect` rule's stated allowed pattern — "subscribe
+  // for updates from some external system, calling setState in a callback
+  // function when external state changes" — applies. Disabling for this
+  // specific line.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRoomExpansions(readRoomExpansions(activeRoom.id));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRoomSurfaces(readRoomSurfaces(activeRoom.id));
   }, [activeRoom.id]);
 
+  // Mirror server-canonical placements (from `useRoomRealtime`) into the
+  // local saved+draft state so the canvas + drawer see one truth. Same
+  // external-subscription pattern justification as above — the realtime
+  // hook IS the external system whose updates we're synchronising into
+  // React state.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (realtimePlacements) {
       setPlacements(realtimePlacements);
@@ -228,6 +242,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
       && Boolean(window.localStorage.getItem(getRoomStorageKey(activeRoom.id)));
     setSaveStatus(hasSavedLayout ? "Loaded local room layout" : "Move-in ready layout");
   }, [activeRoom.id, realtimePlacements, realtime.placementsLoading, realtime.placementsVersion]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     const syncProgression = () => setProgression(readPlayerProgression());
@@ -545,7 +560,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
 
         <aside className="grid min-w-0 content-start gap-4 xl:max-h-[820px] xl:overflow-y-auto xl:pr-1">
-          <CompanionCareDock compact />
+          <CompanionMiniCard />
           <section className="order-3 rounded-lg border border-cream-300 bg-white/76 p-4 shadow-sm">
             <div className="mb-3">
               <p className="text-xs font-extrabold uppercase tracking-normal text-lavender-500">Paint and tile</p>
