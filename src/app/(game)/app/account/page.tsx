@@ -116,8 +116,8 @@ export default async function AccountPage({
         </p>
         <h2 className="mt-2 font-display text-2xl text-ink-900">Recovery & safety phone</h2>
         <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-          Optional. Used only to help recover your account and to keep banned users from
-          returning under a new email. Never shown to other keepers. Format: international, like
+          Optional. Used to help recover your account.
+          Never shown to other keepers. Format: international, like
           <code className="mx-1 rounded bg-cream-200 px-1 py-0.5">+14155550100</code>.
         </p>
         {serverPhone && (

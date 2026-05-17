@@ -5,6 +5,7 @@ import {
   SOCIAL_EVENT,
   acceptFriendInvite,
   acceptInviteFromCode,
+  applyKeeperNameRefresh,
   buildInviteLink,
   cancelOutgoingInvite,
   canLookupCode,
@@ -22,6 +23,8 @@ import {
   type SocialState,
 } from "@/lib/game/social";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   cancelSupabaseOutgoingInvite,
   ensureInviteRealtime,
@@ -46,7 +49,55 @@ export function useSocial() {
     // — past or live — lands in the local inbox without the recipient
     // needing to click a shareable URL.
     void ensureInviteRealtime();
+
+    // Refresh display names from the server for every friend + recently-
+    // played-with keeper. Without this, a friend who changed their
+    // username on their Account page would still show under the old
+    // name here forever (the value was cached at friending time). The
+    // RPC returns just `{friend_code, username}` per code — no PII
+    // leakage beyond the friend graph the user already has access to.
+    let cancelled = false;
+    async function refreshNames() {
+      if (cancelled) return;
+      if (!isSupabaseConfigured()) return;
+      const current = getSocialState();
+      const codes = new Set<string>();
+      for (const friend of current.friends) codes.add(friend.code);
+      for (const played of current.playedWith) codes.add(played.code);
+      // Strip self so we don't re-resolve ourselves through the RPC.
+      codes.delete(current.selfCode);
+      if (codes.size === 0) return;
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data, error } = await supabase.rpc("refresh_keeper_names", {
+          p_friend_codes: Array.from(codes),
+        });
+        if (cancelled || error || !Array.isArray(data)) return;
+        const updates = (data as Array<{ friend_code?: string; username?: string }>)
+          .filter((row) => typeof row?.friend_code === "string" && typeof row?.username === "string")
+          .map((row) => ({ code: row.friend_code as string, displayName: row.username as string }));
+        if (updates.length > 0) applyKeeperNameRefresh(updates);
+      } catch {
+        /* best-effort — UI keeps the cached name until the next refresh */
+      }
+    }
+    // First refresh shortly after mount (let initial render settle).
+    const initialTimer = window.setTimeout(() => {
+      void refreshNames();
+    }, 250);
+    // Re-fetch whenever the tab regains focus — captures the case where
+    // a friend renamed while this tab was in the background.
+    const focusHandler = () => {
+      void refreshNames();
+    };
+    window.addEventListener("focus", focusHandler);
+    window.addEventListener("visibilitychange", focusHandler);
+
     return () => {
+      cancelled = true;
+      window.clearTimeout(initialTimer);
+      window.removeEventListener("focus", focusHandler);
+      window.removeEventListener("visibilitychange", focusHandler);
       window.removeEventListener(SOCIAL_EVENT, sync);
       window.removeEventListener("storage", sync);
       void teardownInviteRealtime();

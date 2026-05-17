@@ -240,17 +240,88 @@ export function recordPlayedWith(entry: { code: FriendCode; displayName: string;
   // played-with suggestions strip. The block list is authoritative here.
   if (isCodeBlocked(code)) return;
   const now = new Date().toISOString();
+  const trustedName = (entry.displayName || "").trim();
   const existingIndex = state.playedWith.findIndex((played) => played.code === code);
   const next: PlayedWithEntry = {
     code,
-    displayName: entry.displayName || state.playedWith[existingIndex]?.displayName || "Keeper",
+    displayName: trustedName || state.playedWith[existingIndex]?.displayName || "Keeper",
     context: entry.context,
     lastPlayedAt: now,
   };
   const playedWith = existingIndex >= 0
     ? state.playedWith.map((played, index) => (index === existingIndex ? next : played))
     : [next, ...state.playedWith].slice(0, 60);
-  rawWrite({ ...state, playedWith });
+
+  // Mirror the fresh display name onto the matching Friend row when present.
+  // Without this, a keeper who changes their username mid-session would keep
+  // showing up on the Friends page under their old name until the next
+  // explicit refresh. Realtime presence already feeds the live name through
+  // `hardenRealtimePlayer` so the value here is sanitized.
+  let friends = state.friends;
+  if (trustedName) {
+    let mutated = false;
+    friends = state.friends.map((friend) => {
+      if (friend.code === code && friend.displayName !== trustedName) {
+        mutated = true;
+        return { ...friend, displayName: trustedName, lastSeenAt: now };
+      }
+      return friend;
+    });
+    if (!mutated) friends = state.friends;
+  }
+
+  rawWrite({ ...state, playedWith, friends });
+}
+
+/**
+ * Apply a batch of `{code, displayName}` updates fetched from the
+ * `refresh_keeper_names` RPC. Touches both `friends[]` and `playedWith[]`
+ * so the Friends page reflects current usernames immediately on next
+ * render. Skips entries that already match (no event storm on a quiet
+ * refresh).
+ *
+ * Pending invites in the inbox are intentionally NOT mutated here — those
+ * record the name AT THE TIME the invite was sent, which is the more
+ * faithful UX (e.g. "@oldname invited you" stays accurate even if they've
+ * since renamed). If you want live invite names instead, walk
+ * `state.inbox` here too.
+ */
+export function applyKeeperNameRefresh(
+  updates: Array<{ code: FriendCode; displayName: string }>,
+): void {
+  if (!Array.isArray(updates) || updates.length === 0) return;
+  const state = rawRead();
+  const byCode = new Map<string, string>();
+  for (const update of updates) {
+    if (!update) continue;
+    const code = normalizeFriendCode(update.code);
+    const name = (update.displayName || "").trim();
+    if (!code || !name) continue;
+    byCode.set(code, name);
+  }
+  if (byCode.size === 0) return;
+
+  let mutated = false;
+  const friends = state.friends.map((friend) => {
+    const fresh = byCode.get(friend.code);
+    if (fresh && fresh !== friend.displayName) {
+      mutated = true;
+      return { ...friend, displayName: fresh };
+    }
+    return friend;
+  });
+
+  const playedWith = state.playedWith.map((played) => {
+    const fresh = byCode.get(played.code);
+    if (fresh && fresh !== played.displayName) {
+      mutated = true;
+      return { ...played, displayName: fresh };
+    }
+    return played;
+  });
+
+  if (!mutated) return;
+  rawWrite({ ...state, friends, playedWith });
 }
 
 /**
