@@ -26,11 +26,19 @@ alter table public.permanent_bans
   add column if not exists expires_at timestamptz,
   add column if not exists original_duration_seconds bigint;
 
--- An index that the active-ban filters hit on every signup attempt and
--- session check. Cheap to maintain; the table is tiny.
+-- Indexes that the active-ban filters hit on every signup attempt and
+-- session check. Do NOT use `now()` in a partial-index predicate here:
+-- Postgres requires every function in an index predicate to be IMMUTABLE,
+-- while `now()` is only STABLE. The active/expired check stays in the
+-- functions below; these indexes provide the lookup keys.
 create index if not exists permanent_bans_active_idx
-  on public.permanent_bans (banned_profile_id)
-  where expires_at is null or expires_at > now();
+  on public.permanent_bans (banned_profile_id, expires_at);
+
+create index if not exists permanent_bans_email_active_idx
+  on public.permanent_bans (lower(banned_email), expires_at);
+
+create index if not exists permanent_bans_phone_active_idx
+  on public.permanent_bans (banned_phone, expires_at);
 
 comment on column public.permanent_bans.expires_at is
   'NULL = permanent ban (the historical default). A timestamp = temporary ban; the row is treated as inactive once now() >= expires_at.';
