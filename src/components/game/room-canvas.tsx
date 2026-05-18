@@ -85,6 +85,7 @@ type RoomCanvasProps = {
     controlMode?: "keeper" | "companion";
   }) => void;
   onRoomEmote?: (emote: RoomEmote) => void;
+  onRoomNavigate?: (href: string) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
 
@@ -188,6 +189,7 @@ export function RoomCanvas({
   canEditRoom = true,
   onAvatarMove,
   onRoomEmote,
+  onRoomNavigate,
   onPlacementsChange,
   worldWidth: worldWidthProp,
   worldHeight: worldHeightProp,
@@ -206,6 +208,7 @@ export function RoomCanvas({
   const placementsRef = useRef(placements);
   const pendingPlacementIdsRef = useRef(pendingPlacementIds);
   const onPlacementsChangeRef = useRef(onPlacementsChange);
+  const onRoomNavigateRef = useRef(onRoomNavigate);
   const [status, setStatus] = useState("Lighting the Moonlit Loft");
   const [selected, setSelected] = useState("No item selected");
   const { activeEvent } = useSeasonalEvent();
@@ -218,6 +221,10 @@ export function RoomCanvas({
   useEffect(() => {
     onPlacementsChangeRef.current = onPlacementsChange;
   }, [onPlacementsChange]);
+
+  useEffect(() => {
+    onRoomNavigateRef.current = onRoomNavigate;
+  }, [onRoomNavigate]);
 
   useEffect(() => {
     placementsRef.current = placements;
@@ -2066,7 +2073,11 @@ export function RoomCanvas({
             playCozyCue("ui");
             setStatus(`Entering ${hotspot.portal.name}...`);
             this.time.delayedCall(220, () => {
-              window.location.assign(hotspot.portal.href);
+              if (onRoomNavigateRef.current) {
+                onRoomNavigateRef.current(hotspot.portal.href);
+              } else {
+                window.location.assign(hotspot.portal.href);
+              }
             });
             return;
           }

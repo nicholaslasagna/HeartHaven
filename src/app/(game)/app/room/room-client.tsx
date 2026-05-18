@@ -5,7 +5,7 @@ import type { DragEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Coins, DoorOpen, Maximize2, Move, PackagePlus, Plus, RotateCcw, Save, Sparkles } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
 import { RoomCanvasLoader } from "@/components/game/room-canvas-loader";
 import { RoomSocialPanel } from "@/components/game/room-social-panel";
@@ -89,6 +89,7 @@ function changedPlacementIds(previous: RoomPlacement[], next: RoomPlacement[]) {
 }
 
 export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const roomId = searchParams.get("room") ?? "moonlit-loft";
   const visitTargetRaw = searchParams.get("visit");
@@ -319,6 +320,13 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     }
   }, [canEditRoom, commitRoomPlacements, isHostRoom]);
 
+  const handleRoomNavigate = useCallback(
+    (href: string) => {
+      router.push(href);
+    },
+    [router],
+  );
+
   function saveRoom() {
     void commitRoomPlacements(draftPlacements, "host-save");
   }
@@ -539,6 +547,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               canEditRoom={canEditRoom}
               onAvatarMove={realtime.sendMove}
               onPlacementsChange={handlePlacementsChange}
+              onRoomNavigate={handleRoomNavigate}
               onRoomEmote={realtime.sendEmote}
               pendingPlacementIds={savingPlacementIds}
               placements={placements}

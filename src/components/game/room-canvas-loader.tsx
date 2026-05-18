@@ -38,6 +38,7 @@ type RoomCanvasLoaderProps = {
     controlMode?: "keeper" | "companion";
   }) => void;
   onRoomEmote?: (emote: RoomEmote) => void;
+  onRoomNavigate?: (href: string) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
 
@@ -54,12 +55,14 @@ export function RoomCanvasLoader({
   pendingPlacementIds,
   onAvatarMove,
   onRoomEmote,
+  onRoomNavigate,
   onPlacementsChange,
 }: RoomCanvasLoaderProps) {
   return (
     <RoomCanvas
       canEditRoom={canEditRoom}
       onAvatarMove={onAvatarMove}
+      onRoomNavigate={onRoomNavigate}
       onPlacementsChange={onPlacementsChange}
       onRoomEmote={onRoomEmote}
       pendingPlacementIds={pendingPlacementIds}
