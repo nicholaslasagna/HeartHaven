@@ -76,6 +76,7 @@ type GardenCanvasProps = {
     petFacing?: FacingDirection;
     controlMode?: "keeper" | "companion";
   }) => void;
+  onNavigate?: (href: string) => void;
   onDecorChange?: (decor: GardenDecorPlacement[]) => void;
 };
 
@@ -493,6 +494,7 @@ export function GardenCanvas({
   canEditGarden = true,
   decor,
   onAvatarMove,
+  onNavigate,
   onDecorChange,
   pendingDecorIds = [],
   remotePlayers = [],
@@ -504,6 +506,7 @@ export function GardenCanvas({
   const decorRef = useRef<GardenDecorPlacement[]>(decor ?? readGardenDecor(variant));
   const pendingDecorIdsRef = useRef(pendingDecorIds);
   const onDecorChangeRef = useRef(onDecorChange);
+  const onNavigateRef = useRef(onNavigate);
   const timeOfDayRef = useRef<GardenTimeOfDay>("noon");
   const { activeEvent } = useSeasonalEvent();
   const [timeOfDay, setTimeOfDay] = useState<GardenTimeOfDay>("noon");
@@ -523,6 +526,10 @@ export function GardenCanvas({
   useEffect(() => {
     onDecorChangeRef.current = onDecorChange;
   }, [onDecorChange]);
+
+  useEffect(() => {
+    onNavigateRef.current = onNavigate;
+  }, [onNavigate]);
 
   useEffect(() => {
     const nextDecor = decor ?? readGardenDecor(variant);
@@ -3125,7 +3132,11 @@ export function GardenCanvas({
             if (!decoration.href) return;
             playCozyCue("ui");
             setStatus(`Opening ${decoration.label}.`);
-            window.location.assign(decoration.href);
+            if (onNavigateRef.current) {
+              onNavigateRef.current(decoration.href);
+            } else {
+              window.location.assign(decoration.href);
+            }
           });
         }
 

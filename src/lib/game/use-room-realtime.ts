@@ -92,6 +92,10 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
   const latestFriendCodeRef = useRef<string>("");
   const lastFriendPointAtRef = useRef(0);
   const normalizedRoomId = useMemo(() => normalizeRoomId(roomId), [roomId]);
+  const normalizedRoomIdRef = useRef(normalizedRoomId);
+  useEffect(() => {
+    normalizedRoomIdRef.current = normalizedRoomId;
+  }, [normalizedRoomId]);
   const normalizedHostCode = useMemo(
     () => normalizeFriendCode(hostFriendCode ?? (localFriendCode || getSocialState().selfCode)),
     [hostFriendCode, localFriendCode],
@@ -125,6 +129,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           id: createGuestId(),
           displayName: username,
           friendCode: social.selfCode,
+          roomId: normalizedRoomId,
           ...readPresenceCustomization(),
           facing: "right",
           x: 390,
@@ -161,6 +166,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           id: localId,
           displayName,
           friendCode: social.selfCode,
+          roomId: normalizedRoomId,
           ...readPresenceCustomization(),
           facing: "right",
           x: 390,
@@ -189,6 +195,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             .map((player) => hardenRealtimePlayer(player))
             .filter((player): player is RealtimeRoomPlayer => Boolean(player))
             .filter((player) => player.id !== localId)
+            .filter((player) => !player.roomId || player.roomId === normalizedRoomId)
             .filter((player) => !player.friendCode || !isBlocked(player.friendCode))
             .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
@@ -267,6 +274,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           .on("broadcast", { event: "avatar_move" }, ({ payload }) => {
             const player = hardenRealtimePlayer(payload);
             if (!player || player.id === localId) return;
+            if (player.roomId && player.roomId !== normalizedRoomId) return;
             if (player.friendCode && isBlocked(player.friendCode)) return;
             if (player.friendCode) {
               recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
@@ -276,6 +284,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           .on("broadcast", { event: "room_emote" }, ({ payload }) => {
             const player = hardenRealtimePlayer(payload);
             if (!player || player.id === localId) return;
+            if (player.roomId && player.roomId !== normalizedRoomId) return;
             if (player.friendCode && isBlocked(player.friendCode)) return;
             if (player.friendCode) {
               recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
@@ -286,6 +295,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           .on("broadcast", { event: "room_chat" }, ({ payload }) => {
             const message = hardenIncomingChat(payload);
             if (!message || message.playerId === localId) return;
+            if (message.roomId && message.roomId !== normalizedRoomId) return;
             if (message.friendCode && isBlocked(message.friendCode)) return;
             appendMessage(message);
             window.dispatchEvent(new CustomEvent("hearthaven:room-chat-bubble", { detail: message }));
@@ -325,6 +335,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             ...current,
             displayName: getCachedPublicUsername(),
             friendCode: getSocialState().selfCode,
+            roomId: normalizedRoomIdRef.current,
             ...readPresenceCustomization(),
             updatedAt: Date.now(),
           };
@@ -370,7 +381,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       localPlayerRef.current = null;
       setPlayers([]);
     };
-  }, [appendMessage, channelKey, roomCode, roomName]);
+  }, [appendMessage, channelKey, normalizedRoomId, roomCode, roomName]);
 
   const sendMove = useCallback((position: {
     x: number;
@@ -388,6 +399,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     const payload: RealtimeRoomPlayer = {
       ...localPlayer,
       friendCode: latestFriendCodeRef.current || localPlayer.friendCode,
+      roomId: normalizedRoomIdRef.current,
       x: Math.round(position.x),
       y: Math.round(position.y),
       facing: position.facing ?? localPlayer.facing,
@@ -410,6 +422,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
 
     const payload: RealtimeRoomPlayer = {
       ...localPlayer,
+      roomId: normalizedRoomIdRef.current,
       emote,
       updatedAt: Date.now(),
     };
@@ -576,6 +589,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       playerId: localPlayer?.id ?? createGuestId(),
       displayName: localPlayer?.displayName ?? getCachedPublicUsername(),
       friendCode: social.selfCode,
+      roomId: normalizedRoomIdRef.current,
       text: moderation.text,
       createdAt: Date.now(),
     };

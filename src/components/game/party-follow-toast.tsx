@@ -71,7 +71,7 @@ export function PartyFollowToast() {
 
   function follow(prompt: PartyRelocateEvent) {
     setPrompts((current) => current.filter((entry) => entry !== prompt));
-    router.push(prompt.path);
+    router.push(prompt.path, { scroll: false });
   }
 
   function dismiss(prompt: PartyRelocateEvent) {

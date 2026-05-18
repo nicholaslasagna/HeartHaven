@@ -322,7 +322,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
 
   const handleRoomNavigate = useCallback(
     (href: string) => {
-      router.push(href);
+      router.push(href, { scroll: false });
     },
     [router],
   );
@@ -515,8 +515,9 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
                   ? "border-blush-300 bg-blush-100 text-ink-900"
                   : "border-cream-300 bg-cream-50 text-ink-700 hover:border-lavender-300 hover:bg-lavender-100/60"
               }`}
-              href={embedded ? `/app/area?zone=room&room=${room.id}` : room.href}
+              href={roomHref(room)}
               key={room.id}
+              scroll={false}
             >
               <span className="flex items-center gap-2 text-sm font-black"><DoorOpen className="size-4" /> {room.name}</span>
               <span className="mt-1 block text-xs font-bold">

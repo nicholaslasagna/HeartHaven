@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Gamepad2, Map as MapIcon, Sparkles } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
@@ -35,6 +35,7 @@ function changedDecorIds(previous: GardenDecorPlacement[], next: GardenDecorPlac
 }
 
 export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const visitTargetRaw = searchParams.get("visit");
   const visitTarget = visitTargetRaw ? normalizeFriendCode(visitTargetRaw) : null;
@@ -154,6 +155,13 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
     );
   }, [canEditGarden, realtimeDecor, saveRealtimeDecor]);
 
+  const handleNavigate = useCallback(
+    (href: string) => {
+      router.push(href, { scroll: false });
+    },
+    [router],
+  );
+
   if (!isVisitAllowed) {
     return (
       <div className="grid gap-5">
@@ -244,6 +252,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
               decor={decor}
               onAvatarMove={realtime.sendMove}
               onDecorChange={handleDecorChange}
+              onNavigate={handleNavigate}
               pendingDecorIds={pendingDecorIds}
               plots={parkPlots}
               remotePlayers={realtime.players}

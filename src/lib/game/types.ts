@@ -65,6 +65,8 @@ export type RealtimeRoomPlayer = {
   displayName: string;
   /** Privacy-preserving public social handle for friend gating/blocking. */
   friendCode?: string;
+  /** Current room inside a shared hosted house channel. */
+  roomId?: string;
   /** Hex palette color — kept for back-compat and aura tint. */
   color: string;
   /** Keeper customization. */

@@ -8,6 +8,8 @@ export type GardenChatMessage = {
   displayName: string;
   /** Public friend code, used only for block/report filtering. */
   friendCode?: string;
+  /** Optional room scope for shared hosted-house channels. */
+  roomId?: string;
   text: string;
   createdAt: number;
 };

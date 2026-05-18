@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { Gamepad2, Home, Leaf, Map } from "lucide-react";
 
 const zones = [
@@ -9,6 +13,24 @@ const zones = [
 ];
 
 export function WorldZoneDock({ active }: { active: "room" | "garden" | "park" | "games" }) {
+  const searchParams = useSearchParams();
+  const visitTarget = searchParams.get("visit");
+  const currentRoom = searchParams.get("room");
+  const zoneHrefs = useMemo(() => {
+    const areaHref = (zone: "room" | "garden" | "park") => {
+      const params = new URLSearchParams({ zone });
+      if (zone === "room" && currentRoom) params.set("room", currentRoom);
+      if (visitTarget) params.set("visit", visitTarget);
+      return `/app/area?${params.toString()}`;
+    };
+    return {
+      room: areaHref("room"),
+      garden: areaHref("garden"),
+      park: areaHref("park"),
+      games: "/app/games",
+    };
+  }, [currentRoom, visitTarget]);
+
   return (
     <section className="rounded-lg border border-cream-300 bg-white/68 p-3 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -27,8 +49,9 @@ export function WorldZoneDock({ active }: { active: "room" | "garden" | "park" |
                     ? "border-blush-300 bg-blush-100 text-ink-900"
                     : "border-cream-300 bg-cream-50 text-ink-700 hover:border-lavender-300 hover:bg-lavender-100/60"
                 }`}
-                href={zone.href}
+                href={zoneHrefs[zone.match as keyof typeof zoneHrefs] ?? zone.href}
                 key={zone.href}
+                scroll={false}
               >
                 <span className="flex items-center gap-2 text-sm font-black"><Icon className="size-4" /> {zone.label}</span>
                 <span className="mt-1 block text-xs font-bold">{zone.copy}</span>

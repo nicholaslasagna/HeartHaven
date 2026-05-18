@@ -80,11 +80,16 @@ export function useServerPartyLobby(initialSize = 4) {
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const navigatedToHrefRef = useRef<string | null>(null);
+  const lobbyRef = useRef<LobbyState | null>(null);
   // userId lives in state, NOT a ref, because `isHost` + `selfSeated`
   // + `startStatus` all read it during render. Refs read during render
   // trip react-hooks/refs (and are genuinely a bug — they don't trigger
   // re-renders when the value changes).
   const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    lobbyRef.current = lobby;
+  }, [lobby]);
 
   /** Pull current lobby + seats + pending requests for this keeper. */
   const hydrate = useCallback(async () => {
@@ -259,22 +264,36 @@ export function useServerPartyLobby(initialSize = 4) {
           { event: "INSERT", schema: "public", table: "lobby_events" },
           (payload) => {
             const row = payload?.new as
-              | { kind?: string; payload?: { game_href?: string; profile_id?: string } }
+              | { session_id?: string; kind?: string; payload?: { game_href?: string; profile_id?: string } }
               | undefined;
             if (!row) return;
+            const currentLobby = lobbyRef.current;
+            const eventSessionId = typeof row.session_id === "string" ? row.session_id : null;
+            const isCurrentLobbyEvent = Boolean(currentLobby && eventSessionId === currentLobby.session_id);
             if (row.kind === "started") {
               const href = row.payload?.game_href;
+              const isCurrentMember = Boolean(
+                currentLobby
+                  && (
+                    currentLobby.host_profile_id === myUserId
+                    || currentLobby.seats.some((seat) => seat.profile_id === myUserId)
+                  ),
+              );
               // Guests auto-navigate to the chosen game. Track the last
               // href we navigated to so a duplicate event (network
               // hiccup, hydration retry) doesn't double-fire.
+              if (!isCurrentMember) {
+                void hydrate();
+                return;
+              }
               if (href && navigatedToHrefRef.current !== href) {
                 navigatedToHrefRef.current = href;
-                router.push(href);
+                router.push(href, { scroll: false });
               }
-            } else if (row.kind === "cancelled") {
+            } else if (row.kind === "cancelled" && isCurrentLobbyEvent) {
               setLobby(null);
               setJoinRequests([]);
-            } else if (row.kind === "kicked" && myUserId && row.payload?.profile_id === myUserId) {
+            } else if (row.kind === "kicked" && isCurrentLobbyEvent && myUserId && row.payload?.profile_id === myUserId) {
               setLobby(null);
               setJoinRequests([]);
             } else {
@@ -380,7 +399,7 @@ export function useServerPartyLobby(initialSize = 4) {
       const href = typeof data === "string" ? data : null;
       if (!href) return { ok: false, reason: "Pick a game before starting." };
       navigatedToHrefRef.current = href;
-      router.push(href);
+      router.push(href, { scroll: false });
       return { ok: true, value: { href } } as Result<{ href: string }>;
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : "Could not start" };

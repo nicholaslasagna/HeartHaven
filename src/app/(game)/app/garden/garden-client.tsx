@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowRight, Leaf, Sparkles } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
 import { readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
@@ -33,6 +33,7 @@ function changedDecorIds(previous: GardenDecorPlacement[], next: GardenDecorPlac
 }
 
 export function GardenClient({ games, plots, embedded = false }: GardenClientProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const gardenId = searchParams.get("garden") ?? "caspers-moonberry-beds";
   const visitTargetRaw = searchParams.get("visit");
@@ -156,6 +157,13 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
     );
   }, [canEditGarden, realtimeDecor, saveRealtimeDecor]);
 
+  const handleNavigate = useCallback(
+    (href: string) => {
+      router.push(href, { scroll: false });
+    },
+    [router],
+  );
+
   if (!isVisitAllowed) {
     return (
       <div className="grid gap-5">
@@ -227,6 +235,7 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
             decor={decor}
             onAvatarMove={realtime.sendMove}
             onDecorChange={handleDecorChange}
+            onNavigate={handleNavigate}
             pendingDecorIds={pendingDecorIds}
             plots={plots}
             remotePlayers={realtime.players}

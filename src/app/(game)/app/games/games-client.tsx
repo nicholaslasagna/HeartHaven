@@ -96,7 +96,7 @@ export function GamesClient() {
       queueMicrotask(() => {
         setNotice({ kind: "error", message: "That invite link is not a valid HeartHaven friend code." });
       });
-      router.replace("/app/games");
+      router.replace("/app/games", { scroll: false });
       return;
     }
 
@@ -109,7 +109,7 @@ export function GamesClient() {
             : "You are already in that lobby."
           : actionErrorCopy(result.reason),
       });
-      router.replace("/app/games");
+      router.replace("/app/games", { scroll: false });
     });
   }, [party, party.ready, router, searchParams]);
 
@@ -180,7 +180,6 @@ export function GamesClient() {
       return;
     }
     setNotice({ kind: "ok", message: "Starting game..." });
-    router.push(result.value.href);
   }
 
   return (
@@ -276,7 +275,7 @@ export function GamesClient() {
                 {copied === "party-link" ? "Copied" : "Copy lobby invite"}
               </Button>
               <CozyButton asChild variant="warm">
-                <Link href="/app/friends">
+                <Link href="/app/friends" scroll={false}>
                   <UserPlus /> Invite from Friends
                 </Link>
               </CozyButton>

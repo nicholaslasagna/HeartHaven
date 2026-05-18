@@ -38,6 +38,7 @@ type GardenCanvasLoaderProps = {
     petFacing?: "left" | "right";
     controlMode?: "keeper" | "companion";
   }) => void;
+  onNavigate?: (href: string) => void;
   onDecorChange?: (decor: GardenDecorPlacement[]) => void;
 };
 
@@ -45,6 +46,7 @@ export function GardenCanvasLoader({
   canEditGarden,
   decor,
   onAvatarMove,
+  onNavigate,
   onDecorChange,
   pendingDecorIds,
   remotePlayers,
@@ -57,6 +59,7 @@ export function GardenCanvasLoader({
       decor={decor}
       onAvatarMove={onAvatarMove}
       onDecorChange={onDecorChange}
+      onNavigate={onNavigate}
       pendingDecorIds={pendingDecorIds}
       plots={plots}
       remotePlayers={remotePlayers}

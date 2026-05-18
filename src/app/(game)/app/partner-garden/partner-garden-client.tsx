@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HeartHandshake, LockKeyhole, Sparkles, Sun } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
@@ -65,6 +65,7 @@ function changedDecorIds(previous: GardenDecorPlacement[], next: GardenDecorPlac
 }
 
 export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const visitTargetRaw = searchParams.get("visit");
   const visitTarget = visitTargetRaw ? normalizeFriendCode(visitTargetRaw) : null;
@@ -173,6 +174,13 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
     );
   }, [canEditGarden, realtimeDecor, saveRealtimeDecor]);
 
+  const handleNavigate = useCallback(
+    (href: string) => {
+      router.push(href, { scroll: false });
+    },
+    [router],
+  );
+
   if (!isVisitAllowed) {
     return (
       <div className="grid gap-5">
@@ -252,6 +260,7 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
             decor={decor}
             onAvatarMove={realtime.sendMove}
             onDecorChange={handleDecorChange}
+            onNavigate={handleNavigate}
             pendingDecorIds={pendingDecorIds}
             plots={plots}
             remotePlayers={realtime.players}

@@ -69,6 +69,10 @@ function sanitizeControlMode(value: unknown): "keeper" | "companion" {
   return value === "companion" ? "companion" : "keeper";
 }
 
+function sliceString(value: unknown, max = 32) {
+  return typeof value === "string" ? value.slice(0, max) : "";
+}
+
 /**
  * Validate + clamp a realtime presence row before we hand it to the
  * renderer. Returns `null` for payloads we can't recover (no id, no
@@ -88,24 +92,23 @@ export function hardenRealtimePlayer(raw: unknown): RealtimeRoomPlayer | null {
   // The Phaser scene's tinting + frame-lookup functions already coerce
   // unknown ids to fallback constants via their `normalizeKeeper*` /
   // `normalizePet*` helpers, so we just slice extreme strings here.
-  const slice = (value: unknown, max = 32) => (typeof value === "string" ? value.slice(0, max) : "");
-
   return {
     id,
     displayName: sanitizeDisplayName(r.displayName),
     friendCode,
+    roomId: sliceString(r.roomId, 64) || undefined,
     color,
-    characterId: slice(r.characterId),
-    bodyId: slice(r.bodyId),
-    skinId: slice(r.skinId),
-    hairStyleId: slice(r.hairStyleId),
-    hairColorId: slice(r.hairColorId),
-    paletteId: slice(r.paletteId),
-    outfitId: slice(r.outfitId),
+    characterId: sliceString(r.characterId),
+    bodyId: sliceString(r.bodyId),
+    skinId: sliceString(r.skinId),
+    hairStyleId: sliceString(r.hairStyleId),
+    hairColorId: sliceString(r.hairColorId),
+    paletteId: sliceString(r.paletteId),
+    outfitId: sliceString(r.outfitId),
     petName: sanitizeDisplayName(r.petName, "Casper"),
-    petSpeciesId: slice(r.petSpeciesId),
-    petToneId: slice(r.petToneId),
-    petAccessory: slice(r.petAccessory),
+    petSpeciesId: sliceString(r.petSpeciesId),
+    petToneId: sliceString(r.petToneId),
+    petAccessory: sliceString(r.petAccessory),
     facing: sanitizeFacing(r.facing),
     x: clampCoord(r.x, 5000),
     y: clampCoord(r.y, 5000),
@@ -144,6 +147,7 @@ export function hardenIncomingChat(raw: unknown): GardenChatMessage | null {
     playerId,
     displayName: sanitizeDisplayName(r.displayName),
     friendCode: sanitizeFriendCode(r.friendCode),
+    roomId: sliceString(r.roomId, 64) || undefined,
     text: result.text,
     createdAt: Number(r.createdAt) || Date.now(),
   };

@@ -127,7 +127,7 @@ export function FriendsClient() {
       }
     });
     // Clear the query param so a refresh doesn't re-trigger.
-    router.replace("/app/friends");
+    router.replace("/app/friends", { scroll: false });
   }, [searchParams, social, router]);
 
   const pendingInbox = useMemo(
@@ -239,7 +239,7 @@ export function FriendsClient() {
       // URL with ?visit=...&room=... — navigate inline so the visit flow opens.
       if (url.searchParams.get("visit")) {
         const path = `${url.pathname}${url.search}` || "/app/area";
-        router.push(path);
+        router.push(path, { scroll: false });
         setAcceptInput("");
         return;
       }
