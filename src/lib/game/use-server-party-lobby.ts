@@ -65,17 +65,13 @@ export type LobbyJoinRequest = {
 
 export type StartStatus =
   | { ok: true }
-  | { ok: false; reason: "not-host" | "no-game" | "no-lobby" | "not-ready" };
+  | { ok: false; reason: "not-host" | "no-game" | "no-lobby" | "not-full" | "not-ready" };
 
 type Result<T = void> =
   | ({ ok: true } & (T extends void ? Record<string, never> : { value: T }))
   | { ok: false; reason: string };
 
-export function useServerPartyLobby(_initialSize = 4) {
-  // initialSize is kept in the signature for backwards-compatibility
-  // with the previous localStorage hook; max_players is now decided by
-  // create_party_lobby (default 6, configurable per-call).
-
+export function useServerPartyLobby(initialSize = 4) {
   const router = useRouter();
   const [lobby, setLobby] = useState<LobbyState | null>(null);
   const [joinRequests, setJoinRequests] = useState<LobbyJoinRequest[]>([]);
@@ -111,32 +107,57 @@ export function useServerPartyLobby(_initialSize = 4) {
         return;
       }
 
-      // Find the active lobby this user is in (host or seated). We
-      // do this with a single round-trip: first locate any seat for
-      // me in an active session, then pull the session + all seats.
-      const { data: mySeatRow } = await supabase
-        .from("game_session_players")
-        .select("session_id")
-        .eq("profile_id", user.id)
-        .limit(1)
-        .maybeSingle();
+      // Find the newest active lobby this user is in (host or seated).
+      // The old implementation grabbed the first historical seat row,
+      // which could hydrate a cancelled/stale lobby and make ready/start
+      // look broken even while a newer lobby existed.
+      const { data: hostedSessions } = await supabase
+        .from("game_sessions")
+        .select(
+          "id, host_id, host_friend_code, status, max_players, selected_game_key, selected_game_href, selected_game_label, updated_at, created_at",
+        )
+        .eq("host_id", user.id)
+        .in("status", ["waiting", "active"])
+        .order("updated_at", { ascending: false })
+        .limit(1);
 
-      if (!mySeatRow?.session_id) {
+      const { data: mySeatRows } = await supabase
+        .from("game_session_players")
+        .select("session_id, joined_at")
+        .eq("profile_id", user.id)
+        .order("joined_at", { ascending: false })
+        .limit(10);
+
+      const seatedSessionIds = Array.isArray(mySeatRows)
+        ? mySeatRows.map((row) => row.session_id).filter(Boolean)
+        : [];
+
+      const { data: seatedSessions } = seatedSessionIds.length
+        ? await supabase
+            .from("game_sessions")
+            .select(
+              "id, host_id, host_friend_code, status, max_players, selected_game_key, selected_game_href, selected_game_label, updated_at, created_at",
+            )
+            .in("id", seatedSessionIds)
+            .in("status", ["waiting", "active"])
+            .order("updated_at", { ascending: false })
+        : { data: [] };
+
+      const candidates = [...(hostedSessions ?? []), ...(seatedSessions ?? [])].sort((a, b) => {
+        const left = Date.parse(String(a.updated_at ?? a.created_at ?? 0));
+        const right = Date.parse(String(b.updated_at ?? b.created_at ?? 0));
+        return right - left;
+      });
+      const session = candidates[0];
+
+      if (!session?.id) {
         setLobby(null);
         setJoinRequests([]);
         setLoading(false);
         return;
       }
 
-      const { data: session } = await supabase
-        .from("game_sessions")
-        .select(
-          "id, host_id, host_friend_code, status, max_players, selected_game_key, selected_game_href, selected_game_label",
-        )
-        .eq("id", mySeatRow.session_id)
-        .maybeSingle();
-
-      if (!session || (session.status !== "waiting" && session.status !== "active")) {
+      if (session.status !== "waiting" && session.status !== "active") {
         setLobby(null);
         setJoinRequests([]);
         setLoading(false);
@@ -280,7 +301,7 @@ export function useServerPartyLobby(_initialSize = 4) {
 
   // ── Actions ─────────────────────────────────────────────────────────
 
-  const createLobby = useCallback(async (maxPlayers = 6): Promise<Result<LobbyState>> => {
+  const createLobby = useCallback(async (maxPlayers = initialSize): Promise<Result<LobbyState>> => {
     if (!isSupabaseConfigured()) return { ok: false, reason: "offline" };
     try {
       const supabase = getSupabaseBrowserClient();
@@ -291,7 +312,7 @@ export function useServerPartyLobby(_initialSize = 4) {
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : "Could not create lobby" };
     }
-  }, [hydrate]);
+  }, [hydrate, initialSize]);
 
   const requestJoin = useCallback(async (hostFriendCode: string): Promise<Result<{ requestId: string | null }>> => {
     if (!isSupabaseConfigured()) return { ok: false, reason: "offline" };
@@ -411,7 +432,7 @@ export function useServerPartyLobby(_initialSize = 4) {
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : "Could not toggle ready" };
     }
-  }, [lobby, hydrate]);
+  }, [lobby, hydrate, userId]);
 
   // ── Derived view-model ──────────────────────────────────────────────
 
@@ -419,14 +440,19 @@ export function useServerPartyLobby(_initialSize = 4) {
     if (!lobby) return { ok: false, reason: "no-lobby" };
     if (lobby.host_profile_id !== userId) return { ok: false, reason: "not-host" };
     if (!lobby.selected_game_href) return { ok: false, reason: "no-game" };
+    if (lobby.seats.length < lobby.max_players) return { ok: false, reason: "not-full" };
     const ready = lobby.seats.filter((seat) => seat.ready).length;
-    if (ready < 2) return { ok: false, reason: "not-ready" };
+    if (ready < lobby.max_players) return { ok: false, reason: "not-ready" };
     return { ok: true };
   }, [lobby, userId]);
 
   const isHost = useMemo(() => Boolean(lobby && lobby.host_profile_id === userId), [lobby, userId]);
   const selfSeated = useMemo(
     () => Boolean(lobby && lobby.seats.some((seat) => seat.profile_id === userId)),
+    [lobby, userId],
+  );
+  const selfSeat = useMemo(
+    () => lobby?.seats.find((seat) => seat.profile_id === userId) ?? null,
     [lobby, userId],
   );
 
@@ -440,6 +466,7 @@ export function useServerPartyLobby(_initialSize = 4) {
       error,
       isHost,
       selfSeated,
+      selfSeat,
       joinRequests,
       localFriendCode,
       // Actions
@@ -463,6 +490,7 @@ export function useServerPartyLobby(_initialSize = 4) {
       error,
       isHost,
       selfSeated,
+      selfSeat,
       joinRequests,
       localFriendCode,
       createLobby,

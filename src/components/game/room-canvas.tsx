@@ -1122,6 +1122,12 @@ export function RoomCanvas({
           this.target = undefined;
           if (this.playMode === "companion") {
             this.petMood = "idle";
+            this.petWasNapping = false;
+            this.petFleeing = false;
+            this.petFleeTarget = undefined;
+            this.pet.setVisible(true);
+            this.petShadow?.setVisible(true);
+            this.cameras.main.startFollow(this.pet, true, 0.08, 0.08);
             setStatus("Playing as your companion. Right-click to swap back.");
             playCozyCue("petChirp");
             // Pause the breathing yoyo so vertical input isn't immediately
@@ -1129,6 +1135,7 @@ export function RoomCanvas({
             // like it could only move sideways.
             this.petBobTween?.pause();
           } else {
+            this.cameras.main.startFollow(this.avatar, true, 0.08, 0.08);
             setStatus("Back in your keeper. Right-click to swap to your companion.");
             playCozyCue("score");
             this.petBobTween?.resume();
@@ -1136,10 +1143,16 @@ export function RoomCanvas({
           this.updatePlayModeBadge();
         }
 
+        private companionFollowTarget() {
+          const offsetX = this.avatarFacing === "left" ? 58 : -58;
+          return this.constrainToFloor(this.avatar.x + offsetX, this.avatar.y + 24);
+        }
+
         private recallCompanion() {
           if (!this.pet || !this.avatar) return;
           this.clearFurnitureInteraction("companion");
-          this.pet.setPosition(this.avatar.x + 54, this.avatar.y + 24);
+          const follow = this.companionFollowTarget();
+          this.pet.setPosition(follow.x, follow.y);
           this.petMood = "follow";
           this.petMoodTimer = 0;
           playCozyCue("petChirp");
@@ -2065,7 +2078,7 @@ export function RoomCanvas({
           if (!this.petBehavior.napping) this.petBehavior = getPetBehavior();
 
           // ── NAPPING ─────────────────────────────────────────────────
-          if (this.petBehavior.napping) {
+          if (this.playMode !== "companion" && this.petBehavior.napping) {
             this.petWasNapping = true;
             this.pet.setVisible(false);
             this.petShadow?.setVisible(false);
@@ -2074,14 +2087,15 @@ export function RoomCanvas({
           }
 
           // ── WAKING UP ───────────────────────────────────────────────
-          if (this.petWasNapping && !this.petBehavior.napping) {
+          if (this.playMode !== "companion" && this.petWasNapping && !this.petBehavior.napping) {
             this.petWasNapping = false;
             this.petFleeing = false;
             this.petFleeTarget = undefined;
             // In a room, the safe wake-up spot is beside the keeper at
             // the canonical offset. Snap to it so the pet doesn't appear
             // half-inside a couch.
-            this.pet.setPosition(this.avatar.x + 54, this.avatar.y + 24);
+            const follow = this.companionFollowTarget();
+            this.pet.setPosition(follow.x, follow.y);
             this.pet.setVisible(true);
             this.petShadow?.setVisible(true);
             this.petMood = "follow";
@@ -2094,7 +2108,7 @@ export function RoomCanvas({
           // the 5-minute nap. The room world is smaller than the garden
           // so the edge isn't far away, but the slow pace still gives
           // the keeper a chance to notice + intervene.
-          if (this.petFleeing) {
+          if (this.playMode !== "companion" && this.petFleeing) {
             const target = this.petFleeTarget;
             if (!target) {
               this.petFleeing = false;
@@ -2127,7 +2141,7 @@ export function RoomCanvas({
           }
 
           // ── EXHAUSTED → START FLEE ─────────────────────────────────
-          if (this.petBehavior.exhausted && !this.petFleeing) {
+          if (this.playMode !== "companion" && this.petBehavior.exhausted && !this.petFleeing) {
             this.petFleeing = true;
             const worldWidth = this.cameras.main.worldView.width || ROOM_WIDTH;
             const fleeLeft = this.pet.x < worldWidth / 2;
@@ -2145,18 +2159,35 @@ export function RoomCanvas({
             this.time.delayedCall(120, () => this.petEyes.forEach((eye) => eye.setScale(1, 1)));
           }
 
-          // Companion-controlled branch — WASD drives the pet directly at
-          // ×1.6 speed (modulated by joy) and the auto-follow is suspended.
+          // Companion-controlled branch — WASD OR click-to-move drives the
+          // pet directly at keeper-parity speed and the auto-follow is
+          // suspended. Vitals still affect mood, but they should never make
+          // direct player control feel broken.
           if (this.playMode === "companion") {
             const keyboard = this.readKeyboard();
-            const ctlSpeed = 0.23 * 1.6 * delta * this.petBehavior.speedMultiplier;
+            const ctlSpeed = 0.23 * 1.6 * delta;
             const prevX = this.pet.x;
             let petMoving = false;
             if (keyboard.x !== 0 || keyboard.y !== 0) {
               this.clearFurnitureInteraction("companion");
+              this.target = undefined;
               const next = this.constrainToFloor(this.pet.x + keyboard.x * ctlSpeed, this.pet.y + keyboard.y * ctlSpeed);
               this.pet.setPosition(next.x, next.y);
               petMoving = true;
+            } else if (this.target) {
+              this.clearFurnitureInteraction("companion");
+              const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, this.target.x, this.target.y);
+              if (distance < 4) {
+                this.target = undefined;
+              } else {
+                const angle = PhaserModule.Math.Angle.Between(this.pet.x, this.pet.y, this.target.x, this.target.y);
+                const next = this.constrainToFloor(
+                  this.pet.x + Math.cos(angle) * ctlSpeed,
+                  this.pet.y + Math.sin(angle) * ctlSpeed,
+                );
+                this.pet.setPosition(next.x, next.y);
+                petMoving = true;
+              }
             }
             if (petMoving && this.pet.x !== prevX) {
               this.petFacing = this.pet.x < prevX ? "left" : "right";
@@ -2227,9 +2258,9 @@ export function RoomCanvas({
             setStatus(this.petMood === "sit" ? "Casper sits beside the room glow." : "Casper is keeping watch.");
           }
 
-          const desiredOffset = this.petMood === "sleep" ? { x: 180, y: -152 } : { x: 62, y: 24 };
-          const targetX = this.petMood === "sleep" ? 600 : this.avatar.x + desiredOffset.x;
-          const targetY = this.petMood === "sleep" ? 266 : this.avatar.y + desiredOffset.y;
+          const follow = this.companionFollowTarget();
+          const targetX = this.petMood === "sleep" ? Math.round(worldWidth * 0.625) : follow.x;
+          const targetY = this.petMood === "sleep" ? Math.round(worldHeight * 0.443) : follow.y;
           const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, targetX, targetY);
           let petMoving = false;
           const prevPetX = this.pet.x;

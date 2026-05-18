@@ -1717,6 +1717,11 @@ export function GardenCanvas({
           this.target = undefined;
           if (this.playMode === "companion") {
             this.petMood = "idle";
+            this.petWasNapping = false;
+            this.petFleeing = false;
+            this.petFleeTarget = undefined;
+            this.pet.setVisible(true);
+            this.petShadow?.setVisible(true);
             this.cameras.main.startFollow(this.pet, true, 0.08, 0.08);
             setStatus("Playing as your companion. They're faster and can sniff for hidden items. Right-click to swap back.");
             playCozyCue("petChirp");
@@ -2386,9 +2391,9 @@ export function GardenCanvas({
         private updatePetController(delta: number) {
           if (!this.pet) return;
           const keyboard = this.readKeyboard();
-          // Joy modulates speed: a sad companion plods, a happy one zips.
-          // `speedMultiplier` ranges 0.5 (no joy) → 1.0 (full joy).
-          const speed = 0.24 * 1.6 * delta * this.petBehavior.speedMultiplier;
+          // Direct control should feel as reliable as keeper control. Vitals
+          // still drive mood/poses, but never throttle the player's input.
+          const speed = 0.24 * 1.6 * delta;
           const prevPetX = this.pet.x;
           let petMoving = false;
           let petMoveDx = 0;
@@ -2467,7 +2472,7 @@ export function GardenCanvas({
           // energy and clears `napUntil` when the 5-minute window
           // elapses, which fires PET_VITALS_EVENT and runs the handler
           // that flips `petBehavior.napping` back to false.
-          if (this.petBehavior.napping) {
+          if (this.playMode !== "companion" && this.petBehavior.napping) {
             this.petWasNapping = true;
             this.pet.setVisible(false);
             this.petShadow?.setVisible(false);
@@ -2483,7 +2488,7 @@ export function GardenCanvas({
           // Just-resolved nap. Restore visibility and snap the pet back
           // to a sensible spot beside the keeper so it doesn't "warp in"
           // halfway through a wall.
-          if (this.petWasNapping && !this.petBehavior.napping) {
+          if (this.playMode !== "companion" && this.petWasNapping && !this.petBehavior.napping) {
             this.petWasNapping = false;
             this.petFleeing = false;
             this.petFleeTarget = undefined;
@@ -2501,7 +2506,7 @@ export function GardenCanvas({
           // then collapse into a nap. The flee uses the dimmest possible
           // speed so the keeper has time to notice and feed/rest them
           // before they're gone.
-          if (this.petFleeing) {
+          if (this.playMode !== "companion" && this.petFleeing) {
             const target = this.petFleeTarget;
             if (!target) {
               this.petFleeing = false;
@@ -2534,7 +2539,7 @@ export function GardenCanvas({
           }
 
           // ── EXHAUSTED → START FLEE ─────────────────────────────────
-          if (this.petBehavior.exhausted && !this.petFleeing) {
+          if (this.playMode !== "companion" && this.petBehavior.exhausted && !this.petFleeing) {
             this.petFleeing = true;
             // Flee toward whichever world edge is closer. Companion drifts
             // off the side of the map — easier to "lose" them than to make

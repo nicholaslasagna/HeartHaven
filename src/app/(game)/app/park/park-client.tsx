@@ -207,7 +207,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
 
       {/* Three-column hub: left sidebar · canvas · right sidebar
           Below xl the columns stack so the canvas keeps a full-width row.
-          The side columns are intentionally narrower than the MeandGi mock
+          The side columns are intentionally narrower than the design mock
           (220 + 260 vs 260 + 300) so the center canvas keeps painted-scene
           breathing room on 1440px viewports. */}
       <section className="grid min-w-0 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_260px]">
