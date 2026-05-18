@@ -1,5 +1,5 @@
 # HeartHaven
-
+<img src="DesignPNG.png" alt="png"></img>
 A cozy, multiplayer, browser-based world for two — adopt a companion, decorate a room, tend a garden, host friends, play mini-games together. Built to feel like Webkinz if it grew up alongside you and remembered the people you love.
 
 Production: **[realfiction.store](https://realfiction.store)**
@@ -73,7 +73,7 @@ scripts/                     Asset generators (Phaser sprite sheets)
 ```
 
 ## Supabase setup
-
+<img src="FriendPNG.png" alt="png"></img>
 The migrations in `supabase/migrations/` are the source of truth for the schema. Apply them in order via `supabase db push` or by pasting them into the SQL editor.
 
 Highlights:
@@ -85,7 +85,7 @@ Highlights:
 Migrations are idempotent (`create table if not exists`, etc.) so re-running is safe.
 
 ## Multiplayer model
-
+<img src="GardenPNG.png" alt="png"></img>
 - **Presence + position broadcasts** — Supabase Realtime per-channel (`room:<hostCode>`, `garden:<hostCode>.<gardenId>`).
 - **Canonical state** — host-owned rows in `room_placements_state` / `garden_decor_state` mirror the world layout. Edits funnel through SECURITY DEFINER RPCs with optimistic-concurrency versioning.
 - **Party lobbies** — server-backed via `game_sessions` + `lobby_join_requests` + `lobby_events`. Request-to-join model: guests knock with the host's friend code, host accepts/denies. When the host hits start, every seated guest auto-navigates to the chosen game URL.
