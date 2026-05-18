@@ -35,9 +35,16 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 .dev.vars
 .dev.vars.local
 cloudflare-env.d.ts
+
+# Private docs kept on the operator's machine but not in the public repo.
+# Pattern: anything ending in .local.md (e.g. BAN_RUNBOOK.local.md,
+# CODEX_HANDOFF.local.md). Public-facing docs use plain .md and ARE
+# tracked.
+*.local.md
 
 # vercel
 .vercel
