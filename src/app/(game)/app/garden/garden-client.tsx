@@ -188,7 +188,9 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
           </p>
         </div>
         <Button asChild variant="warm">
-          <Link href={embedded ? "/app/area?zone=park" : "/app/park"}>
+          {/* Always link into the seamless area container; the standalone
+              /app/park route now redirects there anyway. */}
+          <Link href="/app/area?zone=park">
             Honeyheart Park <ArrowRight />
           </Link>
         </Button>

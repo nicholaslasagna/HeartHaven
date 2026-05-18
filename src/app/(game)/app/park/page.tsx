@@ -1,10 +1,17 @@
-import { Suspense } from "react";
-import { ParkClient } from "@/app/(game)/app/park/park-client";
+import { redirect } from "next/navigation";
 
-export default function ParkPage() {
-  return (
-    <Suspense fallback={<div className="rounded-lg border border-garden-300/50 bg-garden-100/65 p-5 text-sm font-extrabold text-ink-700">Opening Honeyheart Park...</div>}>
-      <ParkClient />
-    </Suspense>
-  );
+/**
+ * Standalone `/app/park` route — kept for back-compat. All zone
+ * navigation now flows through the seamless `/app/area` container.
+ * Forwards `?visit=` so invite links still resolve the right host.
+ */
+export default async function ParkPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ visit?: string }>;
+}) {
+  const { visit } = await searchParams;
+  const params = new URLSearchParams({ zone: "park" });
+  if (visit) params.set("visit", visit);
+  redirect(`/app/area?${params.toString()}`);
 }

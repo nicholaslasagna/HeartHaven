@@ -22,7 +22,7 @@ export function PetalCatchClient() {
         </div>
         <div className="flex gap-2">
           <Button asChild variant="secondary">
-            <Link href="/app/garden"><ArrowLeft /> Garden</Link>
+            <Link href="/app/area?zone=garden"><ArrowLeft /> Garden</Link>
           </Button>
           <Button variant="warm"><Gift /> Rewards live</Button>
         </div>

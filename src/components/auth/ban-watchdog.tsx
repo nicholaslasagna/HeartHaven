@@ -56,11 +56,36 @@ export function BanWatchdog() {
             table: "ban_self_alerts",
             filter: `banned_profile_id=eq.${user.id}`,
           },
-          (payload) => {
+          async (payload) => {
             const banId =
               payload?.new && typeof (payload.new as { ban_id?: unknown }).ban_id === "string"
                 ? ((payload.new as { ban_id: string }).ban_id)
                 : null;
+
+            // Paranoia: if the alert references a ban that's already
+            // expired (e.g. the row was inserted just as the temp ban
+            // lapsed), don't bother signing out. The middleware
+            // `is_current_user_banned` check also filters by
+            // expires_at, so the user would just bounce back to /app/*
+            // anyway — but the redirect+signout dance is jarring.
+            if (banId) {
+              try {
+                const { data } = await supabase.rpc("get_ban_summary", { p_ban_id: banId });
+                const row = Array.isArray(data) ? data[0] : null;
+                const expiresAt = row && typeof row.expires_at === "string" ? row.expires_at : null;
+                if (expiresAt) {
+                  const expiresMs = new Date(expiresAt).getTime();
+                  if (Number.isFinite(expiresMs) && expiresMs <= Date.now()) {
+                    return; // already expired; ignore the alert
+                  }
+                }
+              } catch {
+                // RPC blip — fall through to sign-out. Better to bounce
+                // the keeper to /account-suspended once than to leave
+                // them in a banned-but-undetected state.
+              }
+            }
+
             // Sign out first so the cookie session can't be reused on a
             // back-button navigation. Even if signOut races slow, the
             // /account-suspended redirect itself is harmless to view.

@@ -19,6 +19,18 @@ import {
 } from "@/lib/game/party-lobby";
 import type { Friend } from "@/lib/game/social";
 
+/**
+ * @deprecated Use `useServerPartyLobby` from `@/lib/game/use-server-party-lobby`.
+ *
+ * This is the original localStorage-backed lobby hook. It has a fatal
+ * design flaw: each device has its own lobby state with no shared
+ * rendezvous point, so cross-device multiplayer literally cannot work.
+ * Migration 0029 + `useServerPartyLobby` replace it with a Supabase
+ * Realtime-backed model. This shim stays in the tree only so the old
+ * games-client UI keeps compiling while Codex rebuilds it.
+ *
+ * Do not consume this hook in new code.
+ */
 export function usePartyLobby(initialSize: PartyLobby["size"] = 4) {
   const [lobby, setLobby] = useState<PartyLobby | null>(null);
 

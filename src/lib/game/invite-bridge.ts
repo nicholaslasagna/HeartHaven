@@ -80,15 +80,31 @@ async function syncFriendCodeToProfile(force = false) {
     // Up to 5 collision-retry attempts. With a ~8M code space the
     // birthday-paradox crossover sits around 2,800 users — improbable
     // soon, but a regenerator can hit it any day. Without retry the
-    // unique index on `profiles.friend_code` would reject the update
+    // unique index on `profiles.friend_code` would reject the write
     // and the keeper would be permanently un-routable for invites.
+    //
+    // We branch on row-exists: if the profile already exists we just
+    // UPDATE friend_code (preserves their display_name + username). If
+    // it doesn't — e.g. they signed up before migration 0028's
+    // handle_new_user trigger existed — we INSERT a fresh row with a
+    // seeded display_name. Previously this code only did UPDATE, which
+    // silently affected 0 rows and left downstream server-side lookups
+    // (ban_keeper, refresh_keeper_names, etc.) coming up empty.
+    const profileExists = profile != null;
+    const seedDisplayName = (typeof window !== "undefined"
+      ? (window.localStorage.getItem("hearthaven:public-username") ?? "").trim()
+      : "") || (user.email?.split("@")[0] ?? "Keeper").slice(0, 24);
     let attempt = 0;
     let candidate = local.selfCode;
     while (attempt < 5) {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ friend_code: candidate })
-        .eq("id", user.id);
+      const { error } = profileExists
+        ? await supabase
+            .from("profiles")
+            .update({ friend_code: candidate })
+            .eq("id", user.id)
+        : await supabase
+            .from("profiles")
+            .insert({ id: user.id, friend_code: candidate, display_name: seedDisplayName });
       if (!error) {
         codeSyncDone = true;
         return;

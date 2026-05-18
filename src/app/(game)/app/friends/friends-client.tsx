@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Copy,
   Flag,
+  Gamepad2,
   Gift,
   Inbox,
   LinkIcon,
@@ -306,8 +307,8 @@ export function FriendsClient() {
             </Badge>
             <h1 className="hh-display mt-2 text-4xl text-ink-900">Your circle, kept small and warm.</h1>
             <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-              Send an invite by friend code and your friend sees it instantly in their inbox. If you&apos;re offline
-              first, share the link below — either way, you stay in control of who joins.
+              This is the one place for friend invites. Add keepers by code, accept requests, then tap Play on a friend
+              whenever you want to invite them into a game lobby.
             </p>
           </div>
           <div className="grid gap-2 text-right">
@@ -391,7 +392,7 @@ export function FriendsClient() {
             <h2 className="font-display text-2xl text-ink-900">Send an invite</h2>
           </div>
           <p className="mt-1 text-xs font-bold text-ink-500">
-            Paste a friend code, hit Send, then DM the shareable link to your friend.
+            Type the code your friend gave you. They can accept or decline in their own Friends page.
           </p>
           <div className="mt-3 flex gap-2">
             <input
@@ -449,17 +450,14 @@ export function FriendsClient() {
         </CozyCard>
       </section>
 
-      {/* Got a code? — paste a friend code to send the invite manually
-          (mostly useful before both sides are logged in). When the bridge
-          is live, you usually don't need this — invites just appear. */}
+      {/* Incoming friend-code helper. */}
       <CozyCard className="p-5">
         <div className="flex items-center gap-2">
           <LinkIcon className="size-5 text-honey-700" />
           <h2 className="font-display text-2xl text-ink-900">Got a friend code?</h2>
         </div>
         <p className="mt-1 text-xs font-bold text-ink-500">
-          Type the friend code your friend gave you (looks like HH-XXXXX-NNN). We&apos;ll add it as a pending invite in
-          your inbox so you can accept or decline.
+          If someone told you their code outside the game, add it here and then decide from your inbox.
         </p>
         <div className="mt-3 flex gap-2">
           <input
@@ -514,6 +512,11 @@ export function FriendsClient() {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
+                  <CozyButton asChild size="sm">
+                    <a href={`/app/games?invite=${encodeURIComponent(friend.code)}`}>
+                      <Gamepad2 /> Play
+                    </a>
+                  </CozyButton>
                   <CozyButton size="sm" variant="warm" onClick={() => setGiftTarget({ code: friend.code, displayName: friend.displayName })}>
                     <Gift /> Gift
                   </CozyButton>

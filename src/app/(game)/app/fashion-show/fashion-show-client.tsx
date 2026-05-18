@@ -26,7 +26,7 @@ export function FashionShowClient() {
             <Link href="/app/games"><ArrowLeft /> Games hub</Link>
           </Button>
           <Button asChild variant="warm">
-            <Link href="/app/park"><Shirt /> Park stage</Link>
+            <Link href="/app/area?zone=park"><Shirt /> Park stage</Link>
           </Button>
         </div>
       </section>

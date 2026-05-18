@@ -190,7 +190,9 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="secondary">
-              <Link href={embedded ? "/app/area?zone=garden" : "/app/garden"}>
+              {/* Always go through the seamless container — the standalone
+                  /app/garden route redirects here anyway. */}
+              <Link href="/app/area?zone=garden">
                 <ArrowLeft /> Garden road
               </Link>
             </Button>

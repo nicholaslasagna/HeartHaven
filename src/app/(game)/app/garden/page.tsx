@@ -1,11 +1,19 @@
-import { Suspense } from "react";
-import { GardenClient } from "@/app/(game)/app/garden/garden-client";
-import { gardenPlots, miniGames } from "@/lib/mock-data";
+import { redirect } from "next/navigation";
 
-export default function GardenPage() {
-  return (
-    <Suspense fallback={<div className="rounded-lg border border-garden-300/50 bg-garden-100/65 p-5 text-sm font-extrabold text-ink-700">Waking the garden...</div>}>
-      <GardenClient games={miniGames} plots={gardenPlots} />
-    </Suspense>
-  );
+/**
+ * Standalone `/app/garden` route — kept for back-compat. All zone
+ * navigation now flows through the seamless `/app/area` container.
+ * Forwards `?garden=` and `?visit=` query params so invite links still
+ * resolve the right host's garden.
+ */
+export default async function GardenPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ garden?: string; visit?: string }>;
+}) {
+  const { garden, visit } = await searchParams;
+  const params = new URLSearchParams({ zone: "garden" });
+  if (garden) params.set("garden", garden);
+  if (visit) params.set("visit", visit);
+  redirect(`/app/area?${params.toString()}`);
 }

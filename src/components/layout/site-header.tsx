@@ -14,8 +14,11 @@ export function SiteHeader({ signedIn = false }: SiteHeaderProps) {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
         <Logo />
         <nav className="hidden items-center gap-7 text-sm font-extrabold text-ink-700 md:flex">
-          <Link href="/app/room">Room</Link>
-          <Link href="/app/garden">Garden</Link>
+          {/* All zone links target /app/area?zone=X so switching modes
+              stays inside the seamless AreaClient container (no shell
+              remount, no audio/realtime tear-down). */}
+          <Link href="/app/area?zone=room">Room</Link>
+          <Link href="/app/area?zone=garden">Garden</Link>
           <Link href="/app/shop">Shop</Link>
           <Link href="/roadmap">Roadmap</Link>
         </nav>
