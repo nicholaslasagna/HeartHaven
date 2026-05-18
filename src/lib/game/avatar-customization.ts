@@ -25,6 +25,15 @@ export type KeeperHairColorId =
 export type KeeperPaletteId = "blush" | "lavender" | "garden" | "honey" | "sky";
 export type KeeperOutfitId = "cardigan" | "overalls" | "cape" | "sweater";
 export type KeeperPose = "idle" | "walk1" | "walk2" | "sit" | "wave" | "heart";
+export type KeeperCharacterId =
+  | "rose-waves"
+  | "moonlit-overalls"
+  | "sage-braids"
+  | "honey-curls"
+  | "blush-blonde"
+  | "starlight-cape"
+  | "garden-bangs"
+  | "clover-curls";
 
 export type PetSpeciesId = "fox" | "bunny" | "bear" | "duck" | "kitten" | "puppy" | "calico" | "lamb" | "panda" | "dragon";
 export type PetToneId = "cream" | "blush" | "lavender" | "honey" | "sky" | "mint";
@@ -32,6 +41,7 @@ export type PetAccessoryId = "moonberry-bow" | "lantern-scarf" | "garden-crown" 
 export type PetPose = "idle" | "walk1" | "walk2" | "sit" | "sleep" | "happy";
 
 export type KeeperCustomization = {
+  characterId: KeeperCharacterId;
   bodyId: KeeperBodyId;
   skinId: KeeperSkinId;
   hairStyleId: KeeperHairStyleId;
@@ -97,6 +107,125 @@ export const KEEPER_OUTFITS: Array<{ id: KeeperOutfitId; label: string }> = [
   { id: "overalls", label: "Garden overalls" },
   { id: "cape", label: "Moonlit cape" },
   { id: "sweater", label: "Party sweater" },
+];
+
+export const KEEPER_CHARACTER_PRESETS: Array<{
+  id: KeeperCharacterId;
+  label: string;
+  shortLabel: string;
+  image: string;
+  bodyId: KeeperBodyId;
+  skinId: KeeperSkinId;
+  hairStyleId: KeeperHairStyleId;
+  hairColorId: KeeperHairColorId;
+  paletteId: KeeperPaletteId;
+  outfitId: KeeperOutfitId;
+  description: string;
+}> = [
+  {
+    id: "rose-waves",
+    label: "Rose Waves",
+    shortLabel: "Rose",
+    image: "/game-assets/generated/keepers/presets/rose-waves.png",
+    bodyId: "female",
+    skinId: "fair",
+    hairStyleId: "long-waves",
+    hairColorId: "chestnut",
+    paletteId: "blush",
+    outfitId: "cardigan",
+    description: "Long waves, cream cardigan, lavender rose garden outfit.",
+  },
+  {
+    id: "moonlit-overalls",
+    label: "Moonlit Overalls",
+    shortLabel: "Moonlit",
+    image: "/game-assets/generated/keepers/presets/moonlit-overalls.png",
+    bodyId: "male",
+    skinId: "tan",
+    hairStyleId: "side-part",
+    hairColorId: "chestnut",
+    paletteId: "sky",
+    outfitId: "overalls",
+    description: "Tousled side-part hair, denim garden overalls, lavender trim.",
+  },
+  {
+    id: "sage-braids",
+    label: "Sage Braids",
+    shortLabel: "Sage",
+    image: "/game-assets/generated/keepers/presets/sage-braids.png",
+    bodyId: "female",
+    skinId: "ebony",
+    hairStyleId: "braids",
+    hairColorId: "dark-brown",
+    paletteId: "garden",
+    outfitId: "cardigan",
+    description: "Braided hair with flowers, deep skin tone, sage garden cardigan.",
+  },
+  {
+    id: "honey-curls",
+    label: "Honey Curls",
+    shortLabel: "Honey",
+    image: "/game-assets/generated/keepers/presets/honey-curls.png",
+    bodyId: "male",
+    skinId: "deep",
+    hairStyleId: "curly-fade",
+    hairColorId: "dark-brown",
+    paletteId: "honey",
+    outfitId: "overalls",
+    description: "Curly fade, honey hoodie, soft green overalls.",
+  },
+  {
+    id: "blush-blonde",
+    label: "Blush Blonde",
+    shortLabel: "Blush",
+    image: "/game-assets/generated/keepers/presets/blush-blonde.png",
+    bodyId: "female",
+    skinId: "porcelain",
+    hairStyleId: "soft-curls",
+    hairColorId: "blonde",
+    paletteId: "blush",
+    outfitId: "sweater",
+    description: "Soft blonde curls, blush skirt, cream cardigan.",
+  },
+  {
+    id: "starlight-cape",
+    label: "Starlight Cape",
+    shortLabel: "Starlight",
+    image: "/game-assets/generated/keepers/presets/starlight-cape.png",
+    bodyId: "male",
+    skinId: "olive",
+    hairStyleId: "short-curls",
+    hairColorId: "black",
+    paletteId: "lavender",
+    outfitId: "cape",
+    description: "Short black curls, warm skin tone, lavender moon cape.",
+  },
+  {
+    id: "garden-bangs",
+    label: "Garden Bangs",
+    shortLabel: "Garden",
+    image: "/game-assets/generated/keepers/presets/garden-bangs.png",
+    bodyId: "female",
+    skinId: "warm",
+    hairStyleId: "straight-bangs",
+    hairColorId: "black",
+    paletteId: "lavender",
+    outfitId: "cardigan",
+    description: "Straight bangs, flower clips, lavender garden dress.",
+  },
+  {
+    id: "clover-curls",
+    label: "Clover Curls",
+    shortLabel: "Clover",
+    image: "/game-assets/generated/keepers/presets/clover-curls.png",
+    bodyId: "male",
+    skinId: "brown",
+    hairStyleId: "soft-curls",
+    hairColorId: "auburn",
+    paletteId: "garden",
+    outfitId: "sweater",
+    description: "Auburn curls, clover vest, cream celebration outfit.",
+  },
 ];
 
 export const PET_SPECIES: Array<{ id: PetSpeciesId; label: string; frameRow: number }> = [
@@ -220,6 +349,7 @@ export function readKeeperCustomization(): KeeperCustomization {
   if (typeof window === "undefined") {
     return {
       bodyId: "female",
+      characterId: "rose-waves",
       skinId: "fair",
       hairStyleId: "long-waves",
       hairColorId: "chestnut",
@@ -228,15 +358,17 @@ export function readKeeperCustomization(): KeeperCustomization {
     };
   }
   const bodyId = normalizeKeeperBody(window.localStorage.getItem("hearthaven:keeper-body-id"));
+  const characterId = normalizeKeeperCharacter(window.localStorage.getItem("hearthaven:keeper-character-id"));
   const skinId = normalizeKeeperSkin(window.localStorage.getItem("hearthaven:keeper-skin-id"));
   const hairStyleId = normalizeKeeperHairStyle(window.localStorage.getItem("hearthaven:keeper-hair-style-id"));
   const hairColorId = normalizeKeeperHairColor(window.localStorage.getItem("hearthaven:keeper-hair-color-id"));
   const paletteId = normalizeKeeperPalette(window.localStorage.getItem("hearthaven:keeper-palette-id"));
   const outfitId = normalizeKeeperOutfit(window.localStorage.getItem("hearthaven:keeper-outfit-id"));
-  return { bodyId, skinId, hairStyleId, hairColorId, paletteId, outfitId };
+  return { characterId, bodyId, skinId, hairStyleId, hairColorId, paletteId, outfitId };
 }
 
 export function writeKeeperCustomization(customization: KeeperCustomization) {
+  window.localStorage.setItem("hearthaven:keeper-character-id", customization.characterId);
   window.localStorage.setItem("hearthaven:keeper-body-id", customization.bodyId);
   window.localStorage.setItem("hearthaven:keeper-skin-id", customization.skinId);
   window.localStorage.setItem("hearthaven:keeper-hair-style-id", customization.hairStyleId);
@@ -277,6 +409,7 @@ export function readPresenceCustomization() {
     typeof window === "undefined" ? "Casper" : window.localStorage.getItem("hearthaven:pet-name") ?? "Casper";
   return {
     color: getKeeperPalette(keeper.paletteId).color,
+    characterId: keeper.characterId,
     bodyId: keeper.bodyId,
     skinId: keeper.skinId,
     hairStyleId: keeper.hairStyleId,
@@ -292,6 +425,10 @@ export function readPresenceCustomization() {
 
 export function getKeeperPalette(id: KeeperPaletteId) {
   return KEEPER_PALETTES.find((palette) => palette.id === id) ?? KEEPER_PALETTES[0];
+}
+
+export function getKeeperCharacterPreset(id: KeeperCharacterId) {
+  return KEEPER_CHARACTER_PRESETS.find((preset) => preset.id === id) ?? KEEPER_CHARACTER_PRESETS[0];
 }
 
 export function getKeeperSkinTone(id: KeeperSkinId) {
@@ -315,6 +452,7 @@ export function keeperPaletteIdFromColor(color: string): KeeperPaletteId {
  */
 export function normalizeRemoteCustomization(player: RealtimeRoomPlayer): {
   bodyId: KeeperBodyId;
+  characterId: KeeperCharacterId;
   skinId: KeeperSkinId;
   hairStyleId: KeeperHairStyleId;
   hairColorId: KeeperHairColorId;
@@ -330,6 +468,7 @@ export function normalizeRemoteCustomization(player: RealtimeRoomPlayer): {
   const outfitId: KeeperOutfitId = KEEPER_OUTFITS.some((outfit) => outfit.id === player.outfitId)
     ? (player.outfitId as KeeperOutfitId)
     : "cardigan";
+  const characterId = normalizeKeeperCharacter(player.characterId);
   const bodyId = normalizeKeeperBody(player.bodyId);
   const skinId = normalizeKeeperSkin(player.skinId);
   const hairStyleId = normalizeKeeperHairStyle(player.hairStyleId);
@@ -339,7 +478,7 @@ export function normalizeRemoteCustomization(player: RealtimeRoomPlayer): {
     ? (player.petToneId as PetToneId)
     : "cream";
   const petAccessoryId = normalizePetAccessory(player.petAccessory);
-  return { bodyId, skinId, hairStyleId, hairColorId, paletteId, outfitId, petSpeciesId, petToneId, petAccessoryId };
+  return { characterId, bodyId, skinId, hairStyleId, hairColorId, paletteId, outfitId, petSpeciesId, petToneId, petAccessoryId };
 }
 
 export function getKeeperOutfit(id: KeeperOutfitId) {
@@ -364,6 +503,12 @@ function normalizeKeeperPalette(value: string | null): KeeperPaletteId {
 
 function normalizeKeeperBody(value: string | null | undefined): KeeperBodyId {
   return KEEPER_BODY_TYPES.some((body) => body.id === value) ? (value as KeeperBodyId) : "female";
+}
+
+function normalizeKeeperCharacter(value: string | null | undefined): KeeperCharacterId {
+  return KEEPER_CHARACTER_PRESETS.some((character) => character.id === value)
+    ? (value as KeeperCharacterId)
+    : "rose-waves";
 }
 
 function normalizeKeeperSkin(value: string | null | undefined): KeeperSkinId {

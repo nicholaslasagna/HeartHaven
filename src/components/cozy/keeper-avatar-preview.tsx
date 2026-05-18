@@ -2,8 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import {
+  getKeeperCharacterPreset,
   keeperFrame,
   type KeeperBodyId,
+  type KeeperCharacterId,
   type KeeperHairColorId,
   type KeeperHairStyleId,
   type KeeperOutfitId,
@@ -13,6 +15,7 @@ import {
 } from "@/lib/game/avatar-customization";
 
 type KeeperAvatarPreviewProps = {
+  characterId: KeeperCharacterId;
   bodyId: KeeperBodyId;
   skinId: KeeperSkinId;
   hairStyleId: KeeperHairStyleId;
@@ -49,7 +52,7 @@ function drawFrame(ctx: CanvasRenderingContext2D, image: HTMLImageElement, frame
 }
 
 export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
-  const { bodyId, paletteId, outfitId, pose = "idle", className } = props;
+  const { bodyId, characterId, paletteId, outfitId, pose = "idle", className } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -59,6 +62,14 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      const preset = getKeeperCharacterPreset(characterId);
+      if (pose === "idle") {
+        const image = await loadPreviewImage(preset.image);
+        if (!active) return;
+        ctx.clearRect(0, 0, frameWidth, frameHeight);
+        ctx.drawImage(image, 0, 0, frameWidth, frameHeight);
+        return;
+      }
       const base = await loadPreviewImage("/game-assets/generated/keeper-custom-base-sheet.png");
       if (!active) return;
       ctx.clearRect(0, 0, frameWidth, frameHeight);
@@ -68,7 +79,7 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
     return () => {
       active = false;
     };
-  }, [bodyId, outfitId, paletteId, pose]);
+  }, [bodyId, characterId, outfitId, paletteId, pose]);
 
   return (
     <canvas

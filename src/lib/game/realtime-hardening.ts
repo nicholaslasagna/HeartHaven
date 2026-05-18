@@ -95,6 +95,7 @@ export function hardenRealtimePlayer(raw: unknown): RealtimeRoomPlayer | null {
     displayName: sanitizeDisplayName(r.displayName),
     friendCode,
     color,
+    characterId: slice(r.characterId),
     bodyId: slice(r.bodyId),
     skinId: slice(r.skinId),
     hairStyleId: slice(r.hairStyleId),
