@@ -86,6 +86,11 @@ grant execute on function public.is_phone_banned(text) to anon, authenticated, s
 -- 3. is_current_user_banned — ignore expired bans, return expires_at
 -- ------------------------------------------------------------------------
 
+-- `CREATE OR REPLACE FUNCTION` cannot change a function's OUT-parameter
+-- row type. Migration 0023 returned (banned, reason, ban_id); this version
+-- adds expires_at, so the old no-arg function must be dropped first.
+drop function if exists public.is_current_user_banned();
+
 create or replace function public.is_current_user_banned()
 returns table (banned boolean, reason text, ban_id uuid, expires_at timestamptz)
 language plpgsql
@@ -146,6 +151,10 @@ grant execute on function public.is_current_user_banned() to authenticated, serv
 -- 4. get_ban_summary — include expires_at so /account-suspended can
 -- distinguish permanent / temporary-active / temporary-expired
 -- ------------------------------------------------------------------------
+
+-- Same return-shape change as above: 0023 returned (reason, created_at);
+-- 0027 adds expires_at.
+drop function if exists public.get_ban_summary(uuid);
 
 create or replace function public.get_ban_summary(p_ban_id uuid)
 returns table (reason text, created_at timestamptz, expires_at timestamptz)
