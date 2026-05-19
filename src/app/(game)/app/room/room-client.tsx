@@ -88,6 +88,13 @@ function changedPlacementIds(previous: RoomPlacement[], next: RoomPlacement[]) {
     .map((placement) => placement.id);
 }
 
+function roomDrawerPlacementLabel(item: CatalogItem) {
+  if (item.placementType === "floor") return "Floor item";
+  if (item.placementType === "wall") return "Wall item";
+  if (item.placementType === "garden_plot") return "Garden item";
+  return "Inventory item";
+}
+
 export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -645,7 +652,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               </div>
               <span className="rounded-full bg-cream-100 px-2.5 py-1 text-xs font-black text-ink-700">{roomDrawerItems.length}</span>
             </div>
-            <div className="grid max-h-[390px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2 2xl:grid-cols-3">
+            <div className="grid max-h-[520px] grid-cols-1 gap-2 overflow-y-auto pr-1">
               {roomDrawerItems.length === 0 && (
                 <div className="rounded-lg border border-cream-300 bg-cream-50 px-3 py-3 text-sm font-bold text-ink-600">
                   Your placeable inventory is empty. Buy room items in the shop or open daily gifts to stock this drawer.
@@ -658,7 +665,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               )}
               {roomDrawerItems.map((row) => (
                 <button
-                  className="grid grid-cols-[72px_1fr] gap-3 rounded-2xl border border-cream-300 bg-cream-50 p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/70 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="grid min-h-[116px] min-w-0 grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-hidden rounded-2xl border border-cream-300 bg-cream-50 p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/70 disabled:cursor-not-allowed disabled:opacity-50"
                   draggable={canEditRoom}
                   disabled={!canEditRoom}
                   key={row.entry.id}
@@ -666,24 +673,27 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
                   onDragStart={(event) => handleDrawerDragStart(event, row.catalog)}
                   type="button"
                 >
-                  <span className="relative grid h-[70px] place-items-center overflow-hidden rounded-xl border border-white/80 bg-white/78 shadow-inner">
+                  <span className="relative grid h-24 w-[88px] place-items-center overflow-hidden rounded-xl border border-white/80 bg-white/78 shadow-inner">
                     <Image
                       alt={`${row.catalog.name} icon`}
-                      className={`h-full w-full ${getCatalogItemArtFit(row.catalog) === "cover" ? "object-cover" : "object-contain p-1.5"} drop-shadow-[0_10px_14px_rgba(91,63,63,0.18)]`}
-                      height={96}
+                      className={`h-full w-full ${getCatalogItemArtFit(row.catalog) === "cover" ? "object-cover" : "object-contain p-2"} drop-shadow-[0_10px_14px_rgba(91,63,63,0.18)]`}
+                      height={112}
                       src={getCatalogItemArt(row.catalog)}
-                      width={96}
+                      width={112}
                     />
                     <span className="absolute bottom-1 right-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-black text-ink-700">
                       x{row.entry.quantity}
                     </span>
                   </span>
-                  <span className="min-w-0 self-center">
-                    <span className="block text-sm font-black leading-tight text-ink-900">{row.catalog.name}</span>
-                    <span className="mt-1 block text-xs font-bold capitalize leading-4 text-ink-600">
-                      {row.catalog.category} · {row.catalog.placementType.replace("_", " ")}
+                  <span className="flex min-w-0 flex-col justify-center self-stretch overflow-hidden">
+                    <span className="line-clamp-2 text-sm font-black leading-tight text-ink-900">{row.catalog.name}</span>
+                    <span className="mt-1 block truncate text-[11px] font-black uppercase tracking-normal text-ink-500">
+                      {row.catalog.category} · {roomDrawerPlacementLabel(row.catalog)}
                     </span>
-                    <span className="mt-1 inline-flex rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-black uppercase tracking-normal text-blush-500">
+                    <span className="mt-1 line-clamp-2 text-xs font-semibold leading-4 text-ink-600">
+                      {row.catalog.description}
+                    </span>
+                    <span className="mt-2 inline-flex w-fit rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-black uppercase tracking-normal text-blush-500">
                       drag to place
                     </span>
                   </span>

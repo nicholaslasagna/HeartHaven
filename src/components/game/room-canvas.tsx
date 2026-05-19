@@ -89,7 +89,23 @@ type RoomCanvasProps = {
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
 };
 
-type FurnitureKind = "rug" | "window" | "lantern" | "chair" | "bed" | "petBed" | "sofa" | "swing" | "table" | "shelf" | "plant" | "generic";
+type FurnitureKind =
+  | "rug"
+  | "window"
+  | "lantern"
+  | "chair"
+  | "bed"
+  | "petBed"
+  | "sofa"
+  | "swing"
+  | "table"
+  | "shelf"
+  | "plant"
+  | "plush"
+  | "fireplace"
+  | "piano"
+  | "wardrobe"
+  | "generic";
 type FurnitureActor = "keeper" | "companion";
 type FurnitureAction = "sit" | "sleep";
 
@@ -367,6 +383,11 @@ export function RoomCanvas({
           this.load.image("furniture-garden-swing", "/game-assets/generated/furniture/garden-swing-bench.png");
           this.load.image("furniture-honey-tea-set", "/game-assets/generated/furniture/honey-tea-set.png");
           this.load.image("furniture-lavender-armchair", "/game-assets/generated/furniture/lavender-armchair-v2.png");
+          this.load.image("furniture-casper-plush", "/game-assets/generated/casper-sprite.png");
+          this.load.image("furniture-honey-fireplace", "/game-assets/generated/furniture/honey-stone-fireplace.png");
+          this.load.image("furniture-lavender-piano", "/game-assets/generated/furniture/lavender-upright-piano.png");
+          this.load.image("furniture-keeper-wardrobe", "/game-assets/generated/furniture/keeper-wardrobe-oak.png");
+          this.load.image("furniture-starlit-party-rug", "/game-assets/generated/furniture/starlit-party-rug.png");
         }
 
         create() {
@@ -2783,7 +2804,7 @@ function toPlayablePlacement(placement: RoomPlacement): PlayablePlacement {
     kind,
     width: size.width,
     height: size.height,
-    floorLocked: !["window", "shelf"].includes(kind),
+    floorLocked: !["window", "shelf", "fireplace"].includes(kind),
   };
 }
 
@@ -2799,6 +2820,10 @@ function getFurnitureKind(id: string): FurnitureKind {
   if (id.includes("table")) return "table";
   if (id.includes("shelf")) return "shelf";
   if (id.includes("plant")) return "plant";
+  if (id.includes("plush")) return "plush";
+  if (id.includes("fireplace")) return "fireplace";
+  if (id.includes("piano")) return "piano";
+  if (id.includes("wardrobe")) return "wardrobe";
   return "generic";
 }
 
@@ -2815,6 +2840,10 @@ function getFurnitureSize(kind: FurnitureKind) {
     table: { width: 96, height: 78 },
     shelf: { width: 128, height: 76 },
     plant: { width: 72, height: 104 },
+    plush: { width: 92, height: 96 },
+    fireplace: { width: 184, height: 148 },
+    piano: { width: 190, height: 150 },
+    wardrobe: { width: 156, height: 176 },
     generic: { width: 112, height: 72 },
   };
 
@@ -2845,6 +2874,11 @@ function getFurnitureImageConfig(id: string, kind: FurnitureKind) {
     "sparkling-toast-table": { key: "furniture-honey-tea-set", width: 182, height: 134, yOffset: -32 },
     "armchair-lavender-heart": { key: "furniture-lavender-armchair", width: 132, height: 130, yOffset: -32 },
     "chair-lavender-cushion": { key: "furniture-lavender-armchair", width: 132, height: 130, yOffset: -32 },
+    "casper-moonberry-plush": { key: "furniture-casper-plush", width: 108, height: 108, yOffset: -28 },
+    "fireplace-honey-stone": { key: "furniture-honey-fireplace", width: 208, height: 176, yOffset: -46 },
+    "piano-lavender-upright": { key: "furniture-lavender-piano", width: 214, height: 162, yOffset: -44 },
+    "wardrobe-keeper-oak": { key: "furniture-keeper-wardrobe", width: 162, height: 190, yOffset: -56 },
+    "dance-rug-party-star": { key: "furniture-starlit-party-rug", width: 220, height: 128, yOffset: -8 },
   };
   const direct = configs[id];
   if (direct) return direct;
