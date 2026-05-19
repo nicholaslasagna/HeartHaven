@@ -13,6 +13,8 @@
  */
 
 import { marketCatalog, seasonalCatalog, starterCatalog } from "@/lib/catalog";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { creditWallet } from "@/lib/game/wallet-store";
 import type { CatalogItem } from "@/lib/game/types";
 import type { FriendCode } from "@/lib/game/social";
@@ -115,6 +117,10 @@ function writeState(state: InventoryState) {
   window.dispatchEvent(new CustomEvent(INVENTORY_EVENT, { detail: state }));
 }
 
+export function replaceInventoryState(state: InventoryState) {
+  writeState(state);
+}
+
 /* ----------------------------------------------------------------
    Pure derivers
    ---------------------------------------------------------------- */
@@ -168,16 +174,22 @@ export function addItem(catalogItemId: string, source: InventoryEntry["source"],
   }
   const next = { ...state, items: nextItems };
   writeState(next);
+  // Fire-and-forget the server mirror so the keeper's inventory stays
+  // in sync across devices. Failure is non-fatal — local state is the
+  // authoritative copy until the next hydrate.
+  mirrorAddItem(catalogItemId, source, quantity);
   return next;
 }
 
 /** Toggle whether an item is equipped (no inventory delta, just UI state). */
 export function toggleEquipped(entryId: string) {
   const state = readInventoryState();
+  const target = state.items.find((entry) => entry.id === entryId);
   writeState({
     ...state,
     items: state.items.map((entry) => (entry.id === entryId ? { ...entry, equipped: !entry.equipped } : entry)),
   });
+  if (target) mirrorToggleEquipped(target.catalogItemId);
 }
 
 /**
@@ -203,6 +215,8 @@ export function sellItem(entryId: string):
     : state.items.filter((row) => row.id !== entryId);
 
   writeState({ ...state, items: nextItems });
+  // Mirror the post-sell quantity to the server (0 = delete the row).
+  mirrorSetQuantity(entry.catalogItemId, nextEntry.quantity);
   creditWallet({
     gameId: "inventory-sell",
     label: `Sold · ${catalog.name}`,
@@ -342,4 +356,113 @@ export function awardDailyDrop(): CatalogItem | null {
   if (!catalog) return null;
   addItem(id, "daily-drop", 1);
   return catalog;
+}
+
+// ------------------------------------------------------------------------
+// Supabase mirror (migration 0030 RPCs)
+// ------------------------------------------------------------------------
+//
+// All mutations write to localStorage FIRST for instant UI, then
+// fire-and-forget the server mirror. On reconnect / sign-in we pull
+// server state and replace local. This keeps offline-only mode working
+// AND makes the keeper's inventory cross-device.
+//
+// We deliberately don't await the RPC from inside the mutation
+// functions — UI shouldn't pause on a network round-trip for items the
+// user already paid for. If the mirror fails the worst case is the
+// inventory is out-of-sync until the next hydrate (sign-in, focus, or
+// explicit refresh).
+
+function mirrorAddItem(catalogItemId: string, source: InventoryEntry["source"], quantity: number) {
+  if (!isSupabaseConfigured()) return;
+  void (async () => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.rpc("add_inventory_item", {
+        p_catalog_item_id: catalogItemId,
+        p_source: source,
+        p_quantity: quantity,
+      });
+    } catch {
+      /* swallowed — local write already landed */
+    }
+  })();
+}
+
+function mirrorSetQuantity(catalogItemId: string, quantity: number) {
+  if (!isSupabaseConfigured()) return;
+  void (async () => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.rpc("set_inventory_quantity", {
+        p_catalog_item_id: catalogItemId,
+        p_quantity: quantity,
+      });
+    } catch {
+      /* swallowed */
+    }
+  })();
+}
+
+function mirrorToggleEquipped(catalogItemId: string) {
+  if (!isSupabaseConfigured()) return;
+  void (async () => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      await supabase.rpc("toggle_inventory_equipped", { p_catalog_item_id: catalogItemId });
+    } catch {
+      /* swallowed */
+    }
+  })();
+}
+
+/**
+ * Pull the keeper's inventory from the server and replace local state.
+ * Called on app boot (when authenticated) so a fresh device sees the
+ * keeper's existing items. Safe to call repeatedly — replaces local
+ * with server, which is the authoritative copy.
+ *
+ * Bails out if Supabase isn't configured OR the server returns nothing
+ * (keeper hasn't bought / earned anything yet) — in that case the
+ * local starter inventory stays in place.
+ */
+export async function hydrateInventoryFromServer(): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("get_my_inventory");
+    if (error || !Array.isArray(data) || data.length === 0) return;
+    const items: InventoryEntry[] = data
+      .map((row) => {
+        const r = row as {
+          catalog_item_id?: string;
+          quantity?: number;
+          equipped?: boolean;
+          source?: string;
+          acquired_at?: string;
+        };
+        if (typeof r.catalog_item_id !== "string") return null;
+        const quantity = Math.max(0, Math.floor(Number(r.quantity ?? 0)));
+        if (quantity <= 0) return null;
+        return {
+          id: `inventory-${r.catalog_item_id}`,
+          catalogItemId: r.catalog_item_id,
+          quantity,
+          equipped: Boolean(r.equipped),
+          acquiredAt:
+            typeof r.acquired_at === "string" && r.acquired_at.length > 0
+              ? r.acquired_at
+              : new Date().toISOString(),
+          source: (typeof r.source === "string" ? r.source : "unknown") as InventoryEntry["source"],
+        };
+      })
+      .filter((entry): entry is InventoryEntry => entry !== null);
+    const current = readInventoryState();
+    // Replace items wholesale; preserve gifts (those are routed
+    // separately through the friend-graph + Supabase gifts table, not
+    // this RPC).
+    replaceInventoryState({ ...current, items });
+  } catch {
+    /* swallowed — offline-tolerant */
+  }
 }

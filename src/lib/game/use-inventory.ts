@@ -8,6 +8,7 @@ import {
   getInventoryView,
   getResellValue,
   giftItem,
+  hydrateInventoryFromServer,
   readInventoryState,
   receiveIncomingGift,
   resolveCatalogItem,
@@ -46,6 +47,10 @@ export function useInventory() {
       });
     };
     sync();
+    // Pull the keeper's authoritative inventory from Supabase so a fresh
+    // device sees their existing items. The hydrate function replaces
+    // local state via INVENTORY_EVENT, which `sync` above catches.
+    void hydrateInventoryFromServer();
     window.addEventListener(INVENTORY_EVENT, sync);
     window.addEventListener("hearthaven:gift-sent", acceptRealtimeGift);
     window.addEventListener("storage", sync);

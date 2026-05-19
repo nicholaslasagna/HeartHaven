@@ -73,7 +73,6 @@ export function ShopClient({ items }: ShopClientProps) {
     inventory.addItem(item.id, "purchase", 1);
     const nextCount = (ownedCounts.get(item.id) ?? 0) + 1;
     setNotice(`${item.name} joined your inventory. You own ${nextCount}.`);
-    // TODO: Persist purchases to Supabase inventory_items and wallet transaction tables.
   }
 
   return (

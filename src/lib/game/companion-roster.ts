@@ -113,6 +113,12 @@ export function getCompanionRoster(): CompanionRosterState {
   return rawRead();
 }
 
+export function replaceCompanionRosterState(state: CompanionRosterState) {
+  rawWrite(state);
+  const active = getActiveCompanion(state);
+  if (active) activatePet(active);
+}
+
 export function getActiveCompanion(state: CompanionRosterState = rawRead()) {
   return state.companions.find((companion) => companion.id === state.activeId) ?? state.companions[0];
 }

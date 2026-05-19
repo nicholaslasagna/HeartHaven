@@ -152,6 +152,24 @@ function rawWrite(vitals: PetVitals) {
   window.dispatchEvent(new CustomEvent(PET_VITALS_EVENT, { detail: vitals }));
 }
 
+export function replacePetVitalsState(vitals: PetVitals) {
+  rawWrite({
+    ...vitals,
+    happiness: clamp(vitals.happiness),
+    fullness: clamp(vitals.fullness),
+    energy: clamp(vitals.energy),
+    cleanliness: clamp(vitals.cleanliness),
+    updatedAt: Number(vitals.updatedAt || Date.now()),
+    lastActionAt: {
+      feed: Number(vitals.lastActionAt?.feed ?? 0),
+      play: Number(vitals.lastActionAt?.play ?? 0),
+      pamper: Number(vitals.lastActionAt?.pamper ?? 0),
+      rest: Number(vitals.lastActionAt?.rest ?? 0),
+    },
+    napUntil: vitals.napUntil,
+  });
+}
+
 /**
  * Apply real-time decay to a stored snapshot WITHOUT persisting. Happiness takes
  * an extra hit when the practical needs (fullness/energy/cleanliness) are low —

@@ -11,8 +11,8 @@
  * balances carry over). Every mutation dispatches `hearthaven:reward-granted` so
  * any mounted `useGameWallet()` re-reads immediately.
  *
- * TODO: swap the localStorage body for a Supabase `wallets` + `game_reward_events`
- * transaction RPC once migrations are applied — the public surface stays the same.
+ * Phase 2: localStorage remains the instant/offline cache, while wallet
+ * mutations write through to Supabase RPCs in the background when signed in.
  */
 
 import { playerWallet } from "@/lib/mock-data";
@@ -24,6 +24,7 @@ import {
   type RewardLedgerEntry,
   type StoredRewardState,
 } from "@/lib/game/rewards";
+import { loadServerWalletState, persistWalletCredit, persistWalletSpend } from "@/lib/game/phase2-server";
 
 const LEDGER_LIMIT = 14;
 
@@ -58,6 +59,13 @@ export function writeWalletState(state: StoredRewardState) {
   window.dispatchEvent(new CustomEvent(REWARD_EVENT_NAME, { detail: state }));
 }
 
+export async function hydrateWalletStateFromServer() {
+  const serverState = await loadServerWalletState(readWalletState());
+  if (!serverState) return null;
+  writeWalletState(serverState);
+  return serverState;
+}
+
 /**
  * Add coins/hearts to the wallet and push a ledger entry. Used by mini-game
  * payouts, the daily gift, daily-task completions, and pet-care love rewards —
@@ -75,6 +83,9 @@ export function creditWallet(reward: GameReward): StoredRewardState {
     ledger: [entry, ...current.ledger].slice(0, LEDGER_LIMIT),
   };
   writeWalletState(next);
+  void persistWalletCredit(reward).then((serverState) => {
+    if (serverState) writeWalletState(serverState);
+  });
   return next;
 }
 
@@ -88,6 +99,9 @@ export function spendFromWallet(coins: number, hearts: number): boolean {
       coins: current.wallet.coins - coins,
       hearts: current.wallet.hearts - hearts,
     },
+  });
+  void persistWalletSpend(coins, hearts).then((result) => {
+    if (result.state) writeWalletState(result.state);
   });
   return true;
 }

@@ -5,6 +5,7 @@ import { Logo } from "@/components/brand/logo";
 import { AnnouncementsLoginToast } from "@/components/game/announcements-login-toast";
 import { BanNotificationsHost } from "@/components/game/ban-notifications-host";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
+import { Phase2PersistenceBridge } from "@/components/game/phase2-persistence-bridge";
 import { PartyFollowToast } from "@/components/game/party-follow-toast";
 import { RewardToastHost } from "@/components/game/reward-toast-host";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
@@ -77,6 +78,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
       <AnnouncementsLoginToast />
       <BanNotificationsHost />
       <BanWatchdog />
+      <Phase2PersistenceBridge />
     </div>
   );
 }

@@ -27,7 +27,7 @@ const phases = [
   {
     title: "Phase 2",
     icon: Database,
-    status: "save layer ready",
+    status: "persistent",
     items: [
       { label: "Account data foundation", done: true },
       { label: "Private ownership rules", done: true },
@@ -35,10 +35,10 @@ const phases = [
       { label: "Reward history records", done: true },
       { label: "Seasonal catalog seed data", done: true },
       { label: "Local wallet rewards", done: true },
-      { label: "Persistent pets", done: false },
-      { label: "Inventory", done: false },
-      { label: "Wallets", done: false },
-      { label: "Furniture placement saves", done: false },
+      { label: "Persistent pets", done: true },
+      { label: "Inventory", done: true },
+      { label: "Wallets", done: true },
+      { label: "Furniture placement saves", done: true },
     ],
   },
   {
@@ -56,7 +56,7 @@ const phases = [
       { label: "Depth sorting, shadows, hover outlines", done: true },
       { label: "Local save/load placed items", done: true },
       { label: "In-viewport room decor drawer", done: true },
-      { label: "Online save/load placed items", done: false },
+      { label: "Online save/load placed items", done: true },
     ],
   },
   {
@@ -159,8 +159,8 @@ export default function RoadmapPage() {
             walk-up game kiosks and a fashion stage, a shared memory garden, painted wardrobe sprite rows, Casper-style
             companion variants, Petal Catch, Memory Match, Moonberry Bowling, Garden Four, Moonstone Rock Paper Scissors,
             Fashion Show, Lantern Relay, Heart Hunt, inviteable game cards, moderated garden chat, host-controlled
-            placement permissions, theme modes, live movement, and local wallet rewards. The save layer is ready for
-            protected persistence and session-backed multiplayer.
+            placement permissions, theme modes, live movement, wallet persistence, inventory persistence, pet persistence,
+            and online room layout saves.
           </p>
         </section>
         <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
