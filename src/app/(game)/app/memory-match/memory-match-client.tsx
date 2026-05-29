@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { ArrowLeft, UsersRound } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MemoryMatchCanvasLoader } from "@/components/game/memory-match-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
-import type { MemoryMatchMode } from "@/components/game/memory-match-canvas";
+import type { MemoryMatchMode } from "@/lib/game/memory-match-state";
 import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { cn } from "@/lib/utils";
@@ -13,17 +13,26 @@ import { cn } from "@/lib/utils";
 const modeCopy: Record<MemoryMatchMode, { title: string; description: string }> = {
   couples: {
     title: "Couple-vs-couple",
-    description: "Two couple teams pass turns locally now. Online rooms can sync the turns later.",
+    description: "Two teams take turns on a server-shuffled board. Flips sync live for everyone in the session.",
   },
   party: {
     title: "Party table",
-    description: "Six local seats rotate turns for room parties, birthday nights, or garden gatherings.",
+    description: "Up to six seats rotate turns with the same authoritative board and move log.",
   },
 };
 
 export function MemoryMatchClient() {
   const [mode, setMode] = useState<MemoryMatchMode>("couples");
-  const game = useMiniGameSession("memory-match", { maxPlayers: 6 });
+  const game = useMiniGameSession("memory-match", {
+    maxPlayers: mode === "party" ? 6 : 2,
+    init: { mode },
+    requireSessionComplete: true,
+  });
+
+  useEffect(() => {
+    if (!game.sessionId || game.loading) return;
+    void game.submitMove("init", { mode });
+  }, [game.loading, game.sessionId, game.submitMove, mode]);
 
   return (
     <div className="grid gap-5">
@@ -32,7 +41,8 @@ export function MemoryMatchClient() {
           <p className="text-sm font-extrabold uppercase tracking-normal text-lavender-500">Multiplayer mini-game</p>
           <h1 className="mt-1 font-display text-4xl text-ink-900">Memory Match</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            A playable keepsake card game for two couples or a larger pass-and-play party.
+            Server-authoritative pairs: the board, turns, and rewards are validated on Supabase. Friends join via the
+            games hub party link with <code className="rounded bg-white/80 px-1">?session=</code>.
           </p>
         </div>
         <Button asChild variant="secondary">
@@ -67,10 +77,22 @@ export function MemoryMatchClient() {
 
       <RewardWalletPanel />
       <p className="text-xs font-extrabold text-lavender-600">{game.status}</p>
-      <MemoryMatchCanvasLoader mode={mode} onReward={game.handleReward} />
+      <MemoryMatchCanvasLoader
+        metadata={game.metadata}
+        mode={mode}
+        mySeatIndex={game.mySeat?.seat_index ?? null}
+        onReward={game.handleReward}
+        seats={game.seats}
+        sessionId={game.sessionId}
+        submitFlip={async (cardIndex) => {
+          const result = await game.submitMove("flip", { cardIndex });
+          return { ok: result.ok, reason: result.ok ? undefined : result.reason };
+        }}
+      />
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">
-        Pass-and-play rewards now update the wallet immediately. The scene is structured for online seats, turn events,
-        and party room invites.
+        {game.sessionId
+          ? `Live session ${game.sessionId.slice(0, 8)}… — seat ${game.mySeat?.seat_index ?? "?"} of ${game.seats.length}. Moves sync through game_moves.`
+          : "Connecting online session…"}
       </div>
     </div>
   );

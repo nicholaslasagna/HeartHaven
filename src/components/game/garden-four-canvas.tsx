@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import type { GameReward } from "@/lib/game/rewards";
+import { parseGardenFourState, type GardenFourWinningCell } from "@/lib/game/garden-four-state";
 
 type GardenFourCanvasProps = {
   onReward?: (reward: GameReward) => void;
@@ -39,7 +40,12 @@ export function GardenFourCanvas({
   const mySeatIndexRef = useRef(mySeatIndex);
   const submitDropRef = useRef(submitDrop);
   const sessionIdRef = useRef(sessionId);
+  const rewardedRef = useRef(false);
   const [status, setStatus] = useState("Drop keepsakes into the arbor. First team to connect four wins.");
+
+  useEffect(() => {
+    rewardedRef.current = false;
+  }, [sessionId]);
 
   useEffect(() => {
     metadataRef.current = metadata;
@@ -66,6 +72,7 @@ export function GardenFourCanvas({
         private gameOver = false;
         private lastSyncedMoveCount = 0;
         private tokens: Phaser.GameObjects.Image[] = [];
+        private winHighlights: Phaser.GameObjects.Arc[] = [];
         private gardenFourSyncHandler?: (event: Event) => void;
         private turnText!: Phaser.GameObjects.Text;
         private movesText!: Phaser.GameObjects.Text;
@@ -136,10 +143,95 @@ export function GardenFourCanvas({
 
           this.lastSyncedMoveCount = moveCount;
           this.updateHud();
-          if (this.gameOver) {
-            setStatus("Garden Four — game over. Play again to start a new round.");
+
+          const serverState = parseGardenFourState(meta);
+          if (serverState?.gameOver) {
+            this.highlightWinningCells(serverState.winningCells);
+            this.showResultsFromServer(serverState);
+          } else if (this.gameOver) {
+            setStatus("Garden Four — game over.");
           } else {
             setStatus(`${players[this.currentPlayer - 1].name}'s turn.`);
+          }
+        }
+
+        private highlightWinningCells(cells: GardenFourWinningCell[]) {
+          this.winHighlights.forEach((ring) => ring.destroy());
+          this.winHighlights = [];
+          for (const [row, column] of cells) {
+            const ring = this.add
+              .circle(BOARD_X + column * CELL, BOARD_Y + row * CELL, 30, 0xfaebc2, 0.42)
+              .setStrokeStyle(4, 0xd9a53e, 0.95)
+              .setDepth(4300);
+            this.winHighlights.push(ring);
+          }
+        }
+
+        private showResultsFromServer(
+          state: NonNullable<ReturnType<typeof parseGardenFourState>>,
+        ) {
+          if (this.rewardLayer) return;
+
+          const tie = state.isDraw;
+          const winnerSeat = state.winnerSeat ?? 0;
+          const winnerName = tie ? "Friendship tie" : players[(winnerSeat % 2)].name;
+          const finalScore = state.finalScore ?? (tie ? 250 : Math.max(0, 500 - state.moveCount));
+          this.gameOver = true;
+          playCozyCue(tie ? "heart" : "reward");
+          this.spawnWinBurst();
+
+          const layer = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(8000);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.96);
+          bg.fillRoundedRect(-216, -138, 432, 276, 24);
+          bg.lineStyle(3, 0xf6cfd2, 0.9);
+          bg.strokeRoundedRect(-216, -138, 432, 276, 24);
+          layer.add(bg);
+          layer.add(this.add.text(0, -86, tie ? "Garden Four Complete" : `${winnerName} wins`, {
+            color: "#3A2A2A",
+            fontFamily: "Caprasimo, Georgia, serif",
+            fontSize: "25px",
+          }).setOrigin(0.5));
+          layer.add(
+            this.add.text(
+              0,
+              -18,
+              `Moves ${state.moveCount}\nScore ${finalScore}${state.completedAt ? `\nCompleted ${state.completedAt}` : ""}`,
+              {
+                align: "center",
+                color: "#5B3F3F",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "17px",
+                fontStyle: "800",
+                lineSpacing: 8,
+                wordWrap: { width: 360 },
+              },
+            ).setOrigin(0.5),
+          );
+          if (!sessionIdRef.current) {
+            const restart = this.add.text(0, 92, "Play again", {
+              color: "#FFFDF6",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "15px",
+              fontStyle: "900",
+              backgroundColor: "#D87E8C",
+              padding: { x: 18, y: 10 },
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            restart.on("pointerdown", () => this.restartRound());
+            layer.add(restart);
+          }
+          this.rewardLayer = layer;
+          setStatus(tie ? "The garden called it a friendship tie." : `${winnerName} connected four keepsakes.`);
+
+          if (!rewardedRef.current && sessionIdRef.current) {
+            rewardedRef.current = true;
+            onReward?.({
+              gameId: "garden-four",
+              label: "Garden Four",
+              score: finalScore,
+              coins: 0,
+              hearts: 0,
+            });
           }
         }
 
@@ -246,7 +338,7 @@ export function GardenFourCanvas({
         }
 
         private previewColumn(column: number) {
-          if (this.gameOver) return;
+          if (this.gameOver || Boolean(metadataRef.current?.gameOver)) return;
           const row = this.findOpenRow(column);
           if (row === -1) return;
           this.clearPreview();
@@ -265,7 +357,7 @@ export function GardenFourCanvas({
         }
 
         private dropToken(column: number) {
-          if (this.gameOver) return;
+          if (this.gameOver || Boolean(metadataRef.current?.gameOver)) return;
           if (submitDropRef.current && sessionIdRef.current) {
             const currentSeat = Number(metadataRef.current?.currentSeat ?? 0);
             if (mySeatIndexRef.current !== null && mySeatIndexRef.current !== currentSeat) {
@@ -305,6 +397,7 @@ export function GardenFourCanvas({
         }
 
         private afterTokenSettles(row: number, column: number) {
+          if (sessionIdRef.current) return;
           if (this.hasWon(row, column, this.currentPlayer)) {
             this.finishGame(players[this.currentPlayer - 1].name);
             return;

@@ -4,17 +4,34 @@ import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import type { GameReward } from "@/lib/game/rewards";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import {
+  MEMORY_MATCH_PAIR_DATA,
+  type MemoryMatchPairId,
+} from "@/lib/game/memory-match-deck";
+import {
+  buildTurnLabels,
+  parseMemoryMatchState,
+  scoreForSeat,
+  seatDisplayName,
+  type MemoryMatchMode,
+} from "@/lib/game/memory-match-state";
+import type { GameSessionSeat } from "@/lib/game/use-game-session";
 
-export type MemoryMatchMode = "couples" | "party";
+export type { MemoryMatchMode };
 
 type MemoryMatchCanvasProps = {
   mode: MemoryMatchMode;
   onReward?: (reward: GameReward) => void;
+  sessionId?: string | null;
+  metadata?: Record<string, unknown>;
+  seats?: GameSessionSeat[];
+  mySeatIndex?: number | null;
+  submitFlip?: (cardIndex: number) => Promise<{ ok: boolean; reason?: string }>;
 };
 
 type MatchCard = {
-  id: string;
-  pair: string;
+  index: number;
+  pair: MemoryMatchPairId;
   container: Phaser.GameObjects.Container;
   front: Phaser.GameObjects.Rectangle;
   frontGlow: Phaser.GameObjects.Rectangle;
@@ -28,20 +45,38 @@ type MatchCard = {
 const GAME_WIDTH = 920;
 const GAME_HEIGHT = 600;
 
-const pairData = [
-  { id: "heart", label: "Heart", color: 0xd87e8c },
-  { id: "petal", label: "Petal", color: 0xf6cfd2 },
-  { id: "lantern", label: "Lantern", color: 0xd9a53e },
-  { id: "tree", label: "Tree", color: 0x6e9651 },
-  { id: "casper", label: "Casper", color: 0xfffcf3 },
-  { id: "moon", label: "Moon", color: 0xc0a8dc },
-  { id: "note", label: "Note", color: 0xead9b5 },
-  { id: "garden", label: "Garden", color: 0xa9c58a },
-];
-
-export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
+export function MemoryMatchCanvas({
+  mode,
+  metadata,
+  mySeatIndex,
+  onReward,
+  seats = [],
+  sessionId,
+  submitFlip,
+}: MemoryMatchCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const [status, setStatus] = useState(mode === "couples" ? "Couple-vs-couple match is ready." : "Party match is ready.");
+  const metadataRef = useRef(metadata);
+  const seatsRef = useRef(seats);
+  const mySeatIndexRef = useRef(mySeatIndex);
+  const submitFlipRef = useRef(submitFlip);
+  const sessionIdRef = useRef(sessionId);
+  const rewardedRef = useRef(false);
+  const [status, setStatus] = useState("Connecting to the live board...");
+
+  useEffect(() => {
+    metadataRef.current = metadata;
+    seatsRef.current = seats;
+    mySeatIndexRef.current = mySeatIndex;
+    submitFlipRef.current = submitFlip;
+    sessionIdRef.current = sessionId;
+    if (metadata) {
+      window.dispatchEvent(new CustomEvent("hearthaven:memory-match-sync", { detail: metadata }));
+    }
+  }, [metadata, mySeatIndex, seats, sessionId, submitFlip]);
+
+  useEffect(() => {
+    rewardedRef.current = false;
+  }, [sessionId]);
 
   useEffect(() => {
     let destroyed = false;
@@ -53,18 +88,13 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
 
       class MemoryMatchScene extends PhaserModule.Scene {
         private cards: MatchCard[] = [];
-        private revealed: MatchCard[] = [];
         private busy = false;
-        private turnIndex = 0;
-        private moves = 0;
-        private matches = 0;
-        private players = mode === "couples"
-          ? ["Avery + Riley", "Rose Couple"]
-          : ["Avery", "Riley", "Alex", "Maya", "Sam", "Jules"];
-        private scores = this.players.map(() => 0);
+        private lastSyncedMoves = -1;
+        private memoryMatchSyncHandler?: (event: Event) => void;
         private scoreText!: Phaser.GameObjects.Text;
         private turnText!: Phaser.GameObjects.Text;
         private moveText!: Phaser.GameObjects.Text;
+        private resultLayer?: Phaser.GameObjects.Container;
 
         constructor() {
           super("MemoryMatch");
@@ -87,10 +117,91 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           this.drawBackdrop();
           this.createMascot();
           this.createHud();
-          this.createCards();
-          setStatus(`${this.players[this.turnIndex]}'s turn. Find a pair.`);
-          // TODO: Replace pass-and-play turn state with Supabase Realtime game_sessions and game_moves.
-          // TODO: Allow party host to invite room visitors into this board with presence channel seats.
+          this.memoryMatchSyncHandler = (event: Event) => {
+            const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+            if (detail) this.syncFromServer(detail);
+          };
+          window.addEventListener("hearthaven:memory-match-sync", this.memoryMatchSyncHandler);
+          this.syncFromServer(metadataRef.current ?? {});
+        }
+
+        shutdown() {
+          if (this.memoryMatchSyncHandler) {
+            window.removeEventListener("hearthaven:memory-match-sync", this.memoryMatchSyncHandler);
+          }
+        }
+
+        private syncFromServer(meta: Record<string, unknown>) {
+          const state = parseMemoryMatchState(meta);
+          if (!state) {
+            setStatus(sessionIdRef.current ? "Waiting for the server board..." : "Sign in for online Memory Match.");
+            return;
+          }
+
+          if (this.cards.length === 0) {
+            this.createCards(state.board);
+          }
+
+          const prevMoves = this.lastSyncedMoves;
+          const missResolve = prevMoves >= 0 && state.moves > prevMoves && state.lastResult === "miss";
+
+          for (const card of this.cards) {
+            const matched = state.matched.includes(card.index);
+            const revealed = matched || state.revealed.includes(card.index);
+            card.matched = matched;
+            if (!missResolve || matched || state.revealed.includes(card.index)) {
+              this.revealCard(card, revealed, false);
+            }
+          }
+
+          if (missResolve) {
+            this.time.delayedCall(720, () => {
+              for (const card of this.cards) {
+                if (!card.matched) this.revealCard(card, false, false);
+              }
+              playCozyCue("miss");
+            });
+          } else if (state.lastResult === "match" && state.moves > prevMoves && prevMoves >= 0) {
+            playCozyCue("match");
+          }
+
+          this.lastSyncedMoves = state.moves;
+          this.updateHud(state);
+
+          const mySeat = mySeatIndexRef.current;
+          const isMyTurn = mySeat != null && mySeat === state.currentTurnSeat;
+          const currentName = seatDisplayName(
+            seatsRef.current,
+            state.currentTurnSeat,
+            `Seat ${state.currentTurnSeat + 1}`,
+          );
+
+          if (state.gameOver) {
+            this.showResults(state);
+          } else if (isMyTurn) {
+            setStatus(
+              state.revealed.length === 1
+                ? "Pick the second card."
+                : `${currentName}'s turn — find a pair.`,
+            );
+          } else {
+            setStatus(`${currentName}'s turn.`);
+          }
+        }
+
+        private createCards(board: MemoryMatchPairId[]) {
+          const startX = 178;
+          const startY = 160;
+          const gapX = 188;
+          const gapY = 102;
+
+          board.forEach((pair, index) => {
+            const data = MEMORY_MATCH_PAIR_DATA[pair];
+            const x = startX + (index % 4) * gapX;
+            const y = startY + Math.floor(index / 4) * gapY;
+            const card = this.createCard(index, pair, data.label, data.color, x, y);
+            this.cards.push(card);
+          });
         }
 
         private drawBackdrop() {
@@ -105,27 +216,6 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           bg.fillRoundedRect(48, 106, GAME_WIDTH - 96, 448, 26);
           bg.lineStyle(3, 0xf6cfd2, 0.5);
           bg.strokeRoundedRect(48, 106, GAME_WIDTH - 96, 448, 26);
-
-          for (let index = 0; index < 28; index += 1) {
-            const sparkle = this.add.star(
-              PhaserModule.Math.Between(56, GAME_WIDTH - 56),
-              PhaserModule.Math.Between(88, GAME_HEIGHT - 40),
-              4,
-              2,
-              PhaserModule.Math.Between(4, 8),
-              index % 2 === 0 ? 0xffffff : 0xfaebc2,
-              PhaserModule.Math.FloatBetween(0.12, 0.4),
-            );
-            this.tweens.add({
-              targets: sparkle,
-              alpha: PhaserModule.Math.FloatBetween(0.28, 0.72),
-              scale: 1.25,
-              duration: PhaserModule.Math.Between(1200, 2400),
-              yoyo: true,
-              repeat: -1,
-              ease: "Sine.inOut",
-            });
-          }
         }
 
         private createMascot() {
@@ -168,25 +258,36 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
             fontSize: "15px",
             fontStyle: "900",
           }).setDepth(5000);
-          this.updateHud();
         }
 
-        private createCards() {
-          const pairs = PhaserModule.Utils.Array.Shuffle([...pairData, ...pairData]);
-          const startX = 178;
-          const startY = 160;
-          const gapX = 188;
-          const gapY = 102;
-
-          pairs.forEach((pair, index) => {
-            const x = startX + (index % 4) * gapX;
-            const y = startY + Math.floor(index / 4) * gapY;
-            const card = this.createCard(`${pair.id}-${index}`, pair.id, pair.label, pair.color, x, y);
-            this.cards.push(card);
-          });
+        private updateHud(state: ReturnType<typeof parseMemoryMatchState>) {
+          if (!state) return;
+          const labels = buildTurnLabels(state, seatsRef.current);
+          const currentName = seatDisplayName(
+            seatsRef.current,
+            state.currentTurnSeat,
+            labels[0] ?? "Keeper",
+          );
+          this.turnText.setText(`Turn: ${currentName}`);
+          this.moveText.setText(`Moves ${state.moves}`);
+          this.scoreText.setText(
+            labels
+              .map((label, index) => {
+                const seat = state.turnOrder[index] ?? index;
+                return `${label}: ${state.scores[index] ?? scoreForSeat(state, seat)}`;
+              })
+              .join("   "),
+          );
         }
 
-        private createCard(id: string, pair: string, label: string, color: number, x: number, y: number): MatchCard {
+        private createCard(
+          index: number,
+          pair: MemoryMatchPairId,
+          label: string,
+          color: number,
+          x: number,
+          y: number,
+        ): MatchCard {
           const container = this.add.container(x, y).setDepth(y);
           const shadow = this.add.rectangle(5, 9, 128, 88, 0x3a2a2a, 0.12);
           const back = this.add.rectangle(0, 0, 128, 88, 0xfbe3e3).setStrokeStyle(3, 0xd87e8c, 0.55);
@@ -211,7 +312,7 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           container.setInteractive({ useHandCursor: true });
 
           const card: MatchCard = {
-            id,
+            index,
             pair,
             container,
             front,
@@ -223,7 +324,7 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
             revealed: false,
           };
 
-          container.on("pointerdown", () => this.flipCard(card));
+          container.on("pointerdown", () => void this.flipCard(card));
           container.on("pointerover", () => {
             if (!card.matched && !card.revealed) back.setFillStyle(0xefe6f7);
           });
@@ -234,32 +335,43 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           return card;
         }
 
-        private flipCard(card: MatchCard) {
-          if (this.busy || card.matched || card.revealed || this.revealed.length >= 2) return;
+        private async flipCard(card: MatchCard) {
+          const state = parseMemoryMatchState(metadataRef.current ?? {});
+          if (!state || state.gameOver || this.busy) return;
+          if (card.matched || card.revealed) return;
 
-          this.revealCard(card, true);
-          playCozyCue("cardFlip");
-          this.revealed.push(card);
-
-          if (this.revealed.length === 2) {
-            this.moves += 1;
-            this.busy = true;
-            const [first, second] = this.revealed;
-          if (first.pair === second.pair) {
-            this.time.delayedCall(280, () => this.resolveMatch(first, second));
-          } else {
-              this.time.delayedCall(720, () => this.resolveMiss(first, second));
-            }
+          const mySeat = mySeatIndexRef.current;
+          if (mySeat == null || mySeat !== state.currentTurnSeat) {
+            setStatus("Wait for your turn.");
+            return;
           }
+
+          const flip = submitFlipRef.current;
+          if (!sessionIdRef.current || !flip) {
+            setStatus("Online session required.");
+            return;
+          }
+
+          this.busy = true;
+          const result = await flip(card.index);
+          this.busy = false;
+
+          if (!result.ok) {
+            setStatus(result.reason ?? "Move rejected.");
+            return;
+          }
+
+          playCozyCue("cardFlip");
         }
 
-        private revealCard(card: MatchCard, revealed: boolean) {
+        private revealCard(card: MatchCard, revealed: boolean, animate: boolean) {
           card.revealed = revealed;
           card.front.setVisible(revealed);
           card.frontGlow.setVisible(revealed);
           card.art.setVisible(revealed);
           card.label.setVisible(revealed);
           card.back.setVisible(!revealed);
+          if (!animate) return;
           this.tweens.add({
             targets: card.container,
             scaleX: revealed ? 1.08 : 1,
@@ -270,7 +382,7 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           });
         }
 
-        private createCardArt(pair: string) {
+        private createCardArt(pair: MemoryMatchPairId) {
           if (pair === "casper") {
             return this.add.image(0, -12, "casper-sprite").setDisplaySize(56, 56);
           }
@@ -288,105 +400,62 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           return this.add.image(0, art.y, art.texture, art.frame).setDisplaySize(art.width, art.height);
         }
 
-        private resolveMatch(first: MatchCard, second: MatchCard) {
-          first.matched = true;
-          second.matched = true;
-          this.matches += 1;
-          this.scores[this.turnIndex] += mode === "couples" ? 2 : 1;
-          playCozyCue("match");
-          this.spawnBurst((first.container.x + second.container.x) / 2, (first.container.y + second.container.y) / 2);
-          this.revealed = [];
-          this.busy = false;
-          this.updateHud();
-          setStatus(`${this.players[this.turnIndex]} found ${first.pair}.`);
+        private showResults(state: NonNullable<ReturnType<typeof parseMemoryMatchState>>) {
+          if (this.resultLayer) return;
 
-          if (this.matches === pairData.length) {
-            this.time.delayedCall(450, () => this.showResults());
+          const labels = buildTurnLabels(state, seatsRef.current);
+          let maxScore = -1;
+          for (let index = 0; index < labels.length; index += 1) {
+            maxScore = Math.max(maxScore, state.scores[index] ?? 0);
           }
-        }
+          const winners = labels
+            .filter((_label, index) => (state.scores[index] ?? 0) === maxScore)
+            .join(" + ");
+          const finalScore = state.finalScore ?? Math.max(0, maxScore * 100 - state.moves);
 
-        private resolveMiss(first: MatchCard, second: MatchCard) {
-          this.revealCard(first, false);
-          this.revealCard(second, false);
-          this.revealed = [];
-          this.turnIndex = (this.turnIndex + 1) % this.players.length;
-          this.busy = false;
-          playCozyCue("miss");
-          this.updateHud();
-          setStatus(`${this.players[this.turnIndex]}'s turn.`);
-        }
-
-        private spawnBurst(x: number, y: number) {
-          for (let index = 0; index < 8; index += 1) {
-            const sparkle = this.add.star(x, y, 5, 4, 12, index % 2 === 0 ? 0xfaebc2 : 0xf6cfd2, 0.9).setDepth(6000);
-            this.tweens.add({
-              targets: sparkle,
-              x: x + PhaserModule.Math.Between(-78, 78),
-              y: y - PhaserModule.Math.Between(28, 88),
-              alpha: 0,
-              scale: 0.2,
-              duration: 780,
-              ease: "Sine.out",
-              onComplete: () => sparkle.destroy(),
-            });
-          }
-        }
-
-        private updateHud() {
-          this.turnText.setText(`Turn: ${this.players[this.turnIndex]}`);
-          this.moveText.setText(`Moves ${this.moves}`);
-          this.scoreText.setText(this.players.map((player, index) => `${player}: ${this.scores[index]}`).join("   "));
-        }
-
-        private showResults() {
-          const maxScore = Math.max(...this.scores);
-          const winners = this.players.filter((_player, index) => this.scores[index] === maxScore).join(" + ");
-          const coins = 90 + Math.max(0, 30 - this.moves) * 3;
-          const hearts = mode === "couples" ? 3 : 2;
-          const layer = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(8000);
+          this.resultLayer = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(8000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.96);
           bg.fillRoundedRect(-210, -132, 420, 264, 24);
           bg.lineStyle(3, 0xf6cfd2, 0.9);
           bg.strokeRoundedRect(-210, -132, 420, 264, 24);
-          layer.add(bg);
-          layer.add(
+          this.resultLayer.add(bg);
+          this.resultLayer.add(
             this.add.text(0, -80, "Memory Match Complete", {
               color: "#3A2A2A",
               fontFamily: "Caprasimo, Georgia, serif",
               fontSize: "25px",
             }).setOrigin(0.5),
           );
-          layer.add(
-            this.add.text(0, -18, `Winner: ${winners}\nMoves: ${this.moves}\nReward: ${coins} coins + ${hearts} hearts`, {
-              align: "center",
-              color: "#5B3F3F",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "17px",
-              fontStyle: "800",
-              lineSpacing: 8,
-              wordWrap: { width: 340 },
-            }).setOrigin(0.5),
+          this.resultLayer.add(
+            this.add.text(
+              0,
+              -18,
+              `Winner: ${winners}\nMoves: ${state.moves}\nScore: ${finalScore}`,
+              {
+                align: "center",
+                color: "#5B3F3F",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "17px",
+                fontStyle: "800",
+                lineSpacing: 8,
+                wordWrap: { width: 340 },
+              },
+            ).setOrigin(0.5),
           );
-          const restart = this.add.text(0, 84, "New board", {
-            color: "#FFFDF6",
-            fontFamily: "Nunito, sans-serif",
-            fontSize: "15px",
-            fontStyle: "900",
-            backgroundColor: "#D87E8C",
-            padding: { x: 18, y: 10 },
-          }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-          restart.on("pointerdown", () => this.scene.restart());
-          layer.add(restart);
           playCozyCue("reward");
-          setStatus(`Winner: ${winners}. Rewards ready to persist.`);
-          onReward?.({
-            gameId: `memory-match-${mode}`,
-            label: mode === "couples" ? "Couple Memory Match" : "Party Memory Match",
-            score: maxScore * 100 - this.moves,
-            coins,
-            hearts,
-          });
+          setStatus(`Winner: ${winners}. Claiming server-validated reward...`);
+
+          if (!rewardedRef.current) {
+            rewardedRef.current = true;
+            onReward?.({
+              gameId: "memory-match",
+              label: mode === "couples" ? "Couple Memory Match" : "Party Memory Match",
+              score: finalScore,
+              coins: 0,
+              hearts: 0,
+            });
+          }
         }
       }
 
@@ -424,14 +493,14 @@ export function MemoryMatchCanvas({ mode, onReward }: MemoryMatchCanvasProps) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-extrabold text-ink-700">
-          <span className="rounded-md bg-blush-100 px-2.5 py-1">Pass turns</span>
-          <span className="rounded-md bg-lavender-100 px-2.5 py-1">Match pairs</span>
-          <span className="rounded-md bg-honey-100 px-2.5 py-1">Party rewards</span>
+          <span className="rounded-md bg-blush-100 px-2.5 py-1">Live turns</span>
+          <span className="rounded-md bg-lavender-100 px-2.5 py-1">Server board</span>
+          <span className="rounded-md bg-honey-100 px-2.5 py-1">Synced flips</span>
         </div>
       </div>
       <div
         ref={mountRef}
-        aria-label="Interactive multiplayer Memory Match game canvas with couple and party turn modes"
+        aria-label="Interactive multiplayer Memory Match game canvas with server-synced turns"
         className="mx-auto block overflow-hidden bg-cream-100"
         role="application"
         style={{

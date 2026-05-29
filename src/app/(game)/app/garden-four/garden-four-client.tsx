@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 
 export function GardenFourClient() {
-  const game = useMiniGameSession("garden-four", { maxPlayers: 2 });
+  const game = useMiniGameSession("garden-four", { maxPlayers: 2, requireSessionComplete: true });
 
   return (
     <div className="grid gap-5">

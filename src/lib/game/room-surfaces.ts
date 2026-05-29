@@ -17,6 +17,10 @@ export type RoomSurfaceSelection = {
 const SURFACE_ROOT = "/game-assets/generated/room-surfaces";
 const ROOM_SURFACE_STORAGE_PREFIX = "hearthaven:room-surfaces:v1:";
 
+/** Keep in sync with supabase/migrations/0039_room_surface_allowlist.sql */
+export const ROOM_SURFACE_ID_MAX_LENGTH = 48;
+export const ROOM_SURFACE_ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
 export const roomFloorSurfaceOptions: RoomSurfaceOption[] = [
   {
     id: "cream-checker",
@@ -116,6 +120,43 @@ export const defaultRoomSurfaceSelection: RoomSurfaceSelection = {
   wall: roomWallSurfaceOptions[0],
 };
 
+export const ALLOWED_ROOM_FLOOR_IDS = new Set(roomFloorSurfaceOptions.map((option) => option.id));
+export const ALLOWED_ROOM_WALL_IDS = new Set(roomWallSurfaceOptions.map((option) => option.id));
+
+export function normalizeRoomSurfaceId(id: unknown): string | null {
+  if (typeof id !== "string") return null;
+  const trimmed = id.trim().slice(0, ROOM_SURFACE_ID_MAX_LENGTH);
+  if (!trimmed) return null;
+  if (!ROOM_SURFACE_ID_PATTERN.test(trimmed)) return null;
+  return trimmed;
+}
+
+export function isAllowedRoomSurfaceId(kind: RoomSurfaceKind, id: string): boolean {
+  const normalized = normalizeRoomSurfaceId(id);
+  if (!normalized) return false;
+  return kind === "floor" ? ALLOWED_ROOM_FLOOR_IDS.has(normalized) : ALLOWED_ROOM_WALL_IDS.has(normalized);
+}
+
+export function validateRoomSurfaceIdsForSave(floorId: string, wallId: string): { ok: true; floorId: string; wallId: string } | { ok: false; message: string } {
+  const floor = normalizeRoomSurfaceId(floorId);
+  if (!floor) {
+    return { ok: false, message: "Choose a valid floor style from the list." };
+  }
+  if (!ALLOWED_ROOM_FLOOR_IDS.has(floor)) {
+    return { ok: false, message: `Unknown floor style "${floor}".` };
+  }
+
+  const wall = normalizeRoomSurfaceId(wallId);
+  if (!wall) {
+    return { ok: false, message: "Choose a valid wallpaper from the list." };
+  }
+  if (!ALLOWED_ROOM_WALL_IDS.has(wall)) {
+    return { ok: false, message: `Unknown wallpaper "${wall}".` };
+  }
+
+  return { ok: true, floorId: floor, wallId: wall };
+}
+
 function getRoomSurfaceStorageKey(roomId: string) {
   return `${ROOM_SURFACE_STORAGE_PREFIX}${roomId}`;
 }
@@ -167,8 +208,11 @@ export function hardenServerRoomSurfaces(raw: {
   wall_id?: unknown;
 } | null): ServerRoomSurfaces | null {
   if (!raw) return null;
-  const floorId = typeof raw.floor_id === "string" ? raw.floor_id.trim().slice(0, 64) : "";
-  const wallId = typeof raw.wall_id === "string" ? raw.wall_id.trim().slice(0, 64) : "";
+  const floorId = normalizeRoomSurfaceId(raw.floor_id);
+  const wallId = normalizeRoomSurfaceId(raw.wall_id);
   if (!floorId || !wallId) return null;
+  if (!isAllowedRoomSurfaceId("floor", floorId) || !isAllowedRoomSurfaceId("wall", wallId)) {
+    return null;
+  }
   return { floorId, wallId };
 }

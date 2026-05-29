@@ -37,7 +37,10 @@ function readSessionIdFromUrl() {
   return new URLSearchParams(window.location.search).get("session");
 }
 
-export function useGameSession(gameKey: string, options?: { maxPlayers?: number }) {
+export function useGameSession(
+  gameKey: string,
+  options?: { maxPlayers?: number; init?: Record<string, unknown> },
+) {
   const [sessionFromUrl] = useState(readSessionIdFromUrl);
   const [sessionId, setSessionId] = useState<string | null>(readSessionIdFromUrl);
   const [metadata, setMetadata] = useState<Record<string, unknown>>({});
@@ -145,6 +148,7 @@ export function useGameSession(gameKey: string, options?: { maxPlayers?: number 
         const { data, error } = await supabase.rpc("ensure_play_game_session", {
           p_game_key: gameKey,
           p_max_players: options?.maxPlayers ?? 2,
+          p_init: options?.init ?? {},
         });
         if (error) {
           setStatus(error.message);
@@ -169,7 +173,7 @@ export function useGameSession(gameKey: string, options?: { maxPlayers?: number 
     return () => {
       cancelled = true;
     };
-  }, [gameKey, hydrate, options?.maxPlayers, sessionFromUrl, sessionId]);
+  }, [gameKey, hydrate, options?.init, options?.maxPlayers, sessionFromUrl, sessionId]);
 
   useEffect(() => {
     const target = sessionIdRef.current;
@@ -232,32 +236,41 @@ export function useGameSession(gameKey: string, options?: { maxPlayers?: number 
       if (!target || !isSupabaseConfigured()) {
         return { ok: false, reason: "No online game session." };
       }
-      try {
-        const supabase = getSupabaseBrowserClient();
-        const { data, error } = await supabase.rpc("submit_game_move", {
-          p_session_id: target,
-          p_move_type: moveType,
-          p_payload: payload,
-        });
-        if (error) return { ok: false, reason: error.message };
-        const row = Array.isArray(data) ? data[0] : null;
-        if (!row || !row.ok) {
-          return { ok: false, reason: String(row?.error_message ?? "Move rejected.") };
+
+      const attempt = async (allowRetry: boolean): Promise<SubmitMoveResult> => {
+        try {
+          const supabase = getSupabaseBrowserClient();
+          const { data, error } = await supabase.rpc("submit_game_move", {
+            p_session_id: target,
+            p_move_type: moveType,
+            p_payload: payload,
+          });
+          if (error) return { ok: false, reason: error.message };
+          const row = Array.isArray(data) ? data[0] : null;
+          if (!row || !row.ok) {
+            const reason = String(row?.error_message ?? "Move rejected.");
+            if (allowRetry && reason === "move_index_conflict") {
+              return attempt(false);
+            }
+            return { ok: false, reason };
+          }
+          const meta = row.metadata;
+          if (meta && typeof meta === "object" && !Array.isArray(meta)) {
+            setMetadata(meta as Record<string, unknown>);
+          }
+          return {
+            ok: true,
+            moveIndex: Number(row.move_index ?? 0),
+            metadata: meta && typeof meta === "object" && !Array.isArray(meta)
+              ? (meta as Record<string, unknown>)
+              : {},
+          };
+        } catch (err) {
+          return { ok: false, reason: err instanceof Error ? err.message : "Network error." };
         }
-        const meta = row.metadata;
-        if (meta && typeof meta === "object" && !Array.isArray(meta)) {
-          setMetadata(meta as Record<string, unknown>);
-        }
-        return {
-          ok: true,
-          moveIndex: Number(row.move_index ?? 0),
-          metadata: meta && typeof meta === "object" && !Array.isArray(meta)
-            ? (meta as Record<string, unknown>)
-            : {},
-        };
-      } catch (err) {
-        return { ok: false, reason: err instanceof Error ? err.message : "Network error." };
-      }
+      };
+
+      return attempt(true);
     },
     [],
   );

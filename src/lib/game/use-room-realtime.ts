@@ -6,7 +6,11 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { moderateChatMessage, type ChatModerationResult, type GardenChatMessage } from "@/lib/game/chat-moderation";
 import { hardenIncomingChat, hardenRealtimePlayer, hardenRoomPlacements } from "@/lib/game/realtime-hardening";
-import { hardenServerRoomSurfaces, type ServerRoomSurfaces } from "@/lib/game/room-surfaces";
+import {
+  hardenServerRoomSurfaces,
+  validateRoomSurfaceIdsForSave,
+  type ServerRoomSurfaces,
+} from "@/lib/game/room-surfaces";
 import type { FacingDirection, RealtimeRoomPlayer, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import {
   KEEPER_CUSTOMIZATION_EVENT,
@@ -600,19 +604,26 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       if (!isSupabaseConfigured()) {
         return { ok: false, reason: "network", message: "Online room sync is not configured." };
       }
+
+      const validated = validateRoomSurfaceIdsForSave(floorId, wallId);
+      if (!validated.ok) {
+        return { ok: false, reason: "network", message: validated.message };
+      }
+
       const expected = surfacesVersionRef.current;
       try {
         const supabase = getSupabaseBrowserClient();
         const { data, error } = await supabase.rpc("save_room_surfaces", {
           p_host_friend_code: channelKey,
           p_room_id: normalizedRoomId,
-          p_floor_id: floorId,
-          p_wall_id: wallId,
+          p_floor_id: validated.floorId,
+          p_wall_id: validated.wallId,
           p_expected_version: expected,
         });
         if (error) {
           const message = error.message ?? "Could not save room surfaces.";
           if (/not authorized/i.test(message)) return { ok: false, reason: "unauthorized", message };
+          if (/surface id/i.test(message)) return { ok: false, reason: "network", message };
           return { ok: false, reason: "network", message };
         }
         const row = Array.isArray(data) ? data[0] : null;
@@ -623,7 +634,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         }
         const newVersion = Number(row.version);
         const safeVersion = Number.isFinite(newVersion) ? newVersion : expected + 1;
-        const safe = { floorId, wallId };
+        const safe = { floorId: validated.floorId, wallId: validated.wallId };
         surfacesVersionRef.current = safeVersion;
         setSurfacesVersion(safeVersion);
         setSurfaces(safe);
@@ -632,7 +643,12 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           void channel.send({
             type: "broadcast",
             event: "room_surfaces_updated",
-            payload: { floorId, wallId, version: safeVersion, updatedAt: Date.now() },
+            payload: {
+              floorId: validated.floorId,
+              wallId: validated.wallId,
+              version: safeVersion,
+              updatedAt: Date.now(),
+            },
           });
         }
         return { ok: true, version: safeVersion };

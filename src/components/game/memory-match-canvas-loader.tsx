@@ -1,8 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { MemoryMatchMode } from "@/components/game/memory-match-canvas";
+import type { MemoryMatchMode } from "@/lib/game/memory-match-state";
 import type { GameReward } from "@/lib/game/rewards";
+import type { GameSessionSeat } from "@/lib/game/use-game-session";
 
 const MemoryMatchCanvas = dynamic(
   () => import("@/components/game/memory-match-canvas").then((module) => module.MemoryMatchCanvas),
@@ -19,8 +20,32 @@ const MemoryMatchCanvas = dynamic(
 type MemoryMatchCanvasLoaderProps = {
   mode: MemoryMatchMode;
   onReward?: (reward: GameReward) => void;
+  sessionId?: string | null;
+  metadata?: Record<string, unknown>;
+  seats?: GameSessionSeat[];
+  mySeatIndex?: number | null;
+  submitFlip?: (cardIndex: number) => Promise<{ ok: boolean; reason?: string }>;
 };
 
-export function MemoryMatchCanvasLoader({ mode, onReward }: MemoryMatchCanvasLoaderProps) {
-  return <MemoryMatchCanvas key={mode} mode={mode} onReward={onReward} />;
+export function MemoryMatchCanvasLoader({
+  mode,
+  metadata,
+  mySeatIndex,
+  onReward,
+  seats,
+  sessionId,
+  submitFlip,
+}: MemoryMatchCanvasLoaderProps) {
+  return (
+    <MemoryMatchCanvas
+      key={`${mode}-${sessionId ?? "local"}`}
+      metadata={metadata}
+      mode={mode}
+      mySeatIndex={mySeatIndex}
+      onReward={onReward}
+      seats={seats}
+      sessionId={sessionId}
+      submitFlip={submitFlip}
+    />
+  );
 }

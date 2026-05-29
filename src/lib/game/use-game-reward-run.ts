@@ -86,7 +86,12 @@ export function useGameRewardRun(gameKey: string) {
       // Optional fallback if Supabase isn't configured OR no run was
       // started. The fallback grants the locally-computed amounts so
       // demo mode + first-load races still pay something.
-      fallback?: { coins: number; hearts: number; label?: string },
+      fallback?: {
+        coins?: number;
+        hearts?: number;
+        label?: string;
+        sessionId?: string | null;
+      },
     ): Promise<ClaimResult> => {
       const safeScore = Math.max(0, Math.floor(Number(score) || 0));
 
@@ -100,8 +105,8 @@ export function useGameRewardRun(gameKey: string) {
             gameId: gameKey,
             label: fallback.label ?? gameKey,
             score: safeScore,
-            coins: fallback.coins,
-            hearts: fallback.hearts,
+            coins: fallback.coins ?? 0,
+            hearts: fallback.hearts ?? 0,
           });
         }
         setStatus("claimed");
@@ -113,6 +118,7 @@ export function useGameRewardRun(gameKey: string) {
         const { data, error } = await supabase.rpc("claim_game_reward", {
           p_run_id: runIdRef.current,
           p_score: safeScore,
+          p_session_id: fallback?.sessionId ?? null,
         });
         if (error) {
           setStatus("error");
@@ -126,6 +132,13 @@ export function useGameRewardRun(gameKey: string) {
         const coinsAwarded = Math.max(0, Math.floor(Number(row.coins_awarded ?? 0)));
         const heartsAwarded = Math.max(0, Math.floor(Number(row.hearts_awarded ?? 0)));
         const reason = (row.reason as string) || "awarded";
+
+        if (reason === "already-claimed-session") {
+          await hydrateWalletStateFromServer();
+          setStatus("claimed");
+          runIdRef.current = null;
+          return { ok: true, coinsAwarded: 0, heartsAwarded: 0, reason: "already-claimed" };
+        }
 
         // Pull fresh wallet state from the server so the local ledger
         // shows the server-derived award. We do NOT call `creditWallet`
