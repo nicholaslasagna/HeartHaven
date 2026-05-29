@@ -7,6 +7,10 @@ import type { GameReward } from "@/lib/game/rewards";
 
 type GardenFourCanvasProps = {
   onReward?: (reward: GameReward) => void;
+  sessionId?: string | null;
+  metadata?: Record<string, unknown>;
+  mySeatIndex?: number | null;
+  submitDrop?: (column: number) => Promise<{ ok: boolean; reason?: string }>;
 };
 
 type GardenToken = 0 | 1 | 2;
@@ -23,9 +27,29 @@ const players = [
   { id: 2 as const, name: "Moonberry Team", color: 0x8e70bd, frame: 7 },
 ];
 
-export function GardenFourCanvas({ onReward }: GardenFourCanvasProps) {
+export function GardenFourCanvas({
+  metadata,
+  mySeatIndex,
+  onReward,
+  sessionId,
+  submitDrop,
+}: GardenFourCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const metadataRef = useRef(metadata);
+  const mySeatIndexRef = useRef(mySeatIndex);
+  const submitDropRef = useRef(submitDrop);
+  const sessionIdRef = useRef(sessionId);
   const [status, setStatus] = useState("Drop keepsakes into the arbor. First team to connect four wins.");
+
+  useEffect(() => {
+    metadataRef.current = metadata;
+    mySeatIndexRef.current = mySeatIndex;
+    submitDropRef.current = submitDrop;
+    sessionIdRef.current = sessionId;
+    if (metadata) {
+      window.dispatchEvent(new CustomEvent("hearthaven:garden-four-sync", { detail: metadata }));
+    }
+  }, [metadata, mySeatIndex, sessionId, submitDrop]);
 
   useEffect(() => {
     let destroyed = false;
@@ -40,7 +64,9 @@ export function GardenFourCanvas({ onReward }: GardenFourCanvasProps) {
         private currentPlayer: 1 | 2 = 1;
         private moves = 0;
         private gameOver = false;
+        private lastSyncedMoveCount = 0;
         private tokens: Phaser.GameObjects.Image[] = [];
+        private gardenFourSyncHandler?: (event: Event) => void;
         private turnText!: Phaser.GameObjects.Text;
         private movesText!: Phaser.GameObjects.Text;
         private rewardLayer?: Phaser.GameObjects.Container;
@@ -66,7 +92,55 @@ export function GardenFourCanvas({ onReward }: GardenFourCanvasProps) {
           this.createBoard();
           this.updateHud();
           setStatus(`${players[0].name} starts. Pick a column.`);
-          // TODO: Replace local turns with Supabase game_sessions, ready seats, and Realtime moves.
+          this.gardenFourSyncHandler = (event: Event) => {
+            const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+            if (detail) this.syncFromServer(detail);
+          };
+          window.addEventListener("hearthaven:garden-four-sync", this.gardenFourSyncHandler);
+        }
+
+        shutdown() {
+          if (this.gardenFourSyncHandler) {
+            window.removeEventListener("hearthaven:garden-four-sync", this.gardenFourSyncHandler);
+          }
+        }
+
+        private syncFromServer(meta: Record<string, unknown>) {
+          const boardRaw = meta.board;
+          if (!Array.isArray(boardRaw)) return;
+          const moveCount = Number(meta.moveCount ?? 0);
+          if (moveCount < this.lastSyncedMoveCount) return;
+
+          this.board = boardRaw.map((row) =>
+            Array.isArray(row) ? row.map((cell) => Number(cell) as GardenToken) : Array.from({ length: COLUMNS }, () => 0 as GardenToken),
+          ) as GardenToken[][];
+          this.moves = moveCount;
+          this.gameOver = Boolean(meta.gameOver);
+          const currentSeat = Number(meta.currentSeat ?? 0);
+          this.currentPlayer = ((currentSeat % 2) + 1) as 1 | 2;
+
+          this.tokens.forEach((token) => token.destroy());
+          this.tokens = [];
+          for (let row = 0; row < ROWS; row += 1) {
+            for (let column = 0; column < COLUMNS; column += 1) {
+              const value = this.board[row]?.[column] ?? 0;
+              if (value === 0) continue;
+              const player = players[value - 1];
+              const token = this.add
+                .image(BOARD_X + column * CELL, BOARD_Y + row * CELL, "minigame-props", player.frame)
+                .setDisplaySize(54, 70)
+                .setDepth(4200);
+              this.tokens.push(token);
+            }
+          }
+
+          this.lastSyncedMoveCount = moveCount;
+          this.updateHud();
+          if (this.gameOver) {
+            setStatus("Garden Four — game over. Play again to start a new round.");
+          } else {
+            setStatus(`${players[this.currentPlayer - 1].name}'s turn.`);
+          }
         }
 
         private resetBoard() {
@@ -192,6 +266,18 @@ export function GardenFourCanvas({ onReward }: GardenFourCanvasProps) {
 
         private dropToken(column: number) {
           if (this.gameOver) return;
+          if (submitDropRef.current && sessionIdRef.current) {
+            const currentSeat = Number(metadataRef.current?.currentSeat ?? 0);
+            if (mySeatIndexRef.current !== null && mySeatIndexRef.current !== currentSeat) {
+              setStatus("Not your turn — wait for the other team.");
+              playCozyCue("miss");
+              return;
+            }
+            void submitDropRef.current(column).then((result) => {
+              if (!result.ok) setStatus(result.reason ?? "Move could not be saved.");
+            });
+            return;
+          }
           const row = this.findOpenRow(column);
           if (row === -1) {
             playCozyCue("miss");
@@ -381,7 +467,7 @@ export function GardenFourCanvas({ onReward }: GardenFourCanvasProps) {
       destroyed = true;
       game?.destroy(true);
     };
-  }, [onReward]);
+  }, [metadata, mySeatIndex, onReward, sessionId, submitDrop]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-garden-300/50 bg-garden-100 shadow-[0_24px_70px_rgba(76,110,54,0.14)]">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HeartHandshake, LockKeyhole, Sparkles, Sun } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CozyButton } from "@/components/cozy/cozy-button";
@@ -14,8 +14,16 @@ import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner
 import { Badge } from "@/components/ui/badge";
 import { recordActivity } from "@/lib/game/activity";
 import { getSocialState, isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
+import { mergeGardenPlotsWithDefaults, type GardenPlotState } from "@/lib/game/garden-plots";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
+import {
+  clearPendingGardenSave,
+  queuePendingGardenSave,
+  readPendingGardenSave,
+} from "@/lib/game/multiplayer-save-retry";
 import { creditWallet } from "@/lib/game/wallet-store";
+
+const PARTNER_GARDEN_ID = "shared-heart-garden";
 import type { friendInvite, partnerGardenPlots } from "@/lib/mock-data";
 
 type PartnerGardenClientProps = {
@@ -106,6 +114,9 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
   const [decorSaveStatus, setDecorSaveStatus] = useState("Shared garden decor ready");
   const latestPersistedDecorRef = useRef<GardenDecorPlacement[]>(decor);
   const saveRealtimeDecor = realtime.saveDecor;
+  const defaultPlots = useMemo(() => plots as GardenPlotState[], [plots]);
+  const [gardenPlots, setGardenPlots] = useState<GardenPlotState[]>(defaultPlots);
+  const seededPlotsRef = useRef(false);
 
   // Mirror server-canonical decor for the partner-garden (variant="partner").
   // Same external-subscription justification — the realtime hook is the
@@ -134,6 +145,27 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
   }, [realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  useEffect(() => {
+    if (realtime.plotsLoading) return;
+    const merged = mergeGardenPlotsWithDefaults(defaultPlots, realtime.plots);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setGardenPlots(merged);
+    if (!realtime.plots && canEditGarden && !isGuestVisit && !seededPlotsRef.current) {
+      seededPlotsRef.current = true;
+      void realtime.savePlots(defaultPlots);
+    }
+  }, [canEditGarden, defaultPlots, isGuestVisit, realtime.plots, realtime.plotsLoading, realtime.savePlots]);
+
+  const handlePlotCare = useCallback(
+    async (plotId: string, action: "water" | "harvest") => {
+      if (!canEditGarden) return;
+      setDecorSaveStatus(action === "water" ? "Watering shared plot..." : "Harvesting shared plot...");
+      const result = await realtime.applyPlotAction(plotId, action);
+      setDecorSaveStatus(result.ok ? `Plot updated · v${result.version}` : (result.message ?? "Plot action failed."));
+    },
+    [canEditGarden, realtime],
+  );
+
   const handleDecorChange = useCallback(async (next: GardenDecorPlacement[]) => {
     if (!canEditGarden) {
       setDecorSaveStatus("You don't have permission to edit this garden.");
@@ -151,13 +183,20 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
 
     if (result.ok) {
       latestPersistedDecorRef.current = next;
+      clearPendingGardenSave(channelHostCode, PARTNER_GARDEN_ID);
       setDecorSaveStatus(`Shared garden decor saved · v${result.version}`);
       return;
     }
 
     if (result.reason === "network") {
       latestPersistedDecorRef.current = next;
-      setDecorSaveStatus("Shared garden decor saved locally. Online sync will retry when the garden reconnects.");
+      queuePendingGardenSave({
+        hostCode: channelHostCode,
+        gardenId: PARTNER_GARDEN_ID,
+        decor: next,
+        savedAt: Date.now(),
+      });
+      setDecorSaveStatus("Shared garden decor saved locally. Retrying online sync when the garden reconnects...");
       return;
     }
 
@@ -172,7 +211,16 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
           ? "You don't have permission to edit this garden."
           : (result.message ?? "Shared garden decor could not be saved."),
     );
-  }, [canEditGarden, realtimeDecor, saveRealtimeDecor]);
+  }, [canEditGarden, channelHostCode, realtimeDecor, saveRealtimeDecor]);
+
+  useEffect(() => {
+    if (realtime.connectionState !== "connected" || !canEditGarden) return;
+    const pending = readPendingGardenSave(channelHostCode, PARTNER_GARDEN_ID);
+    if (!pending) return;
+    queueMicrotask(() => {
+      void handleDecorChange(pending.decor as GardenDecorPlacement[]);
+    });
+  }, [canEditGarden, channelHostCode, handleDecorChange, realtime.connectionState]);
 
   const handleNavigate = useCallback(
     (href: string) => {
@@ -262,7 +310,8 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
             onDecorChange={handleDecorChange}
             onNavigate={handleNavigate}
             pendingDecorIds={pendingDecorIds}
-            plots={plots}
+            onPlotCare={handlePlotCare}
+            plots={gardenPlots}
             remotePlayers={realtime.players}
             variant="partner"
           />

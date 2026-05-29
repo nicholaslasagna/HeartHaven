@@ -5,10 +5,10 @@ import { ArrowLeft, Shirt, Sparkles } from "lucide-react";
 import { FashionShowCanvasLoader } from "@/components/game/fashion-show-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
-import { useGameWallet } from "@/lib/game/use-game-wallet";
+import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 
 export function FashionShowClient() {
-  const { grantReward } = useGameWallet();
+  const game = useMiniGameSession("fashion-show");
 
   return (
     <div className="grid gap-5">
@@ -30,7 +30,7 @@ export function FashionShowClient() {
           </Button>
         </div>
       </section>
-      <FashionShowCanvasLoader onReward={grantReward} />
+      <FashionShowCanvasLoader onReward={game.handleReward} />
       <RewardWalletPanel />
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/70 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-honey-700" />

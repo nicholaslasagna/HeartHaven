@@ -17,8 +17,26 @@ const GardenFourCanvas = dynamic(
 
 type GardenFourCanvasLoaderProps = {
   onReward?: (reward: GameReward) => void;
+  sessionId?: string | null;
+  metadata?: Record<string, unknown>;
+  mySeatIndex?: number | null;
+  submitDrop?: (column: number) => Promise<{ ok: boolean; reason?: string }>;
 };
 
-export function GardenFourCanvasLoader({ onReward }: GardenFourCanvasLoaderProps) {
-  return <GardenFourCanvas onReward={onReward} />;
+export function GardenFourCanvasLoader({
+  metadata,
+  mySeatIndex,
+  onReward,
+  sessionId,
+  submitDrop,
+}: GardenFourCanvasLoaderProps) {
+  return (
+    <GardenFourCanvas
+      metadata={metadata}
+      mySeatIndex={mySeatIndex}
+      onReward={onReward}
+      sessionId={sessionId}
+      submitDrop={submitDrop}
+    />
+  );
 }

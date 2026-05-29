@@ -146,3 +146,29 @@ export function writeRoomSurfaces(roomId: string, selection: RoomSurfaceSelectio
     JSON.stringify({ floor: selection.floor.id, wall: selection.wall.id }),
   );
 }
+
+export type ServerRoomSurfaces = {
+  floorId: string;
+  wallId: string;
+};
+
+export function selectionFromServerSurfaces(
+  surfaces: ServerRoomSurfaces | null,
+): RoomSurfaceSelection {
+  if (!surfaces) return defaultRoomSurfaceSelection;
+  return {
+    floor: byId(roomFloorSurfaceOptions, surfaces.floorId, defaultRoomSurfaceSelection.floor),
+    wall: byId(roomWallSurfaceOptions, surfaces.wallId, defaultRoomSurfaceSelection.wall),
+  };
+}
+
+export function hardenServerRoomSurfaces(raw: {
+  floor_id?: unknown;
+  wall_id?: unknown;
+} | null): ServerRoomSurfaces | null {
+  if (!raw) return null;
+  const floorId = typeof raw.floor_id === "string" ? raw.floor_id.trim().slice(0, 64) : "";
+  const wallId = typeof raw.wall_id === "string" ? raw.wall_id.trim().slice(0, 64) : "";
+  if (!floorId || !wallId) return null;
+  return { floorId, wallId };
+}

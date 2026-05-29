@@ -140,7 +140,11 @@ export function GamesClient() {
       }
     }
 
-    const result = await party.selectGame({ key: game.id, href: game.href, label: game.title });
+    const result = await party.selectGame({
+      key: game.id.replace(/-party$/, ""),
+      href: game.href,
+      label: game.title,
+    });
     setNotice({
       kind: result.ok ? "ok" : "error",
       message: result.ok ? `${game.title} picked. Fill the seats and ready up.` : actionErrorCopy(result.reason),

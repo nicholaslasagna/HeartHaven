@@ -5,10 +5,10 @@ import { ArrowLeft, Flame, Sparkles } from "lucide-react";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { CozyQuestCanvasLoader } from "@/components/game/cozy-quest-canvas-loader";
 import { Button } from "@/components/ui/button";
-import { useGameWallet } from "@/lib/game/use-game-wallet";
+import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 
 export function LanternRelayClient() {
-  const { grantReward } = useGameWallet();
+  const game = useMiniGameSession("lantern-relay", { maxPlayers: 6 });
 
   return (
     <div className="grid gap-5">
@@ -25,7 +25,7 @@ export function LanternRelayClient() {
         </Button>
       </section>
       <RewardWalletPanel />
-      <CozyQuestCanvasLoader onReward={grantReward} variant="lantern-relay" />
+      <CozyQuestCanvasLoader onReward={game.handleReward} variant="lantern-relay" />
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/70 p-4 text-sm font-bold text-ink-700">
         <Flame className="mr-2 inline size-4 text-honey-700" />
         Online play can turn each lantern click into a party move event for shared relay nights.

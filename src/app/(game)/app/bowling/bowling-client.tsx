@@ -5,10 +5,10 @@ import { ArrowLeft, Heart, Sparkles } from "lucide-react";
 import { BowlingCanvasLoader } from "@/components/game/bowling-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
-import { useGameWallet } from "@/lib/game/use-game-wallet";
+import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 
 export function BowlingClient() {
-  const { grantReward } = useGameWallet();
+  const game = useMiniGameSession("bowling", { maxPlayers: 2 });
 
   return (
     <div className="grid gap-5">
@@ -29,7 +29,7 @@ export function BowlingClient() {
         </div>
       </section>
       <RewardWalletPanel />
-      <BowlingCanvasLoader onReward={grantReward} />
+      <BowlingCanvasLoader onReward={game.handleReward} />
       <div className="rounded-lg border border-blush-300/40 bg-blush-100/60 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-blush-500" />
         Bowling now alternates Blush and Lavender turns locally. Rewards update the same wallet as the arcade games.

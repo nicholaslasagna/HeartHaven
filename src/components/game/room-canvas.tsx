@@ -437,8 +437,6 @@ export function RoomCanvas({
             .setDepth(5000);
 
           setStatus(activeEvent?.roomMessage ?? "Click the floor to move. Hover, drag, click, and face furniture left/right.");
-          // TODO: Persist furniture edits through Supabase Realtime room sessions for collaborative decorating.
-          // TODO: Save mutable placement state to Supabase placed_items after drag/facing interactions.
         }
 
         update(_time: number, delta: number) {

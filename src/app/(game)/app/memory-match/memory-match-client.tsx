@@ -7,7 +7,7 @@ import { MemoryMatchCanvasLoader } from "@/components/game/memory-match-canvas-l
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import type { MemoryMatchMode } from "@/components/game/memory-match-canvas";
 import { Button } from "@/components/ui/button";
-import { useGameWallet } from "@/lib/game/use-game-wallet";
+import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { cn } from "@/lib/utils";
 
 const modeCopy: Record<MemoryMatchMode, { title: string; description: string }> = {
@@ -23,7 +23,7 @@ const modeCopy: Record<MemoryMatchMode, { title: string; description: string }> 
 
 export function MemoryMatchClient() {
   const [mode, setMode] = useState<MemoryMatchMode>("couples");
-  const { grantReward } = useGameWallet();
+  const game = useMiniGameSession("memory-match", { maxPlayers: 6 });
 
   return (
     <div className="grid gap-5">
@@ -66,7 +66,8 @@ export function MemoryMatchClient() {
       </section>
 
       <RewardWalletPanel />
-      <MemoryMatchCanvasLoader mode={mode} onReward={grantReward} />
+      <p className="text-xs font-extrabold text-lavender-600">{game.status}</p>
+      <MemoryMatchCanvasLoader mode={mode} onReward={game.handleReward} />
       <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/65 p-4 text-sm font-bold text-ink-700">
         Pass-and-play rewards now update the wallet immediately. The scene is structured for online seats, turn events,
         and party room invites.

@@ -15,8 +15,14 @@ import { Button } from "@/components/ui/button";
 import { getActiveCompanion } from "@/lib/game/companion-roster";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
 import { getSocialState, isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
+import {
+  clearPendingGardenSave,
+  queuePendingGardenSave,
+  readPendingGardenSave,
+} from "@/lib/game/multiplayer-save-retry";
+import { mergeGardenPlotsWithDefaults, type GardenPlotState } from "@/lib/game/garden-plots";
 import type { gardenPlots, miniGames } from "@/lib/mock-data";
 
 type GardenClientProps = {
@@ -77,6 +83,9 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
   const saveRealtimeDecor = realtime.saveDecor;
   const [playerName, setPlayerName] = useState(getCachedPublicUsername);
   const [companionName, setCompanionName] = useState(() => getActiveCompanion()?.name ?? "Casper");
+  const defaultPlots = useMemo(() => plots as GardenPlotState[], [plots]);
+  const [gardenPlots, setGardenPlots] = useState<GardenPlotState[]>(defaultPlots);
+  const seededPlotsRef = useRef(false);
 
   useEffect(() => {
     const syncUsername = () => setPlayerName(getCachedPublicUsername());
@@ -117,6 +126,34 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
   }, [realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  useEffect(() => {
+    if (realtime.plotsLoading) return;
+    const merged = mergeGardenPlotsWithDefaults(defaultPlots, realtime.plots);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setGardenPlots(merged);
+    if (!realtime.plots && canEditGarden && !isGuestVisit && !seededPlotsRef.current) {
+      seededPlotsRef.current = true;
+      void realtime.savePlots(defaultPlots);
+    }
+  }, [canEditGarden, defaultPlots, isGuestVisit, realtime.plots, realtime.plotsLoading, realtime.savePlots]);
+
+  const handlePlotCare = useCallback(
+    async (plotId: string, action: "water" | "harvest") => {
+      if (!canEditGarden) {
+        setDecorSaveStatus("You don't have permission to tend plots in this garden.");
+        return;
+      }
+      setDecorSaveStatus(action === "water" ? "Watering plot..." : "Harvesting plot...");
+      const result = await realtime.applyPlotAction(plotId, action);
+      if (result.ok) {
+        setDecorSaveStatus(`Plot ${action === "water" ? "watered" : "harvested"} · v${result.version}`);
+        return;
+      }
+      setDecorSaveStatus(result.message ?? "Plot action could not be saved.");
+    },
+    [canEditGarden, realtime],
+  );
+
   const handleDecorChange = useCallback(async (next: GardenDecorPlacement[]) => {
     if (!canEditGarden) {
       setDecorSaveStatus("You don't have permission to edit this garden.");
@@ -134,13 +171,20 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
 
     if (result.ok) {
       latestPersistedDecorRef.current = next;
+      clearPendingGardenSave(channelHostCode, gardenId);
       setDecorSaveStatus(`Garden decor saved · v${result.version}`);
       return;
     }
 
     if (result.reason === "network") {
       latestPersistedDecorRef.current = next;
-      setDecorSaveStatus("Garden decor saved locally. Online sync will retry when the garden reconnects.");
+      queuePendingGardenSave({
+        hostCode: channelHostCode,
+        gardenId,
+        decor: next,
+        savedAt: Date.now(),
+      });
+      setDecorSaveStatus("Garden decor saved locally. Retrying online sync when the garden reconnects...");
       return;
     }
 
@@ -155,7 +199,16 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
           ? "You don't have permission to edit this garden."
           : (result.message ?? "Garden decor could not be saved."),
     );
-  }, [canEditGarden, realtimeDecor, saveRealtimeDecor]);
+  }, [canEditGarden, channelHostCode, gardenId, realtimeDecor, saveRealtimeDecor]);
+
+  useEffect(() => {
+    if (realtime.connectionState !== "connected" || !canEditGarden) return;
+    const pending = readPendingGardenSave(channelHostCode, gardenId);
+    if (!pending) return;
+    queueMicrotask(() => {
+      void handleDecorChange(pending.decor as GardenDecorPlacement[]);
+    });
+  }, [canEditGarden, channelHostCode, gardenId, handleDecorChange, realtime.connectionState]);
 
   const handleNavigate = useCallback(
     (href: string) => {
@@ -237,7 +290,8 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
             onDecorChange={handleDecorChange}
             onNavigate={handleNavigate}
             pendingDecorIds={pendingDecorIds}
-            plots={plots}
+            onPlotCare={handlePlotCare}
+            plots={gardenPlots}
             remotePlayers={realtime.players}
             variant="personal"
           />

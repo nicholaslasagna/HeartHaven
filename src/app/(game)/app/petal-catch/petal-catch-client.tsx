@@ -5,10 +5,10 @@ import { ArrowLeft, Gift, Sparkles } from "lucide-react";
 import { PetalCatchCanvasLoader } from "@/components/game/petal-catch-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
-import { useGameWallet } from "@/lib/game/use-game-wallet";
+import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 
 export function PetalCatchClient() {
-  const { grantReward } = useGameWallet();
+  const game = useMiniGameSession("petal-catch");
 
   return (
     <div className="grid gap-5">
@@ -28,7 +28,7 @@ export function PetalCatchClient() {
         </div>
       </section>
       <RewardWalletPanel />
-      <PetalCatchCanvasLoader onReward={grantReward} />
+      <PetalCatchCanvasLoader onReward={game.handleReward} />
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/70 p-4 text-sm font-bold text-ink-700">
         <Sparkles className="mr-2 inline size-4 text-honey-700" />
         Rewards update the wallet immediately and are shaped for trusted online payouts when live play is available.

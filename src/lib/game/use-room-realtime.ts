@@ -6,6 +6,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { moderateChatMessage, type ChatModerationResult, type GardenChatMessage } from "@/lib/game/chat-moderation";
 import { hardenIncomingChat, hardenRealtimePlayer, hardenRoomPlacements } from "@/lib/game/realtime-hardening";
+import { hardenServerRoomSurfaces, type ServerRoomSurfaces } from "@/lib/game/room-surfaces";
 import type { FacingDirection, RealtimeRoomPlayer, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import {
   KEEPER_CUSTOMIZATION_EVENT,
@@ -47,6 +48,8 @@ export type SavePlacementsResult =
   | { ok: true; version: number }
   | { ok: false; reason: "conflict" | "unauthorized" | "network" | "invalid"; serverVersion?: number; message?: string };
 
+export type SaveSurfacesResult = SavePlacementsResult;
+
 export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRealtimeOptions) {
   const [players, setPlayers] = useState<RealtimeRoomPlayer[]>([]);
   const [messages, setMessages] = useState<GardenChatMessage[]>([]);
@@ -61,6 +64,10 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
   const [placementsVersion, setPlacementsVersion] = useState<number>(0);
   const [placementsLoading, setPlacementsLoading] = useState<boolean>(true);
   const placementsVersionRef = useRef<number>(0);
+  const [surfaces, setSurfaces] = useState<ServerRoomSurfaces | null>(null);
+  const [surfacesVersion, setSurfacesVersion] = useState<number>(0);
+  const [surfacesLoading, setSurfacesLoading] = useState<boolean>(true);
+  const surfacesVersionRef = useRef<number>(0);
   const [localFriendCode, setLocalFriendCode] = useState(() =>
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
@@ -216,12 +223,17 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         // canvas is the real state, not stale localStorage. The two RPCs
         // are independent so we fire them in parallel.
         setPlacementsLoading(true);
+        setSurfacesLoading(true);
         const hydration = await Promise.all([
           supabase.rpc("get_room_placements", {
             p_host_friend_code: channelKey,
             p_room_id: normalizedRoomId,
           }),
           supabase.rpc("get_room_decorators", {
+            p_host_friend_code: channelKey,
+            p_room_id: normalizedRoomId,
+          }),
+          supabase.rpc("get_room_surfaces", {
             p_host_friend_code: channelKey,
             p_room_id: normalizedRoomId,
           }),
@@ -248,6 +260,23 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         }
         setPlacementsLoading(false);
 
+        const surfacesRow = Array.isArray(hydration[2].data) ? hydration[2].data[0] : null;
+        if (surfacesRow) {
+          const safe = hardenServerRoomSurfaces(surfacesRow as { floor_id?: string; wall_id?: string });
+          if (safe) {
+            setSurfaces(safe);
+            const versionNumber = Number((surfacesRow as { version?: number }).version);
+            const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
+            setSurfacesVersion(safeVersion);
+            surfacesVersionRef.current = safeVersion;
+          }
+        } else {
+          setSurfaces(null);
+          setSurfacesVersion(0);
+          surfacesVersionRef.current = 0;
+        }
+        setSurfacesLoading(false);
+
         const grantsData = Array.isArray(hydration[1].data) ? hydration[1].data : [];
         const hydratedGrants = grantsData
           .map((row) => normalizeFriendCode(String((row as { grantee_friend_code?: string })?.grantee_friend_code ?? "")))
@@ -258,6 +287,18 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           .on("presence", { event: "sync" }, syncPresence)
           .on("presence", { event: "join" }, syncPresence)
           .on("presence", { event: "leave" }, syncPresence)
+          .on("broadcast", { event: "room_surfaces_updated" }, ({ payload }) => {
+            const versionNumber = Number((payload as { version?: number })?.version);
+            if (!Number.isFinite(versionNumber)) return;
+            if (versionNumber <= surfacesVersionRef.current) return;
+            const floorId = String((payload as { floorId?: string })?.floorId ?? "");
+            const wallId = String((payload as { wallId?: string })?.wallId ?? "");
+            const safe = hardenServerRoomSurfaces({ floor_id: floorId, wall_id: wallId });
+            if (!safe) return;
+            surfacesVersionRef.current = versionNumber;
+            setSurfacesVersion(versionNumber);
+            setSurfaces(safe);
+          })
           .on("broadcast", { event: "room_placements_updated" }, ({ payload }) => {
             // Delta from another participant's save_room_placements. The
             // payload carries the new placements + version, so we apply
@@ -554,6 +595,58 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     [channelKey, normalizedRoomId],
   );
 
+  const saveSurfaces = useCallback(
+    async (floorId: string, wallId: string): Promise<SaveSurfacesResult> => {
+      if (!isSupabaseConfigured()) {
+        return { ok: false, reason: "network", message: "Online room sync is not configured." };
+      }
+      const expected = surfacesVersionRef.current;
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data, error } = await supabase.rpc("save_room_surfaces", {
+          p_host_friend_code: channelKey,
+          p_room_id: normalizedRoomId,
+          p_floor_id: floorId,
+          p_wall_id: wallId,
+          p_expected_version: expected,
+        });
+        if (error) {
+          const message = error.message ?? "Could not save room surfaces.";
+          if (/not authorized/i.test(message)) return { ok: false, reason: "unauthorized", message };
+          return { ok: false, reason: "network", message };
+        }
+        const row = Array.isArray(data) ? data[0] : null;
+        if (!row) return { ok: false, reason: "network", message: "Empty response from server." };
+        if (row.conflict) {
+          const sv = Number(row.version);
+          return { ok: false, reason: "conflict", serverVersion: Number.isFinite(sv) ? sv : undefined };
+        }
+        const newVersion = Number(row.version);
+        const safeVersion = Number.isFinite(newVersion) ? newVersion : expected + 1;
+        const safe = { floorId, wallId };
+        surfacesVersionRef.current = safeVersion;
+        setSurfacesVersion(safeVersion);
+        setSurfaces(safe);
+        const channel = channelRef.current;
+        if (channel) {
+          void channel.send({
+            type: "broadcast",
+            event: "room_surfaces_updated",
+            payload: { floorId, wallId, version: safeVersion, updatedAt: Date.now() },
+          });
+        }
+        return { ok: true, version: safeVersion };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: "network",
+          message: error instanceof Error ? error.message : "Network error.",
+        };
+      }
+    },
+    [channelKey, normalizedRoomId],
+  );
+
   const sendChat = useCallback((input: string): ChatModerationResult => {
     const safety = readSafetyState();
     if (isLocallyQuarantined(safety)) {
@@ -615,6 +708,10 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     placementsLoading,
     roomCode,
     savePlacements,
+    saveSurfaces,
+    surfaces,
+    surfacesLoading,
+    surfacesVersion,
     sendEmote,
     sendChat,
     sendMove,

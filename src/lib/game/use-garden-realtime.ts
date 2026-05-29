@@ -26,6 +26,7 @@ import {
   submitReport,
 } from "@/lib/game/safety";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
+import { hardenGardenPlots, type GardenPlotState } from "@/lib/game/garden-plots";
 
 type UseGardenRealtimeOptions = {
   gardenId: string;
@@ -43,6 +44,8 @@ type UseGardenRealtimeOptions = {
 export type SaveDecorResult =
   | { ok: true; version: number }
   | { ok: false; reason: "conflict" | "unauthorized" | "network" | "invalid"; serverVersion?: number; message?: string };
+
+export type SavePlotsResult = SaveDecorResult;
 
 type ConnectionState = "demo" | "connecting" | "connected" | "offline" | "error";
 
@@ -81,6 +84,10 @@ export function useGardenRealtime({
   const [decorVersion, setDecorVersion] = useState<number>(0);
   const [decorLoading, setDecorLoading] = useState<boolean>(true);
   const decorVersionRef = useRef<number>(0);
+  const [plots, setPlots] = useState<GardenPlotState[] | null>(null);
+  const [plotsVersion, setPlotsVersion] = useState<number>(0);
+  const [plotsLoading, setPlotsLoading] = useState<boolean>(true);
+  const plotsVersionRef = useRef<number>(0);
   const [localFriendCode, setLocalFriendCode] = useState(() =>
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );
@@ -223,12 +230,17 @@ export function useGardenRealtime({
         // decorator list so the first paint is the real shared state. We
         // fire both RPCs in parallel — they're independent.
         setDecorLoading(true);
+        setPlotsLoading(true);
         const hydration = await Promise.all([
           supabase.rpc("get_garden_decor", {
             p_host_friend_code: normalizedHostCode,
             p_garden_id: normalizedGardenId,
           }),
           supabase.rpc("get_garden_decorators", {
+            p_host_friend_code: normalizedHostCode,
+            p_garden_id: normalizedGardenId,
+          }),
+          supabase.rpc("get_garden_plots", {
             p_host_friend_code: normalizedHostCode,
             p_garden_id: normalizedGardenId,
           }),
@@ -251,6 +263,21 @@ export function useGardenRealtime({
           decorVersionRef.current = 0;
         }
         setDecorLoading(false);
+
+        const plotsRow = Array.isArray(hydration[2].data) ? hydration[2].data[0] : null;
+        if (plotsRow) {
+          const safe = hardenGardenPlots((plotsRow as { plots?: unknown }).plots);
+          setPlots(safe);
+          const versionNumber = Number((plotsRow as { version?: number }).version);
+          const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
+          setPlotsVersion(safeVersion);
+          plotsVersionRef.current = safeVersion;
+        } else {
+          setPlots(null);
+          setPlotsVersion(0);
+          plotsVersionRef.current = 0;
+        }
+        setPlotsLoading(false);
 
         const grantsData = Array.isArray(hydration[1].data) ? hydration[1].data : [];
         const hydratedGrants = grantsData
@@ -307,6 +334,15 @@ export function useGardenRealtime({
                 .filter((code): code is string => Boolean(code))
               : [];
             setApprovedDecoratorCodes([...new Set(approvedCodes)]);
+          })
+          .on("broadcast", { event: "garden_plots_updated" }, ({ payload }) => {
+            const versionNumber = Number((payload as { version?: number })?.version);
+            if (!Number.isFinite(versionNumber)) return;
+            if (versionNumber <= plotsVersionRef.current) return;
+            const safe = hardenGardenPlots((payload as { plots?: unknown })?.plots);
+            plotsVersionRef.current = versionNumber;
+            setPlotsVersion(versionNumber);
+            setPlots(safe);
           })
           .on("broadcast", { event: "garden_decor_updated" }, ({ payload }) => {
             // Delta from a save_garden_decor call on another client. Apply
@@ -563,7 +599,112 @@ export function useGardenRealtime({
     [normalizedGardenId, normalizedHostCode],
   );
 
+  const savePlots = useCallback(
+    async (nextPlots: GardenPlotState[]): Promise<SavePlotsResult> => {
+      if (!isSupabaseConfigured()) {
+        return { ok: false, reason: "network", message: "Online garden sync is not configured." };
+      }
+      const safe = hardenGardenPlots(nextPlots);
+      const expected = plotsVersionRef.current;
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data, error } = await supabase.rpc("save_garden_plots", {
+          p_host_friend_code: normalizedHostCode,
+          p_garden_id: normalizedGardenId,
+          p_plots: safe,
+          p_expected_version: expected,
+        });
+        if (error) {
+          const message = error.message ?? "Could not save garden plots.";
+          if (/not authorized/i.test(message)) return { ok: false, reason: "unauthorized", message };
+          return { ok: false, reason: "network", message };
+        }
+        const row = Array.isArray(data) ? data[0] : null;
+        if (!row) return { ok: false, reason: "network", message: "Empty response from server." };
+        if (row.conflict) {
+          const sv = Number(row.version);
+          return { ok: false, reason: "conflict", serverVersion: Number.isFinite(sv) ? sv : undefined };
+        }
+        const newVersion = Number(row.version);
+        const safeVersion = Number.isFinite(newVersion) ? newVersion : expected + 1;
+        plotsVersionRef.current = safeVersion;
+        setPlotsVersion(safeVersion);
+        setPlots(safe);
+        const channel = channelRef.current;
+        if (channel) {
+          void channel.send({
+            type: "broadcast",
+            event: "garden_plots_updated",
+            payload: { plots: safe, version: safeVersion, updatedAt: Date.now() },
+          });
+        }
+        return { ok: true, version: safeVersion };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: "network",
+          message: error instanceof Error ? error.message : "Network error.",
+        };
+      }
+    },
+    [normalizedGardenId, normalizedHostCode],
+  );
+
+  const applyPlotAction = useCallback(
+    async (plotId: string, action: "water" | "harvest"): Promise<SavePlotsResult> => {
+      if (!isSupabaseConfigured()) {
+        return { ok: false, reason: "network", message: "Online garden sync is not configured." };
+      }
+      const expected = plotsVersionRef.current;
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data, error } = await supabase.rpc("apply_garden_plot_action", {
+          p_host_friend_code: normalizedHostCode,
+          p_garden_id: normalizedGardenId,
+          p_plot_id: plotId,
+          p_action: action,
+          p_expected_version: expected,
+        });
+        if (error) {
+          const message = error.message ?? "Could not update plot.";
+          if (/not authorized/i.test(message)) return { ok: false, reason: "unauthorized", message };
+          if (/plot not found/i.test(message)) return { ok: false, reason: "invalid", message };
+          return { ok: false, reason: "network", message };
+        }
+        const row = Array.isArray(data) ? data[0] : null;
+        if (!row) return { ok: false, reason: "network", message: "Empty response from server." };
+        if (row.conflict) {
+          const sv = Number(row.version);
+          return { ok: false, reason: "conflict", serverVersion: Number.isFinite(sv) ? sv : undefined };
+        }
+        const safe = hardenGardenPlots(row.plots);
+        const newVersion = Number(row.version);
+        const safeVersion = Number.isFinite(newVersion) ? newVersion : expected + 1;
+        plotsVersionRef.current = safeVersion;
+        setPlotsVersion(safeVersion);
+        setPlots(safe);
+        const channel = channelRef.current;
+        if (channel) {
+          void channel.send({
+            type: "broadcast",
+            event: "garden_plots_updated",
+            payload: { plots: safe, version: safeVersion, updatedAt: Date.now() },
+          });
+        }
+        return { ok: true, version: safeVersion };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: "network",
+          message: error instanceof Error ? error.message : "Network error.",
+        };
+      }
+    },
+    [normalizedGardenId, normalizedHostCode],
+  );
+
   return {
+    applyPlotAction,
     approvedDecoratorCodes,
     connectionState,
     decor,
@@ -574,7 +715,11 @@ export function useGardenRealtime({
     localFriendCode,
     messages,
     players,
+    plots,
+    plotsLoading,
+    plotsVersion,
     saveDecor,
+    savePlots,
     sendChat,
     sendMove,
     status,

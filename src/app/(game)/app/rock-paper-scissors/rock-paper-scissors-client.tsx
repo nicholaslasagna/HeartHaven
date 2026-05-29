@@ -10,7 +10,7 @@ import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { playCozyCue } from "@/lib/game/cozy-audio";
-import { useGameWallet } from "@/lib/game/use-game-wallet";
+import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { cn } from "@/lib/utils";
 
 type Choice = "rock" | "paper" | "scissors";
@@ -35,7 +35,7 @@ const choices: Array<{ id: Choice; label: string; description: string }> = [
 ];
 
 export function RockPaperScissorsClient() {
-  const { grantReward } = useGameWallet();
+  const game = useMiniGameSession("rock-paper-scissors", { maxPlayers: 2 });
   const [turn, setTurn] = useState<PlayerId>("blush");
   const [starter, setStarter] = useState<PlayerId>("blush");
   const [picks, setPicks] = useState<Partial<Record<PlayerId, Choice>>>({});
@@ -84,11 +84,18 @@ export function RockPaperScissorsClient() {
     setScores(nextScores);
     setHistory((value) => [result, ...value].slice(0, 6));
     setRevealed(true);
+    void game.submitMove("round", {
+      round: roundNumber,
+      blush: nextPicks.blush,
+      lavender: nextPicks.lavender,
+      winner,
+      scores: nextScores,
+    });
 
     const wonMatch = winner !== "tie" && nextScores[winner] >= 3;
     if (wonMatch) {
       setMatchWinner(winner);
-      grantReward({
+      void game.handleReward({
         gameId: "rock-paper-scissors",
         label: "Moonstone RPS",
         score: 300 + nextScores[winner] * 80,

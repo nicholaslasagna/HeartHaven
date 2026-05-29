@@ -40,6 +40,7 @@ type GardenCanvasLoaderProps = {
   }) => void;
   onNavigate?: (href: string) => void;
   onDecorChange?: (decor: GardenDecorPlacement[]) => void;
+  onPlotCare?: (plotId: string, action: "water" | "harvest") => void;
 };
 
 export function GardenCanvasLoader({
@@ -48,6 +49,7 @@ export function GardenCanvasLoader({
   onAvatarMove,
   onNavigate,
   onDecorChange,
+  onPlotCare,
   pendingDecorIds,
   remotePlayers,
   variant,
@@ -59,6 +61,7 @@ export function GardenCanvasLoader({
       decor={decor}
       onAvatarMove={onAvatarMove}
       onDecorChange={onDecorChange}
+      onPlotCare={onPlotCare}
       onNavigate={onNavigate}
       pendingDecorIds={pendingDecorIds}
       plots={plots}

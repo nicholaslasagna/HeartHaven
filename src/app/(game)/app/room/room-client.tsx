@@ -27,13 +27,20 @@ import {
   readRoomSurfaces,
   roomFloorSurfaceOptions,
   roomWallSurfaceOptions,
+  selectionFromServerSurfaces,
   writeRoomSurfaces,
   type RoomSurfaceOption,
   type RoomSurfaceSelection,
 } from "@/lib/game/room-surfaces";
 import { isItemVisibleForSeason } from "@/lib/seasonal-events";
+import {
+  clearPendingRoomSave,
+  queuePendingRoomSave,
+  readPendingRoomSave,
+} from "@/lib/game/multiplayer-save-retry";
 
 const ROOM_STORAGE_PREFIX = "hearthaven:room-placements:v2:";
+const HOST_PLACEMENT_SAVE_DEBOUNCE_MS = 500;
 const ROOM_EXPANSION_STORAGE_PREFIX = "hearthaven:room-expansions:v1:";
 const ROOM_CANVAS_WIDTH = 960;
 const ROOM_CANVAS_HEIGHT = 600;
@@ -131,6 +138,10 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const placementCounter = useRef(0);
   const roomDropRef = useRef<HTMLDivElement | null>(null);
   const latestPersistedPlacementsRef = useRef<RoomPlacement[]>(starterPlacements);
+  const lastCommittedVersionRef = useRef(0);
+  const hasPendingLocalEditRef = useRef(false);
+  const placementCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPlacementsRef = useRef<RoomPlacement[] | null>(null);
   const { wallet, spendCurrency } = useGameWallet();
   // Resolve the channel-owning host friend code up-front so the realtime hook
   // never has to fall back to the room id. When a guest follows a ?visit=
@@ -217,6 +228,14 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     setRoomSurfaces(readRoomSurfaces(activeRoom.id));
   }, [activeRoom.id]);
 
+  useEffect(() => {
+    if (realtime.surfacesLoading) return;
+    const next = selectionFromServerSurfaces(realtime.surfaces);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRoomSurfaces(next);
+    writeRoomSurfaces(activeRoom.id, next);
+  }, [activeRoom.id, realtime.surfaces, realtime.surfacesLoading]);
+
   // Mirror server-canonical placements (from `useRoomRealtime`) into the
   // local saved+draft state so the canvas + drawer see one truth. Same
   // external-subscription pattern justification as above — the realtime
@@ -225,13 +244,36 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (realtimePlacements) {
+      const incomingVersion = realtime.placementsVersion;
+      const previousCommitted = lastCommittedVersionRef.current;
+
+      // Don't clobber in-progress edits when a guest saves mid-session.
+      // If the server moved ahead while we were editing, apply their version.
+      if (hasPendingLocalEditRef.current) {
+        if (incomingVersion > previousCommitted) {
+          hasPendingLocalEditRef.current = false;
+          if (placementCommitTimerRef.current) {
+            clearTimeout(placementCommitTimerRef.current);
+            placementCommitTimerRef.current = null;
+          }
+          lastCommittedVersionRef.current = incomingVersion;
+          setPlacements(realtimePlacements);
+          setDraftPlacements(realtimePlacements);
+          latestPersistedPlacementsRef.current = realtimePlacements;
+          writePlacementsBackup(activeRoom.id, realtimePlacements);
+          setSaveStatus("Someone else updated this room — reloaded their version. Re-apply your changes.");
+        }
+        return;
+      }
+
+      lastCommittedVersionRef.current = Math.max(previousCommitted, incomingVersion);
       setPlacements(realtimePlacements);
       setDraftPlacements(realtimePlacements);
       latestPersistedPlacementsRef.current = realtimePlacements;
       writePlacementsBackup(activeRoom.id, realtimePlacements);
       setSaveStatus(
-        realtime.placementsVersion > 0
-          ? `Synced room layout · v${realtime.placementsVersion}`
+        incomingVersion > 0
+          ? `Synced room layout · v${incomingVersion}`
           : "Synced room layout",
       );
       return;
@@ -281,22 +323,35 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     setPlacements(next);
     writePlacementsBackup(activeRoom.id, next);
     setSaveStatus(source === "guest-commit" ? "Saving decorator change..." : "Saving room layout...");
+    pendingPlacementsRef.current = null;
 
     const result = await saveRealtimePlacements(next);
     setSavingPlacementIds([]);
 
     if (result.ok) {
+      hasPendingLocalEditRef.current = false;
       latestPersistedPlacementsRef.current = next;
+      lastCommittedVersionRef.current = result.version;
+      clearPendingRoomSave(channelHostCode, activeRoom.id);
       setSaveStatus(`Room layout saved · v${result.version}`);
       return;
     }
 
     if (result.reason === "network") {
+      hasPendingLocalEditRef.current = true;
+      pendingPlacementsRef.current = next;
       latestPersistedPlacementsRef.current = next;
-      setSaveStatus("Room layout saved locally. Online sync will retry when the room reconnects.");
+      queuePendingRoomSave({
+        hostCode: channelHostCode,
+        roomId: activeRoom.id,
+        placements: next,
+        savedAt: Date.now(),
+      });
+      setSaveStatus("Room layout saved locally. Retrying online sync when the room reconnects...");
       return;
     }
 
+    hasPendingLocalEditRef.current = false;
     const fallback = result.reason === "conflict"
       ? (realtimePlacements ?? previous)
       : previous;
@@ -306,6 +361,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     writePlacementsBackup(activeRoom.id, fallback);
 
     if (result.reason === "conflict") {
+      if (result.serverVersion) lastCommittedVersionRef.current = result.serverVersion;
       setSaveStatus("Someone else updated this room — reloaded their version. Re-apply your changes.");
       return;
     }
@@ -316,16 +372,52 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     }
 
     setSaveStatus(result.message ?? "Room layout could not be saved.");
-  }, [activeRoom.id, canEditRoom, realtimePlacements, saveRealtimePlacements]);
+  }, [activeRoom.id, canEditRoom, channelHostCode, realtimePlacements, saveRealtimePlacements]);
+
+  const scheduleHostPlacementSave = useCallback((next: RoomPlacement[]) => {
+    pendingPlacementsRef.current = next;
+    if (placementCommitTimerRef.current) clearTimeout(placementCommitTimerRef.current);
+    placementCommitTimerRef.current = setTimeout(() => {
+      placementCommitTimerRef.current = null;
+      const pending = pendingPlacementsRef.current;
+      if (!pending) return;
+      void commitRoomPlacements(pending, "host-save");
+    }, HOST_PLACEMENT_SAVE_DEBOUNCE_MS);
+  }, [commitRoomPlacements]);
 
   const handlePlacementsChange = useCallback((next: RoomPlacement[]) => {
+    hasPendingLocalEditRef.current = true;
     setDraftPlacements(next);
     setPlacements(next);
-    setSaveStatus(isHostRoom ? "Unsaved room changes" : "Saving decorator change...");
-    if (!isHostRoom && canEditRoom) {
-      void commitRoomPlacements(next, "guest-commit");
+    if (!canEditRoom) return;
+
+    if (isHostRoom) {
+      setSaveStatus("Saving room layout...");
+      scheduleHostPlacementSave(next);
+      return;
     }
-  }, [canEditRoom, commitRoomPlacements, isHostRoom]);
+
+    setSaveStatus("Saving decorator change...");
+    void commitRoomPlacements(next, "guest-commit");
+  }, [canEditRoom, commitRoomPlacements, isHostRoom, scheduleHostPlacementSave]);
+
+  // Flush any layout that failed to reach the server once realtime reconnects.
+  useEffect(() => {
+    if (realtime.connectionState !== "connected" || !canEditRoom) return;
+
+    const pending = readPendingRoomSave(channelHostCode, activeRoom.id);
+    if (!pending) return;
+
+    queueMicrotask(() => {
+      void commitRoomPlacements(pending.placements, isHostRoom ? "host-save" : "guest-commit");
+    });
+  }, [activeRoom.id, canEditRoom, channelHostCode, commitRoomPlacements, isHostRoom, realtime.connectionState]);
+
+  useEffect(() => {
+    return () => {
+      if (placementCommitTimerRef.current) clearTimeout(placementCommitTimerRef.current);
+    };
+  }, []);
 
   const handleRoomNavigate = useCallback(
     (href: string) => {
@@ -335,6 +427,10 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   );
 
   function saveRoom() {
+    if (placementCommitTimerRef.current) {
+      clearTimeout(placementCommitTimerRef.current);
+      placementCommitTimerRef.current = null;
+    }
     void commitRoomPlacements(draftPlacements, "host-save");
   }
 
@@ -385,7 +481,14 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     };
     setRoomSurfaces(next);
     writeRoomSurfaces(activeRoom.id, next);
-    setSaveStatus(kind === "floor" ? `Floor changed to ${option.name}.` : `Walls changed to ${option.name}.`);
+    setSaveStatus(`Saving ${kind} surface...`);
+    void realtime.saveSurfaces(next.floor.id, next.wall.id).then((result) => {
+      if (result.ok) {
+        setSaveStatus(kind === "floor" ? `Floor changed to ${option.name} · v${result.version}` : `Walls changed to ${option.name} · v${result.version}`);
+        return;
+      }
+      setSaveStatus(result.message ?? "Surface could not be saved online.");
+    });
   }
 
   function dropPointForItem(item: CatalogItem, event: DragEvent<HTMLDivElement>) {
@@ -425,7 +528,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     };
     const next = [...draftPlacements, nextPlacement];
     handlePlacementsChange(next);
-    setSaveStatus(`${item.name} added. Drag it in the room, then save layout.`);
+    setSaveStatus(`${item.name} added. Drag it in the room — layout syncs automatically.`);
   }
 
   function handleDrawerDragStart(event: DragEvent<HTMLButtonElement>, item: CatalogItem) {
@@ -508,7 +611,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-normal text-lavender-500">Room wings</p>
-            <p className="text-sm font-bold text-ink-700">Every room opens move-in ready. Rearrange it from the drawer, save the layout, then expand into another wing.</p>
+            <p className="text-sm font-bold text-ink-700">Every room opens move-in ready. Rearrange from the drawer — layout syncs live for visitors — then expand into another wing.</p>
           </div>
           <Button asChild variant="secondary">
             <Link href="/app/shop"><Plus /> Buy rooms</Link>

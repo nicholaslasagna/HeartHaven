@@ -78,6 +78,7 @@ type GardenCanvasProps = {
   }) => void;
   onNavigate?: (href: string) => void;
   onDecorChange?: (decor: GardenDecorPlacement[]) => void;
+  onPlotCare?: (plotId: string, action: "water" | "harvest") => void;
 };
 
 export type GardenDecorKind =
@@ -496,6 +497,7 @@ export function GardenCanvas({
   onAvatarMove,
   onNavigate,
   onDecorChange,
+  onPlotCare,
   pendingDecorIds = [],
   remotePlayers = [],
   variant,
@@ -506,6 +508,8 @@ export function GardenCanvas({
   const decorRef = useRef<GardenDecorPlacement[]>(decor ?? readGardenDecor(variant));
   const pendingDecorIdsRef = useRef(pendingDecorIds);
   const onDecorChangeRef = useRef(onDecorChange);
+  const onPlotCareRef = useRef(onPlotCare);
+  const plotsRef = useRef(plots);
   const onNavigateRef = useRef(onNavigate);
   const timeOfDayRef = useRef<GardenTimeOfDay>("noon");
   const { activeEvent } = useSeasonalEvent();
@@ -525,7 +529,10 @@ export function GardenCanvas({
 
   useEffect(() => {
     onDecorChangeRef.current = onDecorChange;
-  }, [onDecorChange]);
+    onPlotCareRef.current = onPlotCare;
+    plotsRef.current = plots;
+    window.dispatchEvent(new CustomEvent("hearthaven:garden-plots-updated", { detail: { plots } }));
+  }, [onDecorChange, onPlotCare, plots]);
 
   useEffect(() => {
     onNavigateRef.current = onNavigate;
@@ -733,7 +740,6 @@ export function GardenCanvas({
           this.cameras.main.setDeadzone(180, 120);
           this.addTitle();
           this.sortDepths();
-          // TODO: Replace local plot care events with Supabase garden_events and shared_garden_plots writes.
           // TODO: Subscribe partner garden scene to Supabase Realtime so both linked players see care pulses.
         }
 
@@ -1006,9 +1012,14 @@ export function GardenCanvas({
 
         private waterPlot(plot: GardenPlotState, x: number, y: number) {
           playCozyCue("water");
-          setStatus(`${plot.name} watered. ${plot.stage} growth sparkles wake up.`);
-          // Watering a plot advances the "water a garden plot" daily task.
-          recordActivity("garden-watered");
+          const action = plot.progress >= 80 ? "harvest" : "water";
+          onPlotCareRef.current?.(plot.id, action);
+          setStatus(
+            action === "harvest"
+              ? `${plot.name} harvested — new seeds are tucked in.`
+              : `${plot.name} watered. ${plot.stage} growth sparkles wake up.`,
+          );
+          if (action === "water") recordActivity("garden-watered");
           for (let index = 0; index < 14; index += 1) {
             const drop = this.add.circle(x + PhaserModule.Math.Between(-54, 54), y - 74, 4, 0x5e94b0, 0.82).setDepth(6000);
             this.tweens.add({

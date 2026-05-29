@@ -5,10 +5,10 @@ import { ArrowLeft, Heart, Sparkles } from "lucide-react";
 import { CozyQuestCanvasLoader } from "@/components/game/cozy-quest-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
-import { useGameWallet } from "@/lib/game/use-game-wallet";
+import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 
 export function HeartHuntClient() {
-  const { grantReward } = useGameWallet();
+  const game = useMiniGameSession("heart-hunt", { maxPlayers: 6 });
 
   return (
     <div className="grid gap-5">
@@ -25,7 +25,7 @@ export function HeartHuntClient() {
         </Button>
       </section>
       <RewardWalletPanel />
-      <CozyQuestCanvasLoader onReward={grantReward} variant="heart-hunt" />
+      <CozyQuestCanvasLoader onReward={game.handleReward} variant="heart-hunt" />
       <div className="rounded-lg border border-blush-300/40 bg-blush-100/60 p-4 text-sm font-bold text-ink-700">
         <Heart className="mr-2 inline size-4 text-blush-500" />
         The hunt works locally now and can become a room-party scavenger hunt once realtime visitors are connected.
