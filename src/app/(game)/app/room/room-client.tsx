@@ -260,7 +260,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
           setPlacements(realtimePlacements);
           setDraftPlacements(realtimePlacements);
           latestPersistedPlacementsRef.current = realtimePlacements;
-          writePlacementsBackup(activeRoom.id, realtimePlacements);
+          if (isHostRoom) writePlacementsBackup(activeRoom.id, realtimePlacements);
           setSaveStatus("Someone else updated this room — reloaded their version. Re-apply your changes.");
         }
         return;
@@ -270,7 +270,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
       setPlacements(realtimePlacements);
       setDraftPlacements(realtimePlacements);
       latestPersistedPlacementsRef.current = realtimePlacements;
-      writePlacementsBackup(activeRoom.id, realtimePlacements);
+      if (isHostRoom) writePlacementsBackup(activeRoom.id, realtimePlacements);
       setSaveStatus(
         incomingVersion > 0
           ? `Synced room layout · v${incomingVersion}`
@@ -284,14 +284,18 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
       return;
     }
 
-    const saved = readPlacements(activeRoom.id);
+    const saved = isHostRoom ? readPlacements(activeRoom.id) : getStarterPlacementsForRoom(activeRoom.id);
     setPlacements(saved);
     setDraftPlacements(saved);
     latestPersistedPlacementsRef.current = saved;
-    const hasSavedLayout = typeof window !== "undefined"
+    const hasSavedLayout = isHostRoom && typeof window !== "undefined"
       && Boolean(window.localStorage.getItem(getRoomStorageKey(activeRoom.id)));
-    setSaveStatus(hasSavedLayout ? "Loaded local room layout" : "Move-in ready layout");
-  }, [activeRoom.id, realtimePlacements, realtime.placementsLoading, realtime.placementsVersion]);
+    setSaveStatus(
+      isHostRoom
+        ? hasSavedLayout ? "Loaded local room layout" : "Move-in ready layout"
+        : "Viewing host room layout",
+    );
+  }, [activeRoom.id, isHostRoom, realtimePlacements, realtime.placementsLoading, realtime.placementsVersion]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -321,7 +325,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     setSavingPlacementIds(pendingIds);
     setDraftPlacements(next);
     setPlacements(next);
-    writePlacementsBackup(activeRoom.id, next);
+    if (isHostRoom) writePlacementsBackup(activeRoom.id, next);
     setSaveStatus(source === "guest-commit" ? "Saving decorator change..." : "Saving room layout...");
     pendingPlacementsRef.current = null;
 
@@ -358,7 +362,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     latestPersistedPlacementsRef.current = fallback;
     setPlacements(fallback);
     setDraftPlacements(fallback);
-    writePlacementsBackup(activeRoom.id, fallback);
+    if (isHostRoom) writePlacementsBackup(activeRoom.id, fallback);
 
     if (result.reason === "conflict") {
       if (result.serverVersion) lastCommittedVersionRef.current = result.serverVersion;
@@ -814,6 +818,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               onToggleDecorator={realtime.toggleDecoratorPermission}
               players={realtime.players}
               roomCode={realtime.roomCode}
+              roomId={activeRoom.id}
               sendChat={realtime.sendChat}
               status={realtime.status}
             />

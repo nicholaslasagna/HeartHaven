@@ -19,12 +19,15 @@ import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
 import { getSocialState, SOCIAL_EVENT, type Friend } from "@/lib/game/social";
 import { useSocial } from "@/lib/game/use-social";
+import { sendPlaceInviteToFriend, toPlaceTargetPath, type PlaceInviteType } from "@/lib/game/place-invites";
 
 type GardenSocialPanelProps = {
   approvedDecoratorCodes?: string[];
   canManagePlacement?: boolean;
   connectionState: string;
+  gardenId?: string;
   inviteUrl: string;
+  inviteType?: PlaceInviteType;
   messages: GardenChatMessage[];
   onToggleDecorator?: (friendCode: string) => void;
   players: RealtimeRoomPlayer[];
@@ -37,7 +40,9 @@ export function GardenSocialPanel({
   approvedDecoratorCodes = [],
   canManagePlacement = true,
   connectionState,
+  gardenId,
   inviteUrl,
+  inviteType = "garden",
   messages,
   onToggleDecorator,
   players,
@@ -47,7 +52,8 @@ export function GardenSocialPanel({
 }: GardenSocialPanelProps) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState("Chat is moderated: no links, phone numbers, email addresses, or harmful messages.");
-  const [copiedFriendCode, setCopiedFriendCode] = useState<string | null>(null);
+  const [invitedFriendCode, setInvitedFriendCode] = useState<string | null>(null);
+  const [sendingFriendCode, setSendingFriendCode] = useState<string | null>(null);
   const social = useSocial();
   // The host's PUBLIC friend code — the thing visitors should actually
   // share to add the host. `roomCode` is the scene slug (e.g.
@@ -77,32 +83,21 @@ export function GardenSocialPanel({
   }
 
   async function inviteFriend(friend: Friend) {
-    const share = navigator as Navigator & {
-      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
-    };
-
-    if (share.share) {
-      try {
-        await share.share({
-          title: "HeartHaven garden invite",
-          text: `${friend.displayName}, come visit my HeartHaven garden.`,
-          url: inviteUrl,
-        });
-        setNotice(`Invite ready for ${friend.displayName}.`);
-        return;
-      } catch {
-        // Fall back to clipboard copy if the system share sheet is cancelled.
-      }
+    setSendingFriendCode(friend.code);
+    const result = await sendPlaceInviteToFriend({
+      friendCode: friend.code,
+      gardenId,
+      inviteType,
+      targetUrl: toPlaceTargetPath(inviteUrl),
+    });
+    setSendingFriendCode(null);
+    if (result.ok) {
+      setInvitedFriendCode(friend.code);
+      window.setTimeout(() => setInvitedFriendCode((current) => (current === friend.code ? null : current)), 1800);
+      setNotice(`${friend.displayName} was invited to this ${inviteType === "park" ? "park" : "garden"} session.`);
+      return;
     }
-
-    try {
-      await navigator.clipboard.writeText(`Come visit my HeartHaven garden: ${inviteUrl}`);
-      setCopiedFriendCode(friend.code);
-      window.setTimeout(() => setCopiedFriendCode((current) => (current === friend.code ? null : current)), 1400);
-      setNotice(`Garden visit link copied for ${friend.displayName}.`);
-    } catch {
-      setNotice(inviteUrl);
-    }
+    setNotice(`Could not invite ${friend.displayName}: ${result.reason}`);
   }
 
   function submitMessage() {
@@ -217,10 +212,11 @@ export function GardenSocialPanel({
                 <CozyButton
                   onClick={() => void inviteFriend(friend)}
                   size="sm"
-                  variant={copiedFriendCode === friend.code ? "warm" : "secondary"}
+                  variant={invitedFriendCode === friend.code ? "warm" : "secondary"}
+                  disabled={sendingFriendCode === friend.code}
                 >
-                  {copiedFriendCode === friend.code ? <ClipboardCheck /> : <UserPlus />}
-                  {copiedFriendCode === friend.code ? "Copied" : "Invite"}
+                  {invitedFriendCode === friend.code ? <ClipboardCheck /> : <UserPlus />}
+                  {sendingFriendCode === friend.code ? "Sending..." : invitedFriendCode === friend.code ? "Invited" : "Invite"}
                 </CozyButton>
               </div>
             ))}

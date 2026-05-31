@@ -3520,7 +3520,6 @@ export function GardenCanvas({
               rotation: placement.rotation,
             };
           });
-          writeGardenDecor(variant, decorations);
           onDecorChangeRef.current?.(decorations);
         }
 
@@ -3881,6 +3880,10 @@ export function readGardenDecor(variant: GardenCanvasProps["variant"]): GardenDe
   } catch {
     return defaultGardenDecor(variant);
   }
+}
+
+export function getDefaultGardenDecor(variant: GardenCanvasProps["variant"]): GardenDecorPlacement[] {
+  return defaultGardenDecor(variant);
 }
 
 function hydrateGardenDecorPlacement(decoration: GardenDecorPlacement): GardenDecorPlacement {

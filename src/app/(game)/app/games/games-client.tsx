@@ -25,6 +25,7 @@ import { partyGames } from "@/lib/mock-data";
 import { useServerPartyLobby } from "@/lib/game/use-server-party-lobby";
 import { useSocial } from "@/lib/game/use-social";
 import type { Friend } from "@/lib/game/social";
+import { sendPlaceInviteToFriend } from "@/lib/game/place-invites";
 import { cn } from "@/lib/utils";
 
 const partySizes = [2, 4, 6, 8] as const;
@@ -184,28 +185,19 @@ export function GamesClient() {
       return;
     }
 
-    const link = `${window.location.origin}/app/games?invite=${encodeURIComponent(code)}`;
-    const message = `Join my HeartHaven lobby: ${link}`;
-    const share = navigator as Navigator & {
-      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
-    };
-
-    if (share.share) {
-      try {
-        await share.share({
-          title: "HeartHaven lobby invite",
-          text: `${friend.displayName}, come play HeartHaven with me.`,
-          url: link,
-        });
-        setNotice({ kind: "ok", message: `Invite ready for ${friend.displayName}.` });
-        return;
-      } catch {
-        // Fall through to clipboard copy if the share sheet is cancelled or unavailable.
-      }
+    const result = await sendPlaceInviteToFriend({
+      friendCode: friend.code,
+      inviteType: "party",
+      targetSessionId: lobby.session_id,
+      targetUrl: "/app/games",
+    });
+    if (!result.ok) {
+      setNotice({ kind: "error", message: actionErrorCopy(result.reason) });
+      return;
     }
-
-    await copyText(message, `friend-${friend.code}`);
-    setNotice({ kind: "ok", message: `Invite link copied for ${friend.displayName}. Send it anywhere you chat.` });
+    setCopied(`friend-${friend.code}`);
+    window.setTimeout(() => setCopied((current) => (current === `friend-${friend.code}` ? null : current)), 1800);
+    setNotice({ kind: "ok", message: `${friend.displayName} was invited to this lobby.` });
   }
 
   async function requestToJoin() {
@@ -362,7 +354,7 @@ export function GamesClient() {
                           variant={copied === `friend-${friend.code}` ? "warm" : "secondary"}
                         >
                           {copied === `friend-${friend.code}` ? <ClipboardCheck /> : <UserPlus />}
-                          {copied === `friend-${friend.code}` ? "Copied" : "Invite"}
+                          {copied === `friend-${friend.code}` ? "Invited" : "Invite"}
                         </Button>
                       </div>
                     ))}

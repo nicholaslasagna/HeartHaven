@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Gamepad2, Map as MapIcon, Sparkles } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
+import { getDefaultGardenDecor, readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
@@ -93,7 +93,9 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
   });
   const canEditGarden = !isGuestVisit || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
   const realtimeDecor = realtime.decor as GardenDecorPlacement[] | null;
-  const [decor, setDecor] = useState<GardenDecorPlacement[]>(() => readGardenDecor("park"));
+  const [decor, setDecor] = useState<GardenDecorPlacement[]>(() =>
+    isGuestVisit ? getDefaultGardenDecor("park") : readGardenDecor("park"),
+  );
   const [pendingDecorIds, setPendingDecorIds] = useState<string[]>([]);
   const [decorSaveStatus, setDecorSaveStatus] = useState("Park decor ready");
   const latestPersistedDecorRef = useRef<GardenDecorPlacement[]>(decor);
@@ -109,7 +111,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
     if (realtimeDecor) {
       setDecor(realtimeDecor);
       latestPersistedDecorRef.current = realtimeDecor;
-      writeGardenDecor("park", realtimeDecor);
+      if (!isGuestVisit) writeGardenDecor("park", realtimeDecor);
       setDecorSaveStatus(realtime.decorVersion > 0 ? `Park decor synced · v${realtime.decorVersion}` : "Park decor synced");
       return;
     }
@@ -119,11 +121,11 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
       return;
     }
 
-    const localDecor = readGardenDecor("park");
+    const localDecor = isGuestVisit ? getDefaultGardenDecor("park") : readGardenDecor("park");
     setDecor(localDecor);
     latestPersistedDecorRef.current = localDecor;
     setDecorSaveStatus("Park decor loaded locally");
-  }, [realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
+  }, [isGuestVisit, realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -156,7 +158,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
     const previous = latestPersistedDecorRef.current;
     setPendingDecorIds(changedDecorIds(previous, next));
     setDecor(next);
-    writeGardenDecor("park", next);
+    if (!isGuestVisit) writeGardenDecor("park", next);
     setDecorSaveStatus("Saving park decor...");
 
     const result = await saveRealtimeDecor(next);
@@ -184,7 +186,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
     const fallback = result.reason === "conflict" ? (realtimeDecor ?? previous) : previous;
     latestPersistedDecorRef.current = fallback;
     setDecor(fallback);
-    writeGardenDecor("park", fallback);
+    if (!isGuestVisit) writeGardenDecor("park", fallback);
     setDecorSaveStatus(
       result.reason === "conflict"
         ? "Someone else updated this — try again."
@@ -192,7 +194,7 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
           ? "You don't have permission to edit this garden."
           : (result.message ?? "Park decor could not be saved."),
     );
-  }, [canEditGarden, channelHostCode, realtimeDecor, saveRealtimeDecor]);
+  }, [canEditGarden, channelHostCode, isGuestVisit, realtimeDecor, saveRealtimeDecor]);
 
   useEffect(() => {
     if (realtime.connectionState !== "connected" || !canEditGarden) return;
@@ -370,7 +372,9 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
           canManagePlacement={!isGuestVisit}
           approvedDecoratorCodes={realtime.approvedDecoratorCodes}
           connectionState={realtime.connectionState}
+          gardenId={PARK_GARDEN_ID}
           inviteUrl={realtime.inviteUrl}
+          inviteType="park"
           messages={realtime.messages}
           onToggleDecorator={realtime.toggleDecoratorPermission}
           players={realtime.players}

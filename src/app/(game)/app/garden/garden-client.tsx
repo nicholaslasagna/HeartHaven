@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight, Leaf, Sparkles } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
-import { readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
+import { getDefaultGardenDecor, readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
@@ -76,7 +76,9 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
   });
   const canEditGarden = !isGuestVisit || realtime.approvedDecoratorCodes.includes(realtime.localFriendCode);
   const realtimeDecor = realtime.decor as GardenDecorPlacement[] | null;
-  const [decor, setDecor] = useState<GardenDecorPlacement[]>(() => readGardenDecor("personal"));
+  const [decor, setDecor] = useState<GardenDecorPlacement[]>(() =>
+    isGuestVisit ? getDefaultGardenDecor("personal") : readGardenDecor("personal"),
+  );
   const [pendingDecorIds, setPendingDecorIds] = useState<string[]>([]);
   const [decorSaveStatus, setDecorSaveStatus] = useState("Garden decor ready");
   const latestPersistedDecorRef = useRef<GardenDecorPlacement[]>(decor);
@@ -107,7 +109,7 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
     if (realtimeDecor) {
       setDecor(realtimeDecor);
       latestPersistedDecorRef.current = realtimeDecor;
-      writeGardenDecor("personal", realtimeDecor);
+      if (!isGuestVisit) writeGardenDecor("personal", realtimeDecor);
       setDecorSaveStatus(
         realtime.decorVersion > 0 ? `Garden decor synced · v${realtime.decorVersion}` : "Garden decor synced",
       );
@@ -119,11 +121,11 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
       return;
     }
 
-    const localDecor = readGardenDecor("personal");
+    const localDecor = isGuestVisit ? getDefaultGardenDecor("personal") : readGardenDecor("personal");
     setDecor(localDecor);
     latestPersistedDecorRef.current = localDecor;
     setDecorSaveStatus("Garden decor loaded locally");
-  }, [realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
+  }, [isGuestVisit, realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -163,7 +165,7 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
     const previous = latestPersistedDecorRef.current;
     setPendingDecorIds(changedDecorIds(previous, next));
     setDecor(next);
-    writeGardenDecor("personal", next);
+    if (!isGuestVisit) writeGardenDecor("personal", next);
     setDecorSaveStatus("Saving garden decor...");
 
     const result = await saveRealtimeDecor(next);
@@ -191,7 +193,7 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
     const fallback = result.reason === "conflict" ? (realtimeDecor ?? previous) : previous;
     latestPersistedDecorRef.current = fallback;
     setDecor(fallback);
-    writeGardenDecor("personal", fallback);
+    if (!isGuestVisit) writeGardenDecor("personal", fallback);
     setDecorSaveStatus(
       result.reason === "conflict"
         ? "Someone else updated this — try again."
@@ -199,7 +201,7 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
           ? "You don't have permission to edit this garden."
           : (result.message ?? "Garden decor could not be saved."),
     );
-  }, [canEditGarden, channelHostCode, gardenId, realtimeDecor, saveRealtimeDecor]);
+  }, [canEditGarden, channelHostCode, gardenId, isGuestVisit, realtimeDecor, saveRealtimeDecor]);
 
   useEffect(() => {
     if (realtime.connectionState !== "connected" || !canEditGarden) return;
@@ -303,7 +305,9 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
           canManagePlacement={!isGuestVisit}
           approvedDecoratorCodes={realtime.approvedDecoratorCodes}
           connectionState={realtime.connectionState}
+          gardenId={gardenId}
           inviteUrl={realtime.inviteUrl}
+          inviteType="garden"
           messages={realtime.messages}
           onToggleDecorator={realtime.toggleDecoratorPermission}
           players={realtime.players}

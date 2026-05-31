@@ -7,6 +7,7 @@ import { BanNotificationsHost } from "@/components/game/ban-notifications-host";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
 import { Phase2PersistenceBridge } from "@/components/game/phase2-persistence-bridge";
 import { PartyFollowToast } from "@/components/game/party-follow-toast";
+import { PlaceInviteInboxHost } from "@/components/game/place-invite-inbox-host";
 import { RewardToastHost } from "@/components/game/reward-toast-host";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { AnnouncementsNavBadge } from "@/components/layout/announcements-nav-badge";
@@ -74,6 +75,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
         <main className="min-w-0 max-w-full overflow-x-hidden">{children}</main>
       </div>
       <RewardToastHost />
+      <PlaceInviteInboxHost />
       <PartyFollowToast />
       <AnnouncementsLoginToast />
       <BanNotificationsHost />

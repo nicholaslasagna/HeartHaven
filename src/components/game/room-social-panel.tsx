@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { SOCIAL_EVENT, getSocialState, type Friend } from "@/lib/game/social";
 import { useSocial } from "@/lib/game/use-social";
+import { sendPlaceInviteToFriend, toPlaceTargetPath } from "@/lib/game/place-invites";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ type RoomSocialPanelProps = {
   onToggleDecorator?: (friendCode: string) => void;
   players: RealtimeRoomPlayer[];
   roomCode: string;
+  roomId?: string;
   sendChat: (input: string) => { ok: true; text: string } | { ok: false; reason: string };
   status: string;
 };
@@ -42,12 +44,14 @@ export function RoomSocialPanel({
   onToggleDecorator,
   players,
   roomCode,
+  roomId,
   sendChat,
   status,
 }: RoomSocialPanelProps) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState("Room chat is moderated and rate-limited.");
-  const [copiedFriendCode, setCopiedFriendCode] = useState<string | null>(null);
+  const [invitedFriendCode, setInvitedFriendCode] = useState<string | null>(null);
+  const [sendingFriendCode, setSendingFriendCode] = useState<string | null>(null);
   const social = useSocial();
   // Host's public friend code — what visitors should share to friend you.
   // `roomCode` (the scene id like "MOONLIT-LOFT") is useless for that.
@@ -75,32 +79,21 @@ export function RoomSocialPanel({
   }
 
   async function inviteFriend(friend: Friend) {
-    const share = navigator as Navigator & {
-      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
-    };
-
-    if (share.share) {
-      try {
-        await share.share({
-          title: "HeartHaven room invite",
-          text: `${friend.displayName}, come visit my HeartHaven room.`,
-          url: inviteUrl,
-        });
-        setNotice(`Invite ready for ${friend.displayName}.`);
-        return;
-      } catch {
-        // Fall through to clipboard copy if the share sheet is cancelled.
-      }
+    setSendingFriendCode(friend.code);
+    const result = await sendPlaceInviteToFriend({
+      friendCode: friend.code,
+      inviteType: "room",
+      roomId,
+      targetUrl: toPlaceTargetPath(inviteUrl),
+    });
+    setSendingFriendCode(null);
+    if (result.ok) {
+      setInvitedFriendCode(friend.code);
+      window.setTimeout(() => setInvitedFriendCode((current) => (current === friend.code ? null : current)), 1800);
+      setNotice(`${friend.displayName} was invited to this room session.`);
+      return;
     }
-
-    try {
-      await navigator.clipboard.writeText(`Come visit my HeartHaven room: ${inviteUrl}`);
-      setCopiedFriendCode(friend.code);
-      window.setTimeout(() => setCopiedFriendCode((current) => (current === friend.code ? null : current)), 1400);
-      setNotice(`Room visit link copied for ${friend.displayName}.`);
-    } catch {
-      setNotice(inviteUrl);
-    }
+    setNotice(`Could not invite ${friend.displayName}: ${result.reason}`);
   }
 
   function markTyping(isTyping: boolean) {
@@ -209,10 +202,11 @@ export function RoomSocialPanel({
                 <CozyButton
                   onClick={() => void inviteFriend(friend)}
                   size="sm"
-                  variant={copiedFriendCode === friend.code ? "warm" : "secondary"}
+                  variant={invitedFriendCode === friend.code ? "warm" : "secondary"}
+                  disabled={sendingFriendCode === friend.code}
                 >
-                  {copiedFriendCode === friend.code ? <ClipboardCheck /> : <UserPlus />}
-                  {copiedFriendCode === friend.code ? "Copied" : "Invite"}
+                  {invitedFriendCode === friend.code ? <ClipboardCheck /> : <UserPlus />}
+                  {sendingFriendCode === friend.code ? "Sending..." : invitedFriendCode === friend.code ? "Invited" : "Invite"}
                 </CozyButton>
               </div>
             ))}

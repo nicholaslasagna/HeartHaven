@@ -37,6 +37,37 @@ function readSessionIdFromUrl() {
   return new URLSearchParams(window.location.search).get("session");
 }
 
+function stableInitKey(init?: Record<string, unknown>) {
+  try {
+    return JSON.stringify(init ?? {});
+  } catch {
+    return "{}";
+  }
+}
+
+function parseInitKey(key: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(key) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function sessionErrorCopy(message: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes("game_sessions_one_active_per_host") || lower.includes("duplicate key value")) {
+    return "HeartHaven found another live game for you. Refresh this page, or leave the active party lobby before starting a different game.";
+  }
+  if (lower.includes("active party session")) {
+    return "You already have an active party session. Finish or leave it before starting another game.";
+  }
+  if (lower.includes("different game")) {
+    return "This invite belongs to a different game. Ask the host for a fresh invite.";
+  }
+  return message;
+}
+
 export function useGameSession(
   gameKey: string,
   options?: { maxPlayers?: number; init?: Record<string, unknown> },
@@ -51,6 +82,8 @@ export function useGameSession(
   const [status, setStatus] = useState("Connecting game session...");
   const lastMoveIndexRef = useRef(-1);
   const sessionIdRef = useRef<string | null>(sessionFromUrl);
+  const maxPlayers = options?.maxPlayers ?? 2;
+  const initKey = stableInitKey(options?.init);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -76,7 +109,7 @@ export function useGameSession(
     const stateRow = Array.isArray(stateResult.data) ? stateResult.data[0] : null;
     if (stateResult.error) {
       setLoading(false);
-      setStatus(stateResult.error.message);
+      setStatus(sessionErrorCopy(stateResult.error.message));
       return;
     }
     if (stateRow) {
@@ -144,19 +177,18 @@ export function useGameSession(
       const supabase = getSupabaseBrowserClient();
       let target = sessionFromUrl;
 
-      if (!target) {
-        const { data, error } = await supabase.rpc("ensure_play_game_session", {
-          p_game_key: gameKey,
-          p_max_players: options?.maxPlayers ?? 2,
-          p_init: options?.init ?? {},
-        });
-        if (error) {
-          setStatus(error.message);
-          setLoading(false);
-          return;
-        }
-        target = typeof data === "string" ? data : null;
+      const { data, error } = await supabase.rpc("ensure_play_game_session", {
+        p_game_key: gameKey,
+        p_max_players: maxPlayers,
+        p_init: parseInitKey(initKey),
+        p_session_id: target,
+      });
+      if (error) {
+        setStatus(sessionErrorCopy(error.message));
+        setLoading(false);
+        return;
       }
+      target = typeof data === "string" ? data : target;
 
       if (!target || cancelled) {
         setLoading(false);
@@ -173,7 +205,7 @@ export function useGameSession(
     return () => {
       cancelled = true;
     };
-  }, [gameKey, hydrate, options?.init, options?.maxPlayers, sessionFromUrl, sessionId]);
+  }, [gameKey, hydrate, initKey, maxPlayers, sessionFromUrl]);
 
   useEffect(() => {
     const target = sessionIdRef.current;
