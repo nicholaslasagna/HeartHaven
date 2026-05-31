@@ -55,6 +55,9 @@ function startErrorCopy(reason: string, maxPlayers?: number, occupied?: number, 
 function actionErrorCopy(reason: string) {
   if (reason === "offline") return "Online play is not configured for this build.";
   if (reason.toLowerCase().includes("full")) return "That lobby is full.";
+  if (reason.toLowerCase().includes("game_sessions_invite_code_key") || reason.toLowerCase().includes("duplicate key")) {
+    return "The lobby code collided. Try opening the lobby again.";
+  }
   if (reason.toLowerCase().includes("no active lobby")) return "That friend does not have an open lobby right now.";
   if (reason.toLowerCase().includes("invalid")) return "Use a HeartHaven friend code like HH-ABCD-123.";
   return reason || "That action could not finish.";

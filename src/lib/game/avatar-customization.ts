@@ -1,6 +1,8 @@
 "use client";
 
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export type KeeperBodyId = "female" | "male";
 export type KeeperSkinId = "porcelain" | "fair" | "warm" | "olive" | "tan" | "brown" | "deep" | "ebony";
@@ -377,6 +379,127 @@ export function writeKeeperCustomization(customization: KeeperCustomization) {
   window.localStorage.setItem("hearthaven:keeper-palette", getKeeperPalette(customization.paletteId).color);
   window.localStorage.setItem("hearthaven:keeper-outfit-id", customization.outfitId);
   window.dispatchEvent(new CustomEvent(KEEPER_CUSTOMIZATION_EVENT, { detail: customization }));
+}
+
+function normalizeKeeperCustomization(value: Partial<KeeperCustomization> | null | undefined): KeeperCustomization {
+  return {
+    characterId: normalizeKeeperCharacter(value?.characterId),
+    bodyId: normalizeKeeperBody(value?.bodyId),
+    skinId: normalizeKeeperSkin(value?.skinId),
+    hairStyleId: normalizeKeeperHairStyle(value?.hairStyleId),
+    hairColorId: normalizeKeeperHairColor(value?.hairColorId),
+    paletteId: normalizeKeeperPalette(value?.paletteId ?? null),
+    outfitId: normalizeKeeperOutfit(value?.outfitId ?? null),
+  };
+}
+
+function parseKeeperCustomizationPayload(value: unknown): KeeperCustomization | null {
+  if (!value || typeof value !== "object") return null;
+  return normalizeKeeperCustomization(value as Partial<KeeperCustomization>);
+}
+
+function parseLegacyAvatarKey(value: unknown): KeeperCustomization | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const preset = KEEPER_CHARACTER_PRESETS.find((character) => character.id === trimmed);
+  if (preset) {
+    return normalizeKeeperCustomization({
+      characterId: preset.id,
+      bodyId: preset.bodyId,
+      skinId: preset.skinId,
+      hairStyleId: preset.hairStyleId,
+      hairColorId: preset.hairColorId,
+      paletteId: preset.paletteId,
+      outfitId: preset.outfitId,
+    });
+  }
+  return null;
+}
+
+function isMissingCustomizationColumn(message: string) {
+  return /keeper_customization|column .* does not exist|Could not find .*keeper_customization/i.test(message);
+}
+
+export async function loadKeeperCustomizationFromServer(): Promise<
+  | { ok: true; customization: KeeperCustomization }
+  | { ok: false; reason: string }
+> {
+  if (!isSupabaseConfigured()) return { ok: false, reason: "Online profile services are not configured." };
+
+  try {
+    const supabase = getSupabaseBrowserClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, reason: "Sign in to sync your keeper." };
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("keeper_customization, avatar_key")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (error) {
+      if (!isMissingCustomizationColumn(error.message)) return { ok: false, reason: error.message };
+      const { data: legacy, error: legacyError } = await supabase
+        .from("profiles")
+        .select("avatar_key")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (legacyError) return { ok: false, reason: legacyError.message };
+      const legacyCustomization = parseLegacyAvatarKey(legacy?.avatar_key);
+      if (!legacyCustomization) return { ok: false, reason: "No saved keeper yet." };
+      writeKeeperCustomization(legacyCustomization);
+      return { ok: true, customization: legacyCustomization };
+    }
+
+    const customization =
+      parseKeeperCustomizationPayload(data?.keeper_customization) ?? parseLegacyAvatarKey(data?.avatar_key);
+    if (!customization) return { ok: false, reason: "No saved keeper yet." };
+    writeKeeperCustomization(customization);
+    return { ok: true, customization };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Could not load keeper." };
+  }
+}
+
+export async function saveKeeperCustomizationToServer(customization: KeeperCustomization): Promise<
+  | { ok: true }
+  | { ok: false; reason: string }
+> {
+  if (!isSupabaseConfigured()) return { ok: true };
+
+  try {
+    const normalized = normalizeKeeperCustomization(customization);
+    const supabase = getSupabaseBrowserClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, reason: "Sign in to sync your keeper." };
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        keeper_customization: normalized,
+        avatar_key: normalized.characterId,
+      })
+      .eq("id", user.id);
+
+    if (!error) return { ok: true };
+
+    if (isMissingCustomizationColumn(error.message)) {
+      const { error: legacyError } = await supabase
+        .from("profiles")
+        .update({ avatar_key: normalized.characterId })
+        .eq("id", user.id);
+      return legacyError ? { ok: false, reason: legacyError.message } : { ok: true };
+    }
+
+    return { ok: false, reason: error.message };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Could not save keeper." };
+  }
 }
 
 export function readPetCustomization(): PetCustomization {

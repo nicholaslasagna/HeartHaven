@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Palette, Scissors, Shirt, Sparkles, UserRound } from "lucide-react";
 import { KeeperAvatarPreview } from "@/components/cozy/keeper-avatar-preview";
 import { CozyCard } from "@/components/cozy/cozy-card";
@@ -15,8 +15,11 @@ import {
   KEEPER_OUTFITS,
   KEEPER_PALETTES,
   KEEPER_SKIN_TONES,
+  loadKeeperCustomizationFromServer,
   readKeeperCustomization,
+  saveKeeperCustomizationToServer,
   writeKeeperCustomization,
+  type KeeperCustomization,
   type KeeperBodyId,
   type KeeperCharacterId,
   type KeeperHairColorId,
@@ -35,6 +38,7 @@ export function KeeperCustomizerCard() {
   const [paletteId, setPaletteId] = useState<KeeperPaletteId>("blush");
   const [outfitId, setOutfitId] = useState<KeeperOutfitId>("cardigan");
   const [notice, setNotice] = useState("Your keeper look is used in rooms, gardens, parties, and chat.");
+  const saveSequenceRef = useRef(0);
   const palette = getKeeperPalette(paletteId);
   const outfit = getKeeperOutfit(outfitId);
   const hairColor = KEEPER_HAIR_COLORS.find((item) => item.id === hairColorId) ?? KEEPER_HAIR_COLORS[0];
@@ -54,10 +58,35 @@ export function KeeperCustomizerCard() {
       setPaletteId(saved.paletteId);
       setOutfitId(saved.outfitId);
     });
+    void loadKeeperCustomizationFromServer().then((result) => {
+      if (!active || !result.ok) return;
+      setCharacterId(result.customization.characterId);
+      setBodyId(result.customization.bodyId);
+      setSkinId(result.customization.skinId);
+      setHairStyleId(result.customization.hairStyleId);
+      setHairColorId(result.customization.hairColorId);
+      setPaletteId(result.customization.paletteId);
+      setOutfitId(result.customization.outfitId);
+      setNotice("Loaded your saved keeper.");
+    });
     return () => {
       active = false;
     };
   }, []);
+
+  function persistKeeper(customization: KeeperCustomization) {
+    const sequence = saveSequenceRef.current + 1;
+    saveSequenceRef.current = sequence;
+    setNotice("Saving...");
+    void saveKeeperCustomizationToServer(customization).then((result) => {
+      if (saveSequenceRef.current !== sequence) return;
+      if (result.ok) {
+        setNotice("Saved. Your keeper updates across rooms, gardens, and multiplayer visits.");
+      } else {
+        setNotice(`Could not save: ${result.reason}`);
+      }
+    });
+  }
 
   function updateKeeper(next: Partial<{
     characterId: KeeperCharacterId;
@@ -85,7 +114,7 @@ export function KeeperCustomizerCard() {
     setPaletteId(customization.paletteId);
     setOutfitId(customization.outfitId);
     writeKeeperCustomization(customization);
-    setNotice("Saved instantly. Your keeper updates across rooms, gardens, and multiplayer visits.");
+    persistKeeper(customization);
   }
 
   function chooseCharacter(preset: (typeof KEEPER_CHARACTER_PRESETS)[number]) {
@@ -98,7 +127,6 @@ export function KeeperCustomizerCard() {
       paletteId: preset.paletteId,
       outfitId: preset.outfitId,
     });
-    setNotice(`${preset.label} selected. This is a complete painted character, not just a recolor.`);
   }
 
   function chooseClosestCharacter(

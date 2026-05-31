@@ -27,6 +27,16 @@ function redirectAccount(message: string): never {
   redirect(`/app/account?message=${encodeURIComponent(message)}`);
 }
 
+function readableProfileSaveError(message: string) {
+  if (/display_name.*not-null|null value in column "display_name"/i.test(message)) {
+    return "Could not save your username because your profile was missing a display name. Please try again.";
+  }
+  if (/profiles_username_unique|duplicate key/i.test(message)) {
+    return "That username is already taken. Try another spelling.";
+  }
+  return `Could not save your username: ${message}`;
+}
+
 function pruneWindow(history: unknown, now: number): string[] {
   if (!Array.isArray(history)) return [];
   const cutoff = now - USERNAME_CHANGE_WINDOW_MS;
@@ -85,7 +95,7 @@ export async function updateUsernameAction(formData: FormData) {
   // change history. Both are authoritative on the server side.
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("username, username_changes")
+    .select("username, display_name, username_changes")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -124,6 +134,7 @@ export async function updateUsernameAction(formData: FormData) {
   }
 
   const nextHistory = [new Date(now).toISOString(), ...history].slice(0, USERNAME_CHANGE_LIMIT * 2);
+  const nextDisplayName = requested || profile?.display_name?.trim() || "Keeper";
 
   // Use UPSERT — fresh signups may not have a profile row yet, and a plain
   // UPDATE silently does nothing. The previous bug ("says saved but doesn't
@@ -133,7 +144,12 @@ export async function updateUsernameAction(formData: FormData) {
   const { error: updateError } = await supabase
     .from("profiles")
     .upsert(
-      { id: user.id, username: requested, username_changes: nextHistory },
+      {
+        id: user.id,
+        username: requested,
+        display_name: nextDisplayName,
+        username_changes: nextHistory,
+      },
       { onConflict: "id" },
     );
 
@@ -143,12 +159,12 @@ export async function updateUsernameAction(formData: FormData) {
     if (/column .*username_changes/i.test(updateError.message)) {
       const { error: retryError } = await supabase
         .from("profiles")
-        .upsert({ id: user.id, username: requested }, { onConflict: "id" });
+        .upsert({ id: user.id, username: requested, display_name: nextDisplayName }, { onConflict: "id" });
       if (retryError) {
-        redirectAccount(`Could not save your username: ${retryError.message}`);
+        redirectAccount(readableProfileSaveError(retryError.message));
       }
     } else {
-      redirectAccount(`Could not save your username: ${updateError.message}`);
+      redirectAccount(readableProfileSaveError(updateError.message));
     }
   }
 
