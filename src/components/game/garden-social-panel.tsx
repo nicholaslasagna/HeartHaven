@@ -1,13 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Copy, MessageCircle, Radio, Send, UserCheck, UsersRound } from "lucide-react";
+import {
+  AlertTriangle,
+  ClipboardCheck,
+  Copy,
+  MessageCircle,
+  Radio,
+  Send,
+  UserCheck,
+  UserPlus,
+  UsersRound,
+} from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { Badge } from "@/components/ui/badge";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
-import { getSocialState, SOCIAL_EVENT } from "@/lib/game/social";
+import { getSocialState, SOCIAL_EVENT, type Friend } from "@/lib/game/social";
+import { useSocial } from "@/lib/game/use-social";
 
 type GardenSocialPanelProps = {
   approvedDecoratorCodes?: string[];
@@ -36,6 +47,8 @@ export function GardenSocialPanel({
 }: GardenSocialPanelProps) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState("Chat is moderated: no links, phone numbers, email addresses, or harmful messages.");
+  const [copiedFriendCode, setCopiedFriendCode] = useState<string | null>(null);
+  const social = useSocial();
   // The host's PUBLIC friend code — the thing visitors should actually
   // share to add the host. `roomCode` is the scene slug (e.g.
   // "HONEYHEART-PARK") which is useless for friending. Pulled from the
@@ -58,6 +71,35 @@ export function GardenSocialPanel({
     try {
       await navigator.clipboard.writeText(inviteUrl);
       setNotice("Garden invite copied. Decorator access is approved here by the host.");
+    } catch {
+      setNotice(inviteUrl);
+    }
+  }
+
+  async function inviteFriend(friend: Friend) {
+    const share = navigator as Navigator & {
+      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+    };
+
+    if (share.share) {
+      try {
+        await share.share({
+          title: "HeartHaven garden invite",
+          text: `${friend.displayName}, come visit my HeartHaven garden.`,
+          url: inviteUrl,
+        });
+        setNotice(`Invite ready for ${friend.displayName}.`);
+        return;
+      } catch {
+        // Fall back to clipboard copy if the system share sheet is cancelled.
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(`Come visit my HeartHaven garden: ${inviteUrl}`);
+      setCopiedFriendCode(friend.code);
+      window.setTimeout(() => setCopiedFriendCode((current) => (current === friend.code ? null : current)), 1400);
+      setNotice(`Garden visit link copied for ${friend.displayName}.`);
     } catch {
       setNotice(inviteUrl);
     }
@@ -148,6 +190,42 @@ export function GardenSocialPanel({
         <AlertTriangle className="mr-1 inline size-3.5 text-honey-700" />
         Decorator access is host-selected per visitor. Approved guests can move, face, and place host-approved objects in
         this lobby only.
+      </div>
+
+      <div className="mt-3 rounded-lg border border-blush-300/45 bg-blush-100/50 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-blush-600">
+            <UserPlus className="size-3.5" /> Invite friends
+          </p>
+          <Badge variant="outline">{social.friends.length}</Badge>
+        </div>
+        {social.friends.length === 0 ? (
+          <p className="text-xs font-bold leading-5 text-ink-600">
+            Add friends first, then they&apos;ll appear here for one-tap garden invites.
+          </p>
+        ) : (
+          <div className="grid max-h-48 gap-2 overflow-y-auto pr-1">
+            {social.friends.map((friend) => (
+              <div
+                className="flex items-center justify-between gap-2 rounded-md border border-white/70 bg-white/78 px-2.5 py-2"
+                key={friend.code}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-extrabold text-ink-900">{friend.displayName}</p>
+                  <p className="font-mono text-[11px] font-bold text-ink-500">{friend.code}</p>
+                </div>
+                <CozyButton
+                  onClick={() => void inviteFriend(friend)}
+                  size="sm"
+                  variant={copiedFriendCode === friend.code ? "warm" : "secondary"}
+                >
+                  {copiedFriendCode === friend.code ? <ClipboardCheck /> : <UserPlus />}
+                  {copiedFriendCode === friend.code ? "Copied" : "Invite"}
+                </CozyButton>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-3 rounded-lg border border-lavender-300/50 bg-lavender-100/60 p-3">

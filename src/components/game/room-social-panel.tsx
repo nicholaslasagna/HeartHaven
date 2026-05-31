@@ -1,8 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Copy, MessageCircle, Radio, Send, UserCheck, UsersRound } from "lucide-react";
-import { SOCIAL_EVENT, getSocialState } from "@/lib/game/social";
+import {
+  AlertTriangle,
+  ClipboardCheck,
+  Copy,
+  MessageCircle,
+  Radio,
+  Send,
+  UserCheck,
+  UserPlus,
+  UsersRound,
+} from "lucide-react";
+import { SOCIAL_EVENT, getSocialState, type Friend } from "@/lib/game/social";
+import { useSocial } from "@/lib/game/use-social";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +47,8 @@ export function RoomSocialPanel({
 }: RoomSocialPanelProps) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState("Room chat is moderated and rate-limited.");
+  const [copiedFriendCode, setCopiedFriendCode] = useState<string | null>(null);
+  const social = useSocial();
   // Host's public friend code — what visitors should share to friend you.
   // `roomCode` (the scene id like "MOONLIT-LOFT") is useless for that.
   const [hostFriendCode, setHostFriendCode] = useState("HH-XXXXX-XXX");
@@ -56,6 +69,35 @@ export function RoomSocialPanel({
     try {
       await navigator.clipboard.writeText(inviteUrl);
       setNotice("Room invite copied. Decorator access is granted here by the host.");
+    } catch {
+      setNotice(inviteUrl);
+    }
+  }
+
+  async function inviteFriend(friend: Friend) {
+    const share = navigator as Navigator & {
+      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+    };
+
+    if (share.share) {
+      try {
+        await share.share({
+          title: "HeartHaven room invite",
+          text: `${friend.displayName}, come visit my HeartHaven room.`,
+          url: inviteUrl,
+        });
+        setNotice(`Invite ready for ${friend.displayName}.`);
+        return;
+      } catch {
+        // Fall through to clipboard copy if the share sheet is cancelled.
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(`Come visit my HeartHaven room: ${inviteUrl}`);
+      setCopiedFriendCode(friend.code);
+      window.setTimeout(() => setCopiedFriendCode((current) => (current === friend.code ? null : current)), 1400);
+      setNotice(`Room visit link copied for ${friend.displayName}.`);
     } catch {
       setNotice(inviteUrl);
     }
@@ -140,6 +182,42 @@ export function RoomSocialPanel({
       <div className="mt-3 rounded-lg border border-honey-500/30 bg-honey-100/70 p-3 text-xs font-bold leading-5 text-ink-700">
         <AlertTriangle className="mr-1 inline size-3.5 text-honey-700" />
         Furniture editing is host-selected per visitor. Approved decorators can drag, face, and depth-layer furniture.
+      </div>
+
+      <div className="mt-3 rounded-lg border border-blush-300/45 bg-blush-100/50 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-blush-600">
+            <UserPlus className="size-3.5" /> Invite friends
+          </p>
+          <Badge variant="outline">{social.friends.length}</Badge>
+        </div>
+        {social.friends.length === 0 ? (
+          <p className="text-xs font-bold leading-5 text-ink-600">
+            Add friends first, then they&apos;ll appear here for one-tap room invites.
+          </p>
+        ) : (
+          <div className="grid max-h-48 gap-2 overflow-y-auto pr-1">
+            {social.friends.map((friend) => (
+              <div
+                className="flex items-center justify-between gap-2 rounded-md border border-white/70 bg-white/78 px-2.5 py-2"
+                key={friend.code}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-extrabold text-ink-900">{friend.displayName}</p>
+                  <p className="font-mono text-[11px] font-bold text-ink-500">{friend.code}</p>
+                </div>
+                <CozyButton
+                  onClick={() => void inviteFriend(friend)}
+                  size="sm"
+                  variant={copiedFriendCode === friend.code ? "warm" : "secondary"}
+                >
+                  {copiedFriendCode === friend.code ? <ClipboardCheck /> : <UserPlus />}
+                  {copiedFriendCode === friend.code ? "Copied" : "Invite"}
+                </CozyButton>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-3 rounded-lg border border-lavender-300/50 bg-lavender-100/60 p-3">
