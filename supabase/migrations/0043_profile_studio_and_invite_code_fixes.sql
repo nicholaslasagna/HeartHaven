@@ -40,6 +40,17 @@ update public.profiles
 comment on column public.profiles.keeper_customization is
   'Server-persisted Keeper Studio selection. Client localStorage remains a fast cache only.';
 
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+do $$
+begin
+  alter extension pgcrypto set schema extensions;
+exception
+  when others then
+    null;
+end;
+$$;
+
 create or replace function public.generate_party_invite_code()
 returns text
 language plpgsql
@@ -52,9 +63,9 @@ declare
   i integer;
 begin
   for i in 1..6 loop
-    v_code := v_code || substr(v_letters, (get_byte(gen_random_bytes(1), 0) % length(v_letters)) + 1, 1);
+    v_code := v_code || substr(v_letters, (get_byte(extensions.gen_random_bytes(1), 0) % length(v_letters)) + 1, 1);
   end loop;
-  v_bytes := gen_random_bytes(2);
+  v_bytes := extensions.gen_random_bytes(2);
   v_num := ((get_byte(v_bytes, 0) * 256) + get_byte(v_bytes, 1)) % 10000;
   return 'HH-' || v_code || '-' || lpad(v_num::text, 4, '0');
 end;

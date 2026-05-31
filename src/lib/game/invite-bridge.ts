@@ -34,6 +34,8 @@ import { getCachedPublicUsername } from "@/lib/game/public-identity";
 type SupabaseInviteRow = {
   id: string;
   sender_profile_id: string;
+  from_profile_id: string | null;
+  to_profile_id: string | null;
   from_code: string;
   from_display_name: string;
   to_code: string;
@@ -179,28 +181,48 @@ export async function pushInviteToSupabase(invite: FriendInvite): Promise<string
     const supabase = getSupabaseBrowserClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
+    const { data: recipientProfile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("friend_code", invite.toCode)
+      .maybeSingle();
     // Guard against runaway re-sends — if the same sender already has a
     // pending invite for the same recipient, don't insert a duplicate.
-    const { data: existing } = await supabase
-      .from("friend_invites")
-      .select("id")
-      .eq("from_code", invite.fromCode)
-      .eq("to_code", invite.toCode)
-      .eq("status", "pending")
-      .limit(1)
-      .maybeSingle();
+    const existingQuery = supabase.from("friend_invites").select("id").eq("status", "pending").limit(1);
+    const { data: existing } = recipientProfile?.id
+      ? await existingQuery.eq("from_profile_id", user.id).eq("to_profile_id", recipientProfile.id).maybeSingle()
+      : await existingQuery.eq("from_code", invite.fromCode).eq("to_code", invite.toCode).maybeSingle();
     if (existing?.id) return existing.id;
-    const { data, error } = await supabase
-      .from("friend_invites")
-      .insert({
+
+    const insertPayload = {
         sender_profile_id: user.id,
+        from_profile_id: user.id,
+        to_profile_id: recipientProfile?.id ?? null,
         from_code: invite.fromCode,
         from_display_name: invite.fromDisplayName,
         to_code: invite.toCode,
         message: invite.message ?? null,
-      })
+      };
+
+    const { data, error } = await supabase
+      .from("friend_invites")
+      .insert(insertPayload)
       .select("id")
       .single();
+    if (error && /from_profile_id|to_profile_id|schema cache|column/i.test(error.message ?? "")) {
+      const { data: legacyData, error: legacyError } = await supabase
+        .from("friend_invites")
+        .insert({
+          sender_profile_id: user.id,
+          from_code: invite.fromCode,
+          from_display_name: invite.fromDisplayName,
+          to_code: invite.toCode,
+          message: invite.message ?? null,
+        })
+        .select("id")
+        .single();
+      if (!legacyError) return legacyData?.id ?? null;
+    }
     if (error) {
       console.warn("[hearthaven invite-bridge] insert failed:", error.message);
       return null;
@@ -429,7 +451,7 @@ export async function ensureInviteRealtime(): Promise<void> {
               const displayName = row.responder_display_name ?? "Keeper";
               addFriendDirectly({ code, displayName });
             } else if (row.status === "declined" || row.status === "blocked") {
-              if (matching) declineFriendInvite(matching.id);
+              if (matching) cancelOutgoingInvite(matching.id);
             } else if (row.status === "cancelled") {
               // Our own cancel echoed back — local record already in the
               // cancelled state, so nothing to do here. Including the

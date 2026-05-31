@@ -1,6 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
+import { loadKeeperCustomizationFromServer } from "@/lib/game/avatar-customization";
 import type { RoomSurfaceSelection } from "@/lib/game/room-surfaces";
 import type { RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 
@@ -58,6 +60,26 @@ export function RoomCanvasLoader({
   onRoomNavigate,
   onPlacementsChange,
 }: RoomCanvasLoaderProps) {
+  const [keeperReady, setKeeperReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void loadKeeperCustomizationFromServer().finally(() => {
+      if (active) setKeeperReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!keeperReady) {
+    return (
+      <div className="grid min-h-[320px] place-items-center rounded-lg border border-cream-300 bg-cream-100 text-sm font-extrabold text-ink-700">
+        Loading your keeper...
+      </div>
+    );
+  }
+
   return (
     <RoomCanvas
       canEditRoom={canEditRoom}

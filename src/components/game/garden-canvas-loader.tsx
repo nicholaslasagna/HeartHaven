@@ -1,7 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import type { GardenDecorPlacement } from "@/components/game/garden-canvas";
+import { loadKeeperCustomizationFromServer } from "@/lib/game/avatar-customization";
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
 
 type GardenPlotState = {
@@ -55,6 +57,26 @@ export function GardenCanvasLoader({
   variant,
   plots,
 }: GardenCanvasLoaderProps) {
+  const [keeperReady, setKeeperReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void loadKeeperCustomizationFromServer().finally(() => {
+      if (active) setKeeperReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!keeperReady) {
+    return (
+      <div className="grid min-h-[380px] place-items-center rounded-lg border border-garden-300/50 bg-garden-100/70 text-sm font-extrabold text-ink-700">
+        Loading your keeper...
+      </div>
+    );
+  }
+
   return (
     <GardenCanvas
       canEditGarden={canEditGarden}

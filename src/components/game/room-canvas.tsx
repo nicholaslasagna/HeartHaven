@@ -857,14 +857,11 @@ export function RoomCanvas({
           });
 
           container.on("dragstart", () => {
-            // Kill the breathing tween while the player is moving the piece
-            // — otherwise the tween keeps lerping the container's y back
-            // toward its captured baseline, which is why drag previously
-            // only seemed to work on the x-axis.
             if (furniture.bobTween) {
               furniture.bobTween.stop();
               furniture.bobTween = undefined;
             }
+            this.tweens.killTweensOf(container);
           });
 
           container.on("drag", (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
@@ -881,30 +878,20 @@ export function RoomCanvas({
 
           container.on("dragend", () => {
             if (this.dragStarted) {
+              this.tweens.killTweensOf(container);
+              const final = this.constrainForPlacement(placement, furniture.placement.x, furniture.placement.y);
+              furniture.placement.x = Math.round(final.x);
+              furniture.placement.y = Math.round(final.y);
               furniture.baseY = furniture.placement.y;
+              container.setPosition(furniture.placement.x, furniture.placement.y);
+              container.setDepth(
+                furniture.placement.floorLocked
+                  ? furniture.placement.y + furniture.placement.zIndex * 10
+                  : 130 + furniture.placement.zIndex * 10,
+              );
               setStatus(`${placement.label} moved to x ${Math.round(container.x)}, y ${Math.round(container.y)}.`);
               onPlacementsChangeRef.current?.(this.exportPlacements());
-              // Restart the breathing tween relative to the new resting y so
-              // the bob continues to feel "alive" without snapping the piece
-              // back to its old position.
-              furniture.bobTween = this.tweens.add({
-                targets: container,
-                y: placement.kind === "lantern" ? furniture.baseY - 4 : furniture.baseY,
-                duration: 1800,
-                yoyo: true,
-                repeat: -1,
-                ease: "Sine.inOut",
-              });
             }
-          });
-
-          furniture.bobTween = this.tweens.add({
-            targets: container,
-            y: placement.kind === "lantern" ? placement.y - 4 : placement.y,
-            duration: 1800,
-            yoyo: true,
-            repeat: -1,
-            ease: "Sine.inOut",
           });
 
           return furniture;
@@ -948,6 +935,7 @@ export function RoomCanvas({
             Object.assign(existing.placement, nextPlacement);
             existing.bobTween?.stop();
             existing.bobTween = undefined;
+            this.tweens.killTweensOf(existing.container);
             existing.container.setPosition(nextPlacement.x, nextPlacement.y);
             existing.container.setSize(nextPlacement.width, nextPlacement.height);
             existing.container.setRotation(0);
@@ -956,14 +944,6 @@ export function RoomCanvas({
               nextPlacement.scale,
             );
             existing.baseY = nextPlacement.y;
-            existing.bobTween = this.tweens.add({
-              targets: existing.container,
-              y: nextPlacement.kind === "lantern" ? existing.baseY - 4 : existing.baseY,
-              duration: 1800,
-              yoyo: true,
-              repeat: -1,
-              ease: "Sine.inOut",
-            });
             this.applyPendingStyle(existing);
           }
 

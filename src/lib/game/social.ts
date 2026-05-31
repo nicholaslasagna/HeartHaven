@@ -148,6 +148,95 @@ function isCodeBlocked(code: FriendCode): boolean {
   }
 }
 
+function normalizeInviteStatus(value: unknown): FriendInvite["status"] {
+  if (value === "accepted" || value === "declined" || value === "blocked") return value;
+  return "pending";
+}
+
+function chooseDisplayName(next: string | undefined, previous?: string) {
+  const normalized = normalizePublicDisplayName(next, previous || "Keeper");
+  return normalized || previous || "Keeper";
+}
+
+function dedupeSocialState(state: SocialState): SocialState {
+  const selfCode = isFriendCodeShape(state.selfCode) ? normalizeFriendCode(state.selfCode) : generateFriendCode();
+  const selfDisplayName = normalizePublicDisplayName(state.selfDisplayName);
+
+  const friendByCode = new Map<string, Friend>();
+  for (const rawFriend of Array.isArray(state.friends) ? state.friends : []) {
+    const code = normalizeFriendCode(rawFriend?.code ?? "");
+    if (!isFriendCodeShape(code) || code === selfCode) continue;
+    const previous = friendByCode.get(code);
+    friendByCode.set(code, {
+      code,
+      displayName: chooseDisplayName(rawFriend.displayName, previous?.displayName),
+      acceptedAt: previous?.acceptedAt ?? rawFriend.acceptedAt ?? new Date().toISOString(),
+      lastSeenAt: rawFriend.lastSeenAt ?? previous?.lastSeenAt,
+    });
+  }
+
+  const inviteKey = (side: "in" | "out", invite: FriendInvite) =>
+    side === "in" ? `${invite.fromCode}:${invite.status}` : `${invite.toCode}:${invite.status}`;
+
+  const normalizeInvite = (invite: FriendInvite, side: "in" | "out"): FriendInvite | null => {
+    const fromCode = normalizeFriendCode(invite?.fromCode ?? "");
+    const toCode = normalizeFriendCode(invite?.toCode ?? "");
+    if (!isFriendCodeShape(fromCode) || !isFriendCodeShape(toCode)) return null;
+    if (fromCode === toCode || fromCode === selfCode && toCode === selfCode) return null;
+    const peerCode = side === "in" ? fromCode : toCode;
+    if (peerCode === selfCode) return null;
+    if (friendByCode.has(peerCode) && invite.status === "pending") return null;
+    return {
+      id: typeof invite.id === "string" && invite.id ? invite.id : `inv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      fromCode,
+      fromDisplayName: chooseDisplayName(invite.fromDisplayName),
+      toCode,
+      message: typeof invite.message === "string" ? invite.message.slice(0, 240) : undefined,
+      sentAt: typeof invite.sentAt === "string" ? invite.sentAt : new Date().toISOString(),
+      status: normalizeInviteStatus(invite.status),
+    };
+  };
+
+  const dedupeInvites = (invites: FriendInvite[], side: "in" | "out") => {
+    const byKey = new Map<string, FriendInvite>();
+    for (const rawInvite of Array.isArray(invites) ? invites : []) {
+      const invite = normalizeInvite(rawInvite, side);
+      if (!invite) continue;
+      const key = inviteKey(side, invite);
+      const previous = byKey.get(key);
+      if (!previous || Date.parse(invite.sentAt) >= Date.parse(previous.sentAt)) {
+        byKey.set(key, invite);
+      }
+    }
+    return Array.from(byKey.values()).sort((a, b) => Date.parse(b.sentAt) - Date.parse(a.sentAt));
+  };
+
+  const playedByCode = new Map<string, PlayedWithEntry>();
+  for (const rawPlayed of Array.isArray(state.playedWith) ? state.playedWith : []) {
+    const code = normalizeFriendCode(rawPlayed?.code ?? "");
+    if (!isFriendCodeShape(code) || code === selfCode) continue;
+    const previous = playedByCode.get(code);
+    if (previous && Date.parse(previous.lastPlayedAt) > Date.parse(rawPlayed.lastPlayedAt)) continue;
+    playedByCode.set(code, {
+      code,
+      displayName: chooseDisplayName(rawPlayed.displayName, previous?.displayName),
+      context: rawPlayed.context || previous?.context || "shared-play",
+      lastPlayedAt: rawPlayed.lastPlayedAt || previous?.lastPlayedAt || new Date().toISOString(),
+    });
+  }
+
+  return {
+    selfCode,
+    selfDisplayName,
+    friends: Array.from(friendByCode.values()).sort((a, b) => Date.parse(b.acceptedAt) - Date.parse(a.acceptedAt)),
+    outgoing: dedupeInvites(state.outgoing, "out").slice(0, 40),
+    inbox: dedupeInvites(state.inbox, "in").slice(0, 60),
+    playedWith: Array.from(playedByCode.values())
+      .sort((a, b) => Date.parse(b.lastPlayedAt) - Date.parse(a.lastPlayedAt))
+      .slice(0, 60),
+  };
+}
+
 function rawRead(): SocialState {
   if (typeof window === "undefined") return freshState();
   try {
@@ -160,7 +249,7 @@ function rawRead(): SocialState {
     }
     const parsed = JSON.parse(raw) as Partial<SocialState>;
     const base = freshState();
-    return {
+    return dedupeSocialState({
       selfCode: typeof parsed.selfCode === "string" ? parsed.selfCode : base.selfCode,
       selfDisplayName: readCachedPublicDisplayName(
         typeof parsed.selfDisplayName === "string" ? parsed.selfDisplayName : base.selfDisplayName,
@@ -169,7 +258,7 @@ function rawRead(): SocialState {
       outgoing: Array.isArray(parsed.outgoing) ? (parsed.outgoing as FriendInvite[]) : [],
       inbox: Array.isArray(parsed.inbox) ? (parsed.inbox as FriendInvite[]) : [],
       playedWith: Array.isArray(parsed.playedWith) ? (parsed.playedWith as PlayedWithEntry[]) : [],
-    };
+    });
   } catch {
     return freshState();
   }
@@ -177,8 +266,9 @@ function rawRead(): SocialState {
 
 function rawWrite(state: SocialState) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(SOCIAL_STATE_KEY, JSON.stringify(state));
-  window.dispatchEvent(new CustomEvent(SOCIAL_EVENT, { detail: state }));
+  const normalized = dedupeSocialState(state);
+  window.localStorage.setItem(SOCIAL_STATE_KEY, JSON.stringify(normalized));
+  window.dispatchEvent(new CustomEvent(SOCIAL_EVENT, { detail: normalized }));
 }
 
 /* ----------------------------------------------------------------
@@ -322,6 +412,34 @@ export function applyKeeperNameRefresh(
 
   if (!mutated) return;
   rawWrite({ ...state, friends, playedWith });
+}
+
+export function replaceFriendsFromServer(
+  entries: Array<{ code: FriendCode; displayName: string }>,
+): void {
+  const state = rawRead();
+  const friendByCode = new Map<string, Friend>();
+  const previousByCode = new Map(state.friends.map((friend) => [friend.code, friend]));
+
+  for (const entry of entries) {
+    const code = normalizeFriendCode(entry.code);
+    if (!isFriendCodeShape(code) || code === state.selfCode) continue;
+    const previous = previousByCode.get(code);
+    friendByCode.set(code, {
+      code,
+      displayName: chooseDisplayName(entry.displayName, previous?.displayName),
+      acceptedAt: previous?.acceptedAt ?? new Date().toISOString(),
+      lastSeenAt: previous?.lastSeenAt,
+    });
+  }
+
+  const serverCodes = new Set(friendByCode.keys());
+  rawWrite({
+    ...state,
+    friends: Array.from(friendByCode.values()),
+    inbox: state.inbox.filter((invite) => !serverCodes.has(invite.fromCode)),
+    outgoing: state.outgoing.filter((invite) => !serverCodes.has(invite.toCode)),
+  });
 }
 
 /**
@@ -599,6 +717,7 @@ export function acceptFriendInvite(inviteId: string): Friend | null {
     ...state,
     friends: [friend, ...state.friends.filter((entry) => entry.code !== friend.code)],
     inbox: state.inbox.map((entry) => (entry.id === inviteId ? { ...entry, status: "accepted" } : entry)),
+    outgoing: state.outgoing.filter((entry) => entry.toCode !== friend.code),
   });
   return friend;
 }
@@ -625,15 +744,27 @@ export function addFriendDirectly(entry: { code: FriendCode; displayName: string
     return { code, displayName: entry.displayName, acceptedAt: new Date().toISOString() };
   }
   const existing = state.friends.find((friend) => friend.code === code);
-  if (existing) return existing;
+  if (existing) {
+    const displayName = chooseDisplayName(entry.displayName, existing.displayName);
+    if (displayName !== existing.displayName) {
+      rawWrite({
+        ...state,
+        friends: state.friends.map((friend) => (friend.code === code ? { ...friend, displayName } : friend)),
+      });
+      return { ...existing, displayName };
+    }
+    return existing;
+  }
   const friend: Friend = {
     code,
-    displayName: entry.displayName || "Keeper",
+    displayName: chooseDisplayName(entry.displayName),
     acceptedAt: new Date().toISOString(),
   };
   rawWrite({
     ...state,
     friends: [friend, ...state.friends].slice(0, 200),
+    outgoing: state.outgoing.filter((invite) => invite.toCode !== code),
+    inbox: state.inbox.filter((invite) => invite.fromCode !== code),
     playedWith: state.playedWith.some((played) => played.code === code)
       ? state.playedWith
       : [{ code, displayName: friend.displayName, context: "friend-accept", lastPlayedAt: new Date().toISOString() }, ...state.playedWith].slice(0, 60),
@@ -644,7 +775,13 @@ export function addFriendDirectly(entry: { code: FriendCode; displayName: string
 /** Remove a friend from the friend list. */
 export function removeFriend(code: FriendCode) {
   const state = rawRead();
-  rawWrite({ ...state, friends: state.friends.filter((entry) => entry.code !== normalizeFriendCode(code)) });
+  const normalized = normalizeFriendCode(code);
+  rawWrite({
+    ...state,
+    friends: state.friends.filter((entry) => entry.code !== normalized),
+    outgoing: state.outgoing.filter((entry) => entry.toCode !== normalized && entry.fromCode !== normalized),
+    inbox: state.inbox.filter((entry) => entry.toCode !== normalized && entry.fromCode !== normalized),
+  });
 }
 
 /**

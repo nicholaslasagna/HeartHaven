@@ -5,6 +5,7 @@ import {
   SOCIAL_EVENT,
   acceptFriendInvite,
   acceptInviteFromCode,
+  addFriendDirectly,
   applyKeeperNameRefresh,
   buildInviteLink,
   cancelOutgoingInvite,
@@ -16,6 +17,7 @@ import {
   parseInviteToken,
   recordPlayedWith,
   removeFriend,
+  replaceFriendsFromServer,
   sendFriendInvite,
   setSelfDisplayName,
   type FriendCode,
@@ -81,14 +83,35 @@ export function useSocial() {
         /* best-effort — UI keeps the cached name until the next refresh */
       }
     }
+    async function refreshServerFriends() {
+      if (cancelled) return;
+      if (!isSupabaseConfigured()) return;
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data, error } = await supabase.rpc("get_my_friends");
+        if (cancelled || error || !Array.isArray(data)) return;
+        replaceFriendsFromServer(
+          (data as Array<{ friend_code?: string; display_name?: string }>)
+            .filter((row) => typeof row.friend_code === "string")
+            .map((row) => ({
+              code: row.friend_code as string,
+              displayName: typeof row.display_name === "string" ? row.display_name : "Keeper",
+            })),
+        );
+      } catch {
+        /* best-effort — local cache remains usable offline */
+      }
+    }
     // First refresh shortly after mount (let initial render settle).
     const initialTimer = window.setTimeout(() => {
       void refreshNames();
+      void refreshServerFriends();
     }, 250);
     // Re-fetch whenever the tab regains focus — captures the case where
     // a friend renamed while this tab was in the background.
     const focusHandler = () => {
       void refreshNames();
+      void refreshServerFriends();
     };
     window.addEventListener("focus", focusHandler);
     window.addEventListener("visibilitychange", focusHandler);
@@ -153,6 +176,15 @@ export function useSocial() {
     if (!payload) return { ok: false as const, reason: "invalid-code" as const };
     return acceptInviteFromCode(payload.fromCode, payload.fromDisplayName, payload.message);
   }, []);
+  const removeFriendSynced = useCallback((code: FriendCode) => {
+    removeFriend(code);
+    if (!isSupabaseConfigured()) return;
+    try {
+      void getSupabaseBrowserClient().rpc("remove_friend_by_code", { p_friend_code: code });
+    } catch {
+      /* local removal already succeeded */
+    }
+  }, []);
 
   return useMemo(
     () => ({
@@ -174,10 +206,10 @@ export function useSocial() {
       acceptInvite,
       declineInvite,
       markInviteBlocked: markInviteBlockedSynced,
-      removeFriend,
+      removeFriend: removeFriendSynced,
       recordPlayedWith,
       setSelfDisplayName,
     }),
-    [state, lookup, canLookup, sendInvite, buildLink, redeemToken, acceptInvite, declineInvite, cancelInvite, markInviteBlockedSynced],
+    [state, lookup, canLookup, sendInvite, buildLink, redeemToken, acceptInvite, declineInvite, cancelInvite, markInviteBlockedSynced, removeFriendSynced],
   );
 }
