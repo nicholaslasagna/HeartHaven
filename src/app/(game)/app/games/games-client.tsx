@@ -60,6 +60,12 @@ function actionErrorCopy(reason: string) {
   return reason || "That action could not finish.";
 }
 
+function canonicalPartyGameKey(game: (typeof partyGames)[number]) {
+  if (game.href === "/app/rock-paper-scissors") return "rock-paper-scissors";
+  if (game.href === "/app/bowling") return "bowling";
+  return game.id.replace(/-party$/, "");
+}
+
 export function GamesClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -141,7 +147,7 @@ export function GamesClient() {
     }
 
     const result = await party.selectGame({
-      key: game.id.replace(/-party$/, ""),
+      key: canonicalPartyGameKey(game),
       href: game.href,
       label: game.title,
     });

@@ -491,6 +491,10 @@ function facingRotation(facing: FacingDirection) {
   return facing === "left" ? 180 : 0;
 }
 
+function petFlipX(facing: FacingDirection) {
+  return facing === "right";
+}
+
 export function GardenCanvas({
   canEditGarden = true,
   decor,
@@ -2187,9 +2191,10 @@ export function GardenCanvas({
           this.remoteAvatars.forEach((remote) => {
             const moving = this.time.now < remote.movingUntil;
             const facingLeft = remote.facing === "left";
+            const petFacingLeft = remote.petFacing === "left";
             this.setRemoteKeeperFlip(remote, facingLeft);
-            remote.petSprite.setFlipX(facingLeft);
-            remote.petAccessorySprite.setFlipX(facingLeft);
+            remote.petSprite.setFlipX(petFlipX(remote.petFacing));
+            remote.petAccessorySprite.setFlipX(petFlipX(remote.petFacing));
 
             if (!moving) {
               this.setRemoteKeeperFrame(remote, "idle");
@@ -2210,7 +2215,7 @@ export function GardenCanvas({
             remote.petSprite
               .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
               .setY(-38 - Math.abs(petWave) * 2.3)
-              .setRotation(petWave * 0.03 * (facingLeft ? -1 : 1));
+              .setRotation(petWave * 0.03 * (petFacingLeft ? -1 : 1));
             remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
             remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
           });
@@ -2442,8 +2447,8 @@ export function GardenCanvas({
           } else if (!petMoving) {
             this.petFacing = prevPetX > this.pet.x ? "left" : this.petFacing;
           }
-          this.petSprite.setFlipX(this.petFacing === "left");
-          this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+          this.petSprite.setFlipX(petFlipX(this.petFacing));
+          this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
           this.applyPetLocomotion(petMoving, "idle");
           this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
           this.petShadow.setDepth(this.pet.y - 1);
@@ -2547,8 +2552,8 @@ export function GardenCanvas({
               const nextY = this.pet.y + Math.sin(angle) * sleepySpeed;
               this.pet.setPosition(nextX, nextY);
               this.petFacing = Math.cos(angle) < 0 ? "left" : "right";
-              this.petSprite.setFlipX(this.petFacing === "left");
-              this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+              this.petSprite.setFlipX(petFlipX(this.petFacing));
+              this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
               this.applyPetLocomotion(true, "idle");
               this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
               this.petShadow.setDepth(this.pet.y - 1);
@@ -2619,8 +2624,8 @@ export function GardenCanvas({
           } else if (!petMoving) {
             this.petFacing = this.avatar.x < this.pet.x ? "left" : "right";
           }
-          this.petSprite.setFlipX(this.petFacing === "left");
-          this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+          this.petSprite.setFlipX(petFlipX(this.petFacing));
+          this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
 
           // Idle pose echoes the vitals-derived companion mood — a happy pet
           // bounces, a lonely one curls into a sit. Local-state moods still win.
@@ -2926,6 +2931,7 @@ export function GardenCanvas({
 
             const petX = typeof player.petX === "number" ? player.petX : player.x + (facingLeft ? 58 : -58);
             const petY = typeof player.petY === "number" ? player.petY : player.y + 18;
+            const remotePetFacing = (player.petFacing ?? player.facing) as FacingDirection;
 
             // --- new visiting keeper ---
             const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
@@ -2970,9 +2976,11 @@ export function GardenCanvas({
               .sprite(0, -38, "pet-animation-sheet", petFrame(custom.petSpeciesId, "idle"))
               .setDisplaySize(84, 94)
               .setAlpha(0.94)
-              .setFlipX(facingLeft);
+              .setFlipX(petFlipX(remotePetFacing));
             this.applyRemotePetTone(petSprite, custom.petToneId);
-            const petAccessorySprite = this.createPetAccessorySprite(custom.petAccessoryId).setAlpha(0.94).setFlipX(facingLeft);
+            const petAccessorySprite = this.createPetAccessorySprite(custom.petAccessoryId)
+              .setAlpha(0.94)
+              .setFlipX(petFlipX(remotePetFacing));
             petContainer.add([petSprite, petAccessorySprite]);
 
             this.remoteAvatars.set(player.id, {
@@ -2996,7 +3004,7 @@ export function GardenCanvas({
               petToneId: custom.petToneId,
               petAccessoryId: custom.petAccessoryId,
               facing: facingLeft ? "left" : "right",
-              petFacing: (player.petFacing ?? player.facing) as FacingDirection,
+              petFacing: remotePetFacing,
               controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
             });

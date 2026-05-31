@@ -71,6 +71,11 @@ type Result<T = void> =
   | ({ ok: true } & (T extends void ? Record<string, never> : { value: T }))
   | { ok: false; reason: string };
 
+function withSessionParam(href: string, sessionId: string) {
+  if (!href || !sessionId || /(^|[?&])session=/.test(href)) return href;
+  return `${href}${href.includes("?") ? "&" : "?"}session=${encodeURIComponent(sessionId)}`;
+}
+
 export function useServerPartyLobby(initialSize = 4) {
   const router = useRouter();
   const [lobby, setLobby] = useState<LobbyState | null>(null);
@@ -286,9 +291,10 @@ export function useServerPartyLobby(initialSize = 4) {
                 void hydrate();
                 return;
               }
-              if (href && navigatedToHrefRef.current !== href) {
-                navigatedToHrefRef.current = href;
-                router.push(href, { scroll: false });
+              const sessionHref = href && currentLobby ? withSessionParam(href, currentLobby.session_id) : href;
+              if (sessionHref && navigatedToHrefRef.current !== sessionHref) {
+                navigatedToHrefRef.current = sessionHref;
+                router.push(sessionHref, { scroll: false });
               }
             } else if (row.kind === "cancelled" && isCurrentLobbyEvent) {
               setLobby(null);
@@ -396,7 +402,11 @@ export function useServerPartyLobby(initialSize = 4) {
       const supabase = getSupabaseBrowserClient();
       const { data, error: rpcError } = await supabase.rpc("start_party_lobby");
       if (rpcError) return { ok: false, reason: rpcError.message };
-      const href = typeof data === "string" ? data : null;
+      const href = typeof data === "string" && lobbyRef.current
+        ? withSessionParam(data, lobbyRef.current.session_id)
+        : typeof data === "string"
+          ? data
+          : null;
       if (!href) return { ok: false, reason: "Pick a game before starting." };
       navigatedToHrefRef.current = href;
       router.push(href, { scroll: false });

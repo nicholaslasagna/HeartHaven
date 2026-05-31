@@ -5,6 +5,7 @@ import { CompanionRosterPanel } from "@/components/cozy/companion-roster-panel";
 import { KeeperCustomizerCard } from "@/components/cozy/keeper-customizer-card";
 import { PetCarePanel } from "@/components/cozy/pet-care-panel";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { RedemptionCodePanel } from "@/components/cozy/redemption-code-panel";
 import { AchievementsPanel } from "@/components/game/achievements-panel";
 import { CasperWishPanel } from "@/components/game/casper-wish-panel";
 
@@ -29,7 +30,10 @@ export function PetClient() {
 
       <section className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
         <KeeperCustomizerCard />
-        <CompanionRosterPanel />
+        <div className="grid gap-5">
+          <CompanionRosterPanel />
+          <RedemptionCodePanel />
+        </div>
       </section>
 
       <section className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">

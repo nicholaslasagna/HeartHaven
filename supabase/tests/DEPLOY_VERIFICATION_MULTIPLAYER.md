@@ -12,7 +12,7 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-### Confirm migrations 0035–0039
+### Confirm migrations 0035–0042
 
 ```bash
 supabase migration list
@@ -23,7 +23,7 @@ In Supabase SQL editor:
 ```sql
 select version, name
   from supabase_migrations.schema_migrations
- where version in ('0035', '0036', '0037', '0038', '0039')
+ where version in ('0035', '0036', '0037', '0038', '0039', '0040', '0041', '0042')
  order by version;
 ```
 
@@ -50,12 +50,17 @@ select proname from pg_proc where proname in (
 select proname from pg_proc where proname in (
   'validate_room_surface_id', 'allowed_room_floor_ids', 'allowed_room_wall_ids'
 );
+
+-- 0041 party handoff + reward lock, 0042 redemption codes
+select proname from pg_proc where proname in (
+  'start_party_lobby', 'claim_game_reward', 'redeem_code'
+);
 ```
 
 | Step | Pass criteria |
 |------|----------------|
 | `db push` | Exits 0, no migration errors |
-| Migrations 0035–0040 | All six rows present in `schema_migrations` |
+| Migrations 0035–0042 | All eight rows present in `schema_migrations` |
 
 ---
 
@@ -97,7 +102,7 @@ select * from public.save_room_surfaces(
 ## 3. Garden Four party
 
 1. Browser A: `/app/games` → start party → **Garden Four**.
-2. Both open `/app/garden-four?session=<uuid>` from lobby link.
+2. Both open `/app/garden-four?session=<uuid>` from lobby handoff.
 3. Alternate drops on own turn.
 
 | # | Check | Expected |
@@ -124,7 +129,36 @@ select * from public.save_room_surfaces(
 
 ---
 
-## 5. Abuse / edge cases
+## 5. Party handoff
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Host creates lobby, picks Memory Match, all seats ready, clicks Start | Host navigates to `/app/memory-match?session=<uuid>` |
+| 2 | Guest receives `started` lobby event | Guest navigates to the same href with the same `session` value |
+| 3 | Inspect `game_sessions.selected_game_key` | Key is canonical, e.g. `memory-match`, `garden-four`, `rock-paper-scissors`, `bowling` |
+| 4 | Refresh both game pages | Both clients reload the same authoritative session state |
+
+---
+
+## 6. Redemption codes
+
+Raw redemption codes must stay out of git. Seed only SHA-256 hashes in `redemption_codes`.
+
+```sql
+-- Replace <PRIVATE_CODE> locally; do not commit real codes.
+select encode(digest(regexp_replace(upper('<PRIVATE_CODE>'), '[^A-Z0-9]', '', 'g'), 'sha256'), 'hex') as code_hash;
+```
+
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Signed-in user redeems a seeded code from `/app/pet` | New companion appears in roster and becomes active |
+| 2 | Same user redeems same code again | Friendly "already redeemed" response; no duplicate `pets` row |
+| 3 | Second user redeems same code | Works unless `max_global_redemptions` is exhausted |
+| 4 | Expired/disabled code | No pet row inserted |
+
+---
+
+## 7. Abuse / edge cases
 
 | Case | How | Expected |
 |------|-----|----------|
@@ -138,14 +172,16 @@ select * from public.save_room_surfaces(
 
 ---
 
-## 6. Sign-off
+## 8. Sign-off
 
-- [ ] Migrations 0035–0039 applied on production
+- [ ] Migrations 0035–0042 applied on production
 - [ ] Room surfaces sync + allowlist reject unknown IDs
 - [ ] Garden plots sync + authorization
+- [ ] Party start handoff includes `?session=<uuid>` for every seated player
 - [ ] Garden Four server win + reward gate
 - [ ] Memory Match authoritative board + reward gate
 - [ ] No duplicate wallet rewards
+- [ ] Redemption codes grant one companion per account without exposing raw codes
 - [ ] No RLS errors for valid seated members
 
-**Automated SQL helpers:** `supabase/tests/room_surface_allowlist_verification.sql`, `game_move_concurrency_verification.sql`, `garden_four_win_verification.sql`, `memory_match_verification.sql`
+**Automated SQL helpers:** `supabase/tests/room_surface_allowlist_verification.sql`, `game_move_concurrency_verification.sql`, `garden_four_win_verification.sql`, `memory_match_verification.sql`, `redemption_code_verification.sql`

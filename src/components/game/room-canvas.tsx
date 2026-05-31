@@ -183,6 +183,10 @@ function facingRotation(facing: FacingDirection) {
   return facing === "left" ? 180 : 0;
 }
 
+function petFlipX(facing: FacingDirection) {
+  return facing === "right";
+}
+
 /**
  * True if the user is currently typing into a text input — suspends canvas
  * keyboard handling so WASD doesn't fire while typing in chat.
@@ -1552,9 +1556,10 @@ export function RoomCanvas({
           this.remoteAvatars.forEach((remote) => {
             const moving = this.time.now < remote.movingUntil;
             const facingLeft = remote.facing === "left";
+            const petFacingLeft = remote.petFacing === "left";
             this.setRemoteKeeperFlip(remote, facingLeft);
-            remote.petSprite.setFlipX(facingLeft);
-            remote.petAccessorySprite.setFlipX(facingLeft);
+            remote.petSprite.setFlipX(petFlipX(remote.petFacing));
+            remote.petAccessorySprite.setFlipX(petFlipX(remote.petFacing));
 
             if (!moving) {
               this.setRemoteKeeperFrame(remote, "idle");
@@ -1575,7 +1580,7 @@ export function RoomCanvas({
             remote.petSprite
               .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
               .setY(-36 - Math.abs(petWave) * 2.2)
-              .setRotation(petWave * 0.03 * (facingLeft ? -1 : 1));
+              .setRotation(petWave * 0.03 * (petFacingLeft ? -1 : 1));
             remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
             remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
           });
@@ -1775,6 +1780,7 @@ export function RoomCanvas({
 
             const petX = typeof player.petX === "number" ? player.petX : player.x + (facingLeft ? 54 : -54);
             const petY = typeof player.petY === "number" ? player.petY : player.y + 14;
+            const remotePetFacing = (player.petFacing ?? player.facing) as FacingDirection;
 
             // --- new visiting keeper ---
             const color = PhaserModule.Display.Color.HexStringToColor(player.color).color;
@@ -1819,9 +1825,11 @@ export function RoomCanvas({
               .sprite(0, -36, "pet-animation-sheet", petFrame(custom.petSpeciesId, "idle"))
               .setDisplaySize(80, 90)
               .setAlpha(0.94)
-              .setFlipX(facingLeft);
+              .setFlipX(petFlipX(remotePetFacing));
             this.applyRemotePetTone(petSprite, custom.petToneId);
-            const petAccessorySprite = this.createPetAccessorySprite(custom.petAccessoryId).setAlpha(0.94).setFlipX(facingLeft);
+            const petAccessorySprite = this.createPetAccessorySprite(custom.petAccessoryId)
+              .setAlpha(0.94)
+              .setFlipX(petFlipX(remotePetFacing));
             petContainer.add([petSprite, petAccessorySprite]);
 
             this.remoteAvatars.set(player.id, {
@@ -1845,7 +1853,7 @@ export function RoomCanvas({
               petToneId: custom.petToneId,
               petAccessoryId: custom.petAccessoryId,
               facing: facingLeft ? "left" : "right",
-              petFacing: (player.petFacing ?? player.facing) as FacingDirection,
+              petFacing: remotePetFacing,
               controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
             });
@@ -2161,8 +2169,8 @@ export function RoomCanvas({
                 this.pet.y + Math.sin(angle) * sleepySpeed,
               );
               this.petFacing = Math.cos(angle) < 0 ? "left" : "right";
-              this.petSprite.setFlipX(this.petFacing === "left");
-              this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+              this.petSprite.setFlipX(petFlipX(this.petFacing));
+              this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
               this.applyPetLocomotion(true, "idle");
               this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
               this.petShadow.setDepth(this.pet.y - 1);
@@ -2222,8 +2230,8 @@ export function RoomCanvas({
             if (petMoving && this.pet.x !== prevX) {
               this.petFacing = this.pet.x < prevX ? "left" : "right";
             }
-            this.petSprite.setFlipX(this.petFacing === "left");
-            this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+            this.petSprite.setFlipX(petFlipX(this.petFacing));
+            this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
             this.pet.setDepth(this.pet.y);
             this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
             this.petShadow.setDepth(this.pet.y - 1);
@@ -2266,8 +2274,8 @@ export function RoomCanvas({
               const petDx = this.pet.x - prevPetX;
               if (Math.abs(petDx) > 0.05) this.petFacing = petDx < 0 ? "left" : "right";
               else this.petFacing = isFacingLeft(furniture.placement.rotation) ? "right" : "left";
-              this.petSprite.setFlipX(this.petFacing === "left");
-              this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+              this.petSprite.setFlipX(petFlipX(this.petFacing));
+              this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
               const pose: PetPose = this.petFurnitureInteraction.action === "sleep" ? "sleep" : "sit";
               this.petMood = pose === "sleep" ? "sleep" : "sit";
               this.pet.setScale(1, pose === "sleep" ? 0.84 : 0.96);
@@ -2315,8 +2323,8 @@ export function RoomCanvas({
           } else if (!petMoving && this.petMood !== "sleep") {
             this.petFacing = this.avatar.x < this.pet.x ? "left" : "right";
           }
-          this.petSprite.setFlipX(this.petFacing === "left");
-          this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+          this.petSprite.setFlipX(petFlipX(this.petFacing));
+          this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
 
           // Gentler squish — sit is barely compressed, sleep is a softer
           // curl. Snap-shifting from 1.0 to 0.88 every few seconds is the
@@ -2540,8 +2548,8 @@ export function RoomCanvas({
             this.petMood = action === "sleep" ? "sleep" : "sit";
             this.petMoodTimer = 0;
             this.petFacing = facing;
-            this.petSprite.setFlipX(this.petFacing === "left");
-            this.petAccessorySprite?.setFlipX(this.petFacing === "left");
+            this.petSprite.setFlipX(petFlipX(this.petFacing));
+            this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
             this.tweens.killTweensOf([this.pet, this.petShadow]);
             this.tweens.add({ targets: this.pet, x: target.x, y: target.y, duration: 420, ease: "Sine.out" });
             this.tweens.add({ targets: this.petShadow, x: target.x, y: target.y + 18, duration: 420, ease: "Sine.out" });
