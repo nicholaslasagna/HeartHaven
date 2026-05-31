@@ -37,7 +37,18 @@ export type KeeperCharacterId =
   | "garden-bangs"
   | "clover-curls";
 
-export type PetSpeciesId = "fox" | "bunny" | "bear" | "duck" | "kitten" | "puppy" | "calico" | "lamb" | "panda" | "dragon";
+export type PetSpeciesId =
+  | "fox"
+  | "bunny"
+  | "bear"
+  | "duck"
+  | "kitten"
+  | "puppy"
+  | "calico"
+  | "lamb"
+  | "panda"
+  | "dragon"
+  | "super-snails";
 export type PetToneId = "cream" | "blush" | "lavender" | "honey" | "sky" | "mint";
 export type PetAccessoryId = "moonberry-bow" | "lantern-scarf" | "garden-crown" | "heart-vest";
 export type PetPose = "idle" | "walk1" | "walk2" | "sit" | "sleep" | "happy";
@@ -230,7 +241,7 @@ export const KEEPER_CHARACTER_PRESETS: Array<{
   },
 ];
 
-export const PET_SPECIES: Array<{ id: PetSpeciesId; label: string; frameRow: number }> = [
+export const PET_SPECIES: Array<{ id: PetSpeciesId; label: string; frameRow: number; secret?: boolean; flying?: boolean }> = [
   { id: "fox", label: "Cloud Fox", frameRow: 0 },
   { id: "bunny", label: "Moonberry Bunny", frameRow: 1 },
   { id: "bear", label: "Honey Bear", frameRow: 2 },
@@ -241,7 +252,10 @@ export const PET_SPECIES: Array<{ id: PetSpeciesId; label: string; frameRow: num
   { id: "lamb", label: "Cloud Lamb", frameRow: 7 },
   { id: "panda", label: "Moon Panda", frameRow: 8 },
   { id: "dragon", label: "Lantern Dragon", frameRow: 9 },
+  { id: "super-snails", label: "Super Snails", frameRow: 10, secret: true, flying: true },
 ];
+
+export const ADOPTABLE_PET_SPECIES = PET_SPECIES.filter((species) => !species.secret);
 
 export const PET_TONES: Array<{ id: PetToneId; label: string; color: string }> = [
   { id: "cream", label: "Cream", color: "#FFFCF3" },
@@ -610,6 +624,10 @@ export function getKeeperOutfit(id: KeeperOutfitId) {
 
 export function getPetSpecies(id: PetSpeciesId) {
   return PET_SPECIES.find((species) => species.id === id) ?? PET_SPECIES[0];
+}
+
+export function isFlyingPetSpecies(id: PetSpeciesId) {
+  return Boolean(getPetSpecies(id).flying);
 }
 
 export function getPetTone(id: PetToneId) {

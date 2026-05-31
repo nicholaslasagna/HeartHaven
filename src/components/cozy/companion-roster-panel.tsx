@@ -8,8 +8,8 @@ import { CozyCard } from "@/components/cozy/cozy-card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
+  ADOPTABLE_PET_SPECIES,
   PET_ACCESSORIES,
-  PET_SPECIES,
   PET_TONES,
   getPetSpecies,
   type PetAccessoryId,
@@ -154,7 +154,7 @@ export function CompanionRosterPanel() {
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <Input value={newName} maxLength={24} onChange={(event) => setNewName(event.target.value)} placeholder="Companion name" />
           <select className="rounded-md border border-cream-300 bg-white/80 px-3 py-2 text-sm font-bold text-ink-800" value={speciesId} onChange={(event) => setSpeciesId(event.target.value as PetSpeciesId)}>
-            {PET_SPECIES.map((species) => <option key={species.id} value={species.id}>{species.label}</option>)}
+            {ADOPTABLE_PET_SPECIES.map((species) => <option key={species.id} value={species.id}>{species.label}</option>)}
           </select>
           <select className="rounded-md border border-cream-300 bg-white/80 px-3 py-2 text-sm font-bold text-ink-800" value={toneId} onChange={(event) => setToneId(event.target.value as PetToneId)}>
             {PET_TONES.map((tone) => <option key={tone.id} value={tone.id}>{tone.label}</option>)}

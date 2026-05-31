@@ -16,6 +16,7 @@ export type CozyCue =
   | "thorn"
   | "score"
   | "reward"
+  | "unlock"
   | "bowling"
   | "roll"
   | "pin"
@@ -311,6 +312,14 @@ export function playCozyCue(cue: CozyCue) {
       playTone(state, 523.25, now + 0.09, 0.11, "triangle", 0.08);
       playTone(state, 659.25, now + 0.18, 0.12, "triangle", 0.08);
       playTone(state, 1046.5, now + 0.28, 0.22, "sine", 0.07);
+      break;
+    case "unlock":
+      playNoise(state, now, 0.16, 0.08, 1200);
+      playTone(state, 523.25, now, 0.08, "triangle", 0.09);
+      playTone(state, 659.25, now + 0.07, 0.08, "triangle", 0.09);
+      playTone(state, 783.99, now + 0.14, 0.1, "triangle", 0.085);
+      playTone(state, 1046.5, now + 0.23, 0.16, "sine", 0.075);
+      playTone(state, 1318.51, now + 0.34, 0.22, "sine", 0.06);
       break;
     case "ui":
     default:

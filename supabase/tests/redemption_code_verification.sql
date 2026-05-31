@@ -140,3 +140,46 @@ on conflict (code_hash) do update set disabled_at = excluded.disabled_at;
 -- Seed HH-DEV-EXAMPLE-CASPER with max_global_redemptions=1, redeem from user A,
 -- then redeem from user B. User B should receive:
 -- ok=false, message='That code has already been fully claimed.'
+
+-- 11) Admin-only Super Snails example. Replace HH-DEV-SUPER-SNAILS with a
+-- private throwaway code before running. This is intentionally not a real
+-- production code.
+/*
+with private_code as (
+  select regexp_replace(upper('HH-DEV-SUPER-SNAILS'), '[^A-Z0-9]', '', 'g') as normalized
+)
+insert into public.redemption_codes (
+  code_hash,
+  label,
+  reward_pet_species,
+  reward_pet_name,
+  reward_pet_tone,
+  reward_pet_accessory,
+  max_global_redemptions,
+  expires_at
+)
+select
+  encode(digest(normalized, 'sha256'), 'hex'),
+  'Developer test Super Snails companion',
+  'super-snails',
+  'Super Snails',
+  'cream',
+  'heart-vest',
+  1,
+  now() + interval '1 day'
+from private_code
+on conflict (code_hash) do update
+  set label = excluded.label,
+      reward_pet_species = excluded.reward_pet_species,
+      reward_pet_name = excluded.reward_pet_name,
+      reward_pet_tone = excluded.reward_pet_tone,
+      reward_pet_accessory = excluded.reward_pet_accessory,
+      max_global_redemptions = excluded.max_global_redemptions,
+      expires_at = excluded.expires_at,
+      disabled_at = null;
+*/
+
+-- As authenticated user:
+-- select * from public.redeem_code('HH-DEV-SUPER-SNAILS');
+-- Expected: ok=true, reward_pet_species='super-snails', reward_pet_name='Super Snails';
+-- the app shows the unlock celebration and Super Snails appears in the companion roster.

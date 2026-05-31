@@ -10,6 +10,7 @@ import {
   keeperFrame,
   keeperHairFrame,
   keeperSkinFrame,
+  isFlyingPetSpecies,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
   petAccessoryFrame,
@@ -1062,6 +1063,7 @@ export function RoomCanvas({
             .setDisplaySize(94, 106);
           this.tintPetForTone();
           this.petAccessorySprite = this.createPetAccessorySprite(this.petCustomization.accessory);
+          this.petAccessorySprite.setVisible(!isFlyingPetSpecies(this.petCustomization.speciesId));
           this.pet.add([this.petSprite, this.petAccessorySprite]);
           this.pet.setSize(70, 70);
 
@@ -1252,6 +1254,7 @@ export function RoomCanvas({
             this.setPetPose(this.petMood === "sleep" ? "sleep" : "idle");
             this.tintPetForTone();
             this.updatePetAccessory(this.petAccessorySprite, this.petCustomization.accessory);
+            this.petAccessorySprite?.setVisible(!isFlyingPetSpecies(this.petCustomization.speciesId));
           };
           // Companion mood is the vitals-derived "blissful/happy/content/restless/lonely"
           // reading. We keep it cached so the pet's resting pose subtly reflects how
@@ -1515,6 +1518,15 @@ export function RoomCanvas({
 
         private applyPetLocomotion(moving: boolean, idlePose: PetPose) {
           if (!this.petSprite) return;
+          if (isFlyingPetSpecies(this.petCustomization.speciesId)) {
+            const wave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+            this.setPetPose(moving ? petGaitPose(this.time.now + 90) : "idle");
+            this.petSprite
+              .setY(-50 - Math.abs(wave) * (moving ? 5 : 3))
+              .setRotation(wave * 0.04 * (this.petFacing === "left" ? -1 : 1));
+            this.petShadow?.setScale(0.84 + Math.abs(wave) * 0.1, 0.72);
+            return;
+          }
           if (!moving) {
             this.setPetPose(idlePose);
             this.petSprite.setY(-40).setRotation(0);
@@ -1537,6 +1549,27 @@ export function RoomCanvas({
             this.setRemoteKeeperFlip(remote, facingLeft);
             remote.petSprite.setFlipX(petFlipX(remote.petFacing));
             remote.petAccessorySprite.setFlipX(petFlipX(remote.petFacing));
+            if (isFlyingPetSpecies(remote.petSpeciesId)) {
+              const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+              if (moving) {
+                const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
+                this.setRemoteKeeperFrame(remote, keeperGaitPose(this.time.now));
+                this.setRemoteKeeperMotion(remote, -66 - Math.abs(wave) * 3, wave * 0.018 * (facingLeft ? -1 : 1));
+                remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
+              }
+              remote.petSprite
+                .setFrame(petFrame(remote.petSpeciesId, moving ? petGaitPose(this.time.now + 90) : "idle"))
+                .setY(-46 - Math.abs(petWave) * (moving ? 5 : 3))
+                .setRotation(petWave * 0.04 * (petFacingLeft ? -1 : 1));
+              remote.petShadow.setScale(0.84 + Math.abs(petWave) * 0.1, 0.72);
+              if (!moving) {
+                this.setRemoteKeeperFrame(remote, "idle");
+                this.setRemoteKeeperMotion(remote, -66, 0);
+                remote.shadow.setScale(1, 1);
+                return;
+              }
+              return;
+            }
 
             if (!moving) {
               this.setRemoteKeeperFrame(remote, "idle");
@@ -1633,6 +1666,10 @@ export function RoomCanvas({
          *  sprite, dirty wins. */
         private applyPetAppearance() {
           if (!this.petSprite) return;
+          if (isFlyingPetSpecies(this.petCustomization.speciesId)) {
+            this.petSprite.clearTint();
+            return;
+          }
           if (this.petBehavior.dirty) {
             const muddy = PhaserModule.Display.Color.HexStringToColor("#7A5A3F").color;
             this.petSprite.setTint(muddy);
@@ -1668,6 +1705,7 @@ export function RoomCanvas({
           if (!sprite) return;
           const accessory = getPetAccessory(accessoryId);
           sprite
+            .setVisible(true)
             .setFrame(petAccessoryFrame(accessoryId))
             .setPosition(accessory.x, accessory.y)
             .setDisplaySize(accessory.width, accessory.height);
@@ -1730,7 +1768,9 @@ export function RoomCanvas({
                 existing.petAccessoryId = custom.petAccessoryId;
                 this.setRemoteKeeperFrame(existing, "idle");
                 this.applyRemotePetTone(existing.petSprite, custom.petToneId);
+                if (isFlyingPetSpecies(custom.petSpeciesId)) existing.petSprite.clearTint();
                 this.updatePetAccessory(existing.petAccessorySprite, custom.petAccessoryId);
+                existing.petAccessorySprite.setVisible(!isFlyingPetSpecies(custom.petSpeciesId));
               }
               existing.label.setText(player.displayName);
               this.tweens.killTweensOf([existing.container, existing.shadow, existing.petContainer, existing.petShadow]);
@@ -1804,9 +1844,11 @@ export function RoomCanvas({
               .setAlpha(0.94)
               .setFlipX(petFlipX(remotePetFacing));
             this.applyRemotePetTone(petSprite, custom.petToneId);
+            if (isFlyingPetSpecies(custom.petSpeciesId)) petSprite.clearTint();
             const petAccessorySprite = this.createPetAccessorySprite(custom.petAccessoryId)
               .setAlpha(0.94)
-              .setFlipX(petFlipX(remotePetFacing));
+              .setFlipX(petFlipX(remotePetFacing))
+              .setVisible(!isFlyingPetSpecies(custom.petSpeciesId));
             petContainer.add([petSprite, petAccessorySprite]);
 
             this.remoteAvatars.set(player.id, {

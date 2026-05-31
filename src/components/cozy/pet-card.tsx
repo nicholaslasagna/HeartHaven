@@ -7,11 +7,11 @@ import { Cookie, HandHeart, Heart, Sparkles } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import {
+  ADOPTABLE_PET_SPECIES,
   getPetAccessory,
   getPetSpecies,
   getPetTone,
   PET_ACCESSORIES,
-  PET_SPECIES,
   PET_TONES,
   readPetCustomization,
   writePetCustomization,
@@ -136,7 +136,7 @@ export function PetCard({ name, species, trait, happiness, hunger }: PetCardProp
       <div className="mt-5 rounded-lg border border-cream-300 bg-cream-50/70 p-3">
         <p className="text-xs font-extrabold uppercase tracking-normal text-ink-500">Customize companion</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {PET_SPECIES.map((look) => (
+          {ADOPTABLE_PET_SPECIES.map((look) => (
             <button
               className={`rounded-full border px-3 py-1.5 text-xs font-black transition ${
                 petType === look.id ? "border-blush-300 bg-blush-100 text-ink-900" : "border-cream-300 bg-white/70 text-ink-700"

@@ -151,6 +151,13 @@ export function usePlaceInvites() {
     }
 
     let cancelled = false;
+    let pollTimer: number | null = null;
+    const refreshOnFocus = () => {
+      void refresh();
+    };
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
 
     async function subscribe() {
       const supabase = getSupabaseBrowserClient();
@@ -163,6 +170,15 @@ export function usePlaceInvites() {
       }
       await refresh();
       if (cancelled) return;
+
+      // Realtime can be delayed by browser sleep, dropped sockets, or a
+      // publication mismatch in an older database. Keep a light fallback so
+      // direct friend invites still appear on the recipient's screen.
+      pollTimer = window.setInterval(() => {
+        void refresh();
+      }, 8000);
+      window.addEventListener("focus", refreshOnFocus);
+      document.addEventListener("visibilitychange", refreshOnVisible);
 
       const channel = supabase
         .channel(`current-place-invites:${user.id}`)
@@ -190,6 +206,9 @@ export function usePlaceInvites() {
         void getSupabaseBrowserClient().removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      if (pollTimer !== null) window.clearInterval(pollTimer);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, [refresh]);
 

@@ -1,6 +1,8 @@
 "use client";
 
-import { Gift, Sparkles } from "lucide-react";
+import Image from "next/image";
+import { AnimatePresence, motion } from "framer-motion";
+import { Gift, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
@@ -10,6 +12,7 @@ import {
   getCompanionRoster,
   replaceCompanionRosterState,
 } from "@/lib/game/companion-roster";
+import { playCozyCue } from "@/lib/game/cozy-audio";
 import {
   getPetVitals,
   replacePetVitalsState,
@@ -25,6 +28,11 @@ type RedeemCodeResult = {
   reward_pet_species: string | null;
   reward_pet_name: string | null;
   message: string | null;
+};
+
+type RedeemedCompanion = {
+  name: string;
+  species: string;
 };
 
 function normalizeCode(value: string) {
@@ -46,6 +54,7 @@ async function hydrateCompanions() {
 export function RedemptionCodePanel() {
   const [code, setCode] = useState("");
   const [pending, setPending] = useState(false);
+  const [redeemedCompanion, setRedeemedCompanion] = useState<RedeemedCompanion | null>(null);
   const [notice, setNotice] = useState<{ kind: "idle" | "ok" | "error"; message: string }>({
     kind: "idle",
     message: "",
@@ -80,6 +89,11 @@ export function RedemptionCodePanel() {
 
       await hydrateCompanions();
       setCode("");
+      setRedeemedCompanion({
+        name: row.reward_pet_name ?? "A new companion",
+        species: row.reward_pet_species ?? "kitten",
+      });
+      playCozyCue("unlock");
       setNotice({
         kind: "ok",
         message: row.message ?? `${row.reward_pet_name ?? "A new companion"} joined your roster.`,
@@ -93,6 +107,58 @@ export function RedemptionCodePanel() {
 
   return (
     <CozyCard className="overflow-hidden p-5">
+      <AnimatePresence>
+        {redeemedCompanion && (
+          <motion.div
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-[180] grid place-items-center bg-ink-900/45 px-4 backdrop-blur-sm"
+            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+          >
+            <motion.div
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-honey-200 bg-gradient-to-br from-white via-blush-50 to-lavender-100 p-6 text-center shadow-[0_28px_80px_rgba(91,63,63,0.35)]"
+              exit={{ opacity: 0, scale: 0.94, y: 10 }}
+              initial={{ opacity: 0, scale: 0.9, y: 18 }}
+              transition={{ type: "spring", stiffness: 210, damping: 20 }}
+            >
+              <button
+                aria-label="Close redeemed companion celebration"
+                className="absolute right-3 top-3 grid size-9 place-items-center rounded-full border border-cream-300 bg-white/80 text-ink-700 shadow-sm transition hover:bg-white"
+                onClick={() => setRedeemedCompanion(null)}
+                type="button"
+              >
+                <X className="size-4" />
+              </button>
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_50%_0%,rgba(218,165,62,0.35),transparent_62%)]" />
+              <motion.div
+                animate={{ rotate: [0, -2, 2, 0], scale: [1, 1.04, 1] }}
+                className="mx-auto grid h-48 place-items-center"
+                transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <Image
+                  alt={`${redeemedCompanion.name} idle pose`}
+                  className="max-h-44 w-auto object-contain drop-shadow-[0_18px_28px_rgba(91,63,63,0.22)]"
+                  height={288}
+                  priority
+                  src={`/game-assets/generated/pet-art-preview-${redeemedCompanion.species}.png`}
+                  width={256}
+                />
+              </motion.div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-honey-700">Secret companion unlocked</p>
+              <h3 className="mt-2 font-display text-4xl text-ink-900">
+                You just redeemed {redeemedCompanion.name}
+              </h3>
+              <p className="mx-auto mt-2 max-w-sm text-sm font-bold leading-6 text-ink-700">
+                They joined your companion roster and are ready to fly through HeartHaven with you.
+              </p>
+              <CozyButton className="mt-5" onClick={() => setRedeemedCompanion(null)}>
+                <Sparkles /> Bring them home
+              </CozyButton>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Badge variant="blush">
