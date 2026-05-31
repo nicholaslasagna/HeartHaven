@@ -16,13 +16,15 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { partyGames } from "@/lib/mock-data";
 import { useServerPartyLobby } from "@/lib/game/use-server-party-lobby";
+import { useSocial } from "@/lib/game/use-social";
+import type { Friend } from "@/lib/game/social";
 import { cn } from "@/lib/utils";
 
 const partySizes = [2, 4, 6, 8] as const;
@@ -34,7 +36,11 @@ function extractLobbyCode(value: string) {
 
   try {
     const url = new URL(trimmed);
-    const fromParams = url.searchParams.get("join") ?? url.searchParams.get("party") ?? url.searchParams.get("host");
+    const fromParams =
+      url.searchParams.get("join")
+      ?? url.searchParams.get("invite")
+      ?? url.searchParams.get("party")
+      ?? url.searchParams.get("host");
     if (fromParams) return fromParams.trim().toUpperCase();
   } catch {
     // Raw friend codes are the common path.
@@ -74,6 +80,7 @@ export function GamesClient() {
   const searchParams = useSearchParams();
   const [selectedSize, setSelectedSize] = useState<(typeof partySizes)[number]>(4);
   const party = useServerPartyLobby(selectedSize);
+  const social = useSocial();
   const lobby = party.lobby;
   const [copied, setCopied] = useState<string | null>(null);
   const [joinInput, setJoinInput] = useState("");
@@ -81,6 +88,7 @@ export function GamesClient() {
     kind: "idle",
     message: "",
   });
+  const handledInviteCodeRef = useRef<string | null>(null);
 
   const readyCount = lobby?.seats.filter((seat) => seat.ready).length ?? 0;
   const occupiedCount = lobby?.seats.length ?? 0;
@@ -97,10 +105,12 @@ export function GamesClient() {
 
   useEffect(() => {
     if (!party.ready) return;
-    const join = searchParams.get("join") ?? searchParams.get("party");
+    const join = searchParams.get("join") ?? searchParams.get("invite") ?? searchParams.get("party");
     if (!join) return;
 
     const code = extractLobbyCode(join);
+    if (handledInviteCodeRef.current === code) return;
+    handledInviteCodeRef.current = code;
     if (!friendCodePattern.test(code)) {
       queueMicrotask(() => {
         setNotice({ kind: "error", message: "That invite link is not a valid HeartHaven friend code." });
@@ -165,6 +175,37 @@ export function GamesClient() {
     if (!code) return;
     const link = `${window.location.origin}/app/games?join=${encodeURIComponent(code)}`;
     void copyText(link, "party-link");
+  }
+
+  async function inviteFriend(friend: Friend) {
+    const code = lobby?.host_friend_code;
+    if (!code) {
+      setNotice({ kind: "error", message: "Create a lobby before inviting friends." });
+      return;
+    }
+
+    const link = `${window.location.origin}/app/games?invite=${encodeURIComponent(code)}`;
+    const message = `Join my HeartHaven lobby: ${link}`;
+    const share = navigator as Navigator & {
+      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+    };
+
+    if (share.share) {
+      try {
+        await share.share({
+          title: "HeartHaven lobby invite",
+          text: `${friend.displayName}, come play HeartHaven with me.`,
+          url: link,
+        });
+        setNotice({ kind: "ok", message: `Invite ready for ${friend.displayName}.` });
+        return;
+      } catch {
+        // Fall through to clipboard copy if the share sheet is cancelled or unavailable.
+      }
+    }
+
+    await copyText(message, `friend-${friend.code}`);
+    setNotice({ kind: "ok", message: `Invite link copied for ${friend.displayName}. Send it anywhere you chat.` });
   }
 
   async function requestToJoin() {
@@ -295,6 +336,39 @@ export function GamesClient() {
               <p className="rounded-md border border-cream-300 bg-white/65 px-3 py-2 text-xs font-extrabold text-ink-600">
                 Lobby code: <span className="font-mono">{lobby.host_friend_code}</span>
               </p>
+              <div className="rounded-lg border border-blush-300/40 bg-blush-100/45 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-extrabold uppercase tracking-normal text-blush-600">Invite friends</p>
+                  <Badge variant="outline">{social.friends.length}</Badge>
+                </div>
+                {social.friends.length === 0 ? (
+                  <p className="mt-2 text-xs font-bold leading-5 text-ink-600">
+                    Add friends first, then they&apos;ll appear here for one-tap lobby invites.
+                  </p>
+                ) : (
+                  <div className="mt-2 grid max-h-48 gap-2 overflow-y-auto pr-1">
+                    {social.friends.map((friend) => (
+                      <div
+                        className="flex items-center justify-between gap-2 rounded-md border border-white/70 bg-white/78 px-2.5 py-2"
+                        key={friend.code}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-extrabold text-ink-900">{friend.displayName}</p>
+                          <p className="font-mono text-[11px] font-bold text-ink-500">{friend.code}</p>
+                        </div>
+                        <Button
+                          onClick={() => void inviteFriend(friend)}
+                          size="sm"
+                          variant={copied === `friend-${friend.code}` ? "warm" : "secondary"}
+                        >
+                          {copied === `friend-${friend.code}` ? <ClipboardCheck /> : <UserPlus />}
+                          {copied === `friend-${friend.code}` ? "Copied" : "Invite"}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
