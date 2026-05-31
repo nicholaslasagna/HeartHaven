@@ -1464,11 +1464,12 @@ export function GardenCanvas({
           this.petAccessorySprite = this.createPetAccessorySprite(this.petCustomization.accessory);
           this.pet.add([this.petSprite, this.petAccessorySprite]);
           this.pet.setSize(70, 70);
-          // A very gentle breathing motion. 0.6px over 3.2s reads as
-          // "alive" without making the pet feel restless or jittery.
+          // A very gentle breathing motion on the sprite layer only. Never
+          // tween the pet container's world Y: that breaks vertical follow
+          // movement and makes the companion look stuck on one row.
           this.petBobTween = this.tweens.add({
-            targets: this.pet,
-            y: this.pet.y - 0.6,
+            targets: this.petSprite,
+            y: -40.6,
             duration: 3200,
             yoyo: true,
             repeat: -1,
@@ -1747,9 +1748,8 @@ export function GardenCanvas({
             this.cameras.main.startFollow(this.pet, true, 0.08, 0.08);
             setStatus("Playing as your companion. They're faster and can sniff for hidden items. Right-click to swap back.");
             playCozyCue("petChirp");
-            // Suspend the breathing tween so vertical keypresses aren't
-            // immediately yoyo'd back. This was the "companion can only
-            // move on X" bug.
+            // Pause idle sprite bob while the player is directly driving
+            // the companion so the walking cycle owns the visual Y offset.
             this.petBobTween?.pause();
           } else {
             this.cameras.main.startFollow(this.avatar, true, 0.08, 0.08);
@@ -1924,8 +1924,8 @@ export function GardenCanvas({
             this.sniffKeyHandler = undefined;
             this.deleteKeyHandler = undefined;
             this.backspaceKeyHandler = undefined;
-            // Stop the breathing tween so the GC can collect the pet
-            // container after the scene tears down.
+            // Stop the breathing tween so the GC can collect the pet sprite
+            // after the scene tears down.
             this.petBobTween?.stop();
             this.petBobTween = undefined;
           };

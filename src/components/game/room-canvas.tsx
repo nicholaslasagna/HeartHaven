@@ -1065,14 +1065,12 @@ export function RoomCanvas({
           this.pet.add([this.petSprite, this.petAccessorySprite]);
           this.pet.setSize(70, 70);
 
-          // A very gentle breathing motion. 0.6px over 3.2s reads as
-          // "alive" without making the pet feel restless or jittery. Held
-          // in a field so we can pause it when the player swaps to control
-          // the companion — otherwise the yoyo lerps Y back every frame
-          // and vertical movement looks broken.
+          // A very gentle breathing motion on the sprite layer only. Never
+          // tween the pet container's world Y: that breaks vertical follow
+          // movement and makes the companion look stuck on one row.
           this.petBobTween = this.tweens.add({
-            targets: this.pet,
-            y: this.pet.y - 0.6,
+            targets: this.petSprite,
+            y: -40.6,
             duration: 3200,
             yoyo: true,
             repeat: -1,
@@ -1140,9 +1138,8 @@ export function RoomCanvas({
             this.cameras.main.startFollow(this.pet, true, 0.08, 0.08);
             setStatus("Playing as your companion. Right-click to swap back.");
             playCozyCue("petChirp");
-            // Pause the breathing yoyo so vertical input isn't immediately
-            // overwritten — this is the bug that made the companion feel
-            // like it could only move sideways.
+            // Pause idle sprite bob while the player is directly driving
+            // the companion so the walking cycle owns the visual Y offset.
             this.petBobTween?.pause();
           } else {
             this.cameras.main.startFollow(this.avatar, true, 0.08, 0.08);
