@@ -23,6 +23,9 @@ import {
   syncServerPetState,
 } from "@/lib/game/phase2-server";
 import { hydrateWalletStateFromServer } from "@/lib/game/wallet-store";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { ensureUserLocalScope } from "@/lib/game/user-local-scope";
 
 function clearTimer(ref: MutableRefObject<number | null>) {
   if (ref.current !== null) {
@@ -50,6 +53,14 @@ export function Phase2PersistenceBridge() {
 
     async function hydrate() {
       hydratingUntilRef.current = Date.now() + 1800;
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabaseBrowserClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        ensureUserLocalScope(user?.id);
+      }
+
       await hydrateWalletStateFromServer();
 
       const localInventory = readInventoryState();
