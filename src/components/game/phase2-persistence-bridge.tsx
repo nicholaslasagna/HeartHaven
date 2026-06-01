@@ -50,6 +50,7 @@ export function Phase2PersistenceBridge() {
 
   useEffect(() => {
     let cancelled = false;
+    let lastHydratedUserId: string | null | undefined = undefined;
 
     async function hydrate() {
       hydratingUntilRef.current = Date.now() + 1800;
@@ -59,6 +60,7 @@ export function Phase2PersistenceBridge() {
           data: { user },
         } = await supabase.auth.getUser();
         ensureUserLocalScope(user?.id);
+        lastHydratedUserId = user?.id ?? null;
       }
 
       await hydrateWalletStateFromServer();
@@ -117,6 +119,28 @@ export function Phase2PersistenceBridge() {
     window.addEventListener(PET_VITALS_EVENT, schedulePetSync);
     window.addEventListener(COMPANION_ROSTER_EVENT, schedulePetSync);
 
+    // Subscribe to auth changes so we re-hydrate when a different
+    // account signs in without a full page reload. Without this, the
+    // localStorage-clear in `ensureUserLocalScope` only ran on the
+    // initial mount — switching accounts mid-session (sign out → sign
+    // in as someone else, or freshly signing up after browsing as a
+    // different user) would leak the previous account's local data
+    // into the new account's first server sync. We compare by id so
+    // mere token refreshes (SIGNED_IN with same user) don't trigger
+    // a full rehydrate.
+    let authUnsubscribe: (() => void) | null = null;
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseBrowserClient();
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        const nextUserId = session?.user?.id ?? null;
+        if (nextUserId === lastHydratedUserId) return;
+        void hydrate();
+      });
+      authUnsubscribe = () => {
+        data.subscription.unsubscribe();
+      };
+    }
+
     return () => {
       cancelled = true;
       clearTimer(inventoryTimerRef);
@@ -124,6 +148,7 @@ export function Phase2PersistenceBridge() {
       window.removeEventListener(INVENTORY_EVENT, scheduleInventorySync);
       window.removeEventListener(PET_VITALS_EVENT, schedulePetSync);
       window.removeEventListener(COMPANION_ROSTER_EVENT, schedulePetSync);
+      authUnsubscribe?.();
     };
   }, []);
 
