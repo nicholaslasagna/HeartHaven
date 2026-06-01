@@ -6,6 +6,7 @@ import {
   getActionCooldownMs,
   getCooldownRemaining,
   getNeediestVital,
+  getPetCareProfile,
   getPetMood,
   getPetVitals,
   performPetFood,
@@ -79,9 +80,10 @@ export function usePetCare() {
 
   const mood = vitals ? getPetMood(vitals) : "content";
   const neediest = vitals ? getNeediestVital(vitals) : "happiness";
+  const careProfile = getPetCareProfile();
 
   return useMemo(
-    () => ({ vitals, mood, neediest, cooldowns, care, feedFood, ready: vitals !== null }),
-    [vitals, mood, neediest, cooldowns, care, feedFood],
+    () => ({ vitals, mood, neediest, cooldowns, care, feedFood, careProfile, ready: vitals !== null }),
+    [vitals, mood, neediest, cooldowns, care, feedFood, careProfile],
   );
 }

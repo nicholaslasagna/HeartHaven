@@ -211,7 +211,7 @@ export function usePlaceInvites() {
       // direct friend invites still appear on the recipient's screen.
       pollTimer = window.setInterval(() => {
         void refresh();
-      }, 8000);
+      }, 2500);
       window.addEventListener("focus", refreshOnFocus);
       document.addEventListener("visibilitychange", refreshOnVisible);
 

@@ -49,7 +49,10 @@ async function hydrateCompanions() {
   const serverPet = await loadServerPetState(getCompanionRoster(), getPetVitals());
   if (!serverPet) return;
   replaceCompanionRosterState(serverPet.roster);
-  replacePetVitalsState(serverPet.vitals);
+  for (const [companionId, companionVitals] of Object.entries(serverPet.vitalsByCompanion)) {
+    replacePetVitalsState(companionVitals, companionId);
+  }
+  replacePetVitalsState(serverPet.vitals, serverPet.roster.activeId);
 }
 
 export function RedemptionCodePanel() {

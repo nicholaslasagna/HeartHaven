@@ -4,7 +4,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import type { CompanionRecord, CompanionRosterState } from "@/lib/game/companion-roster";
 import type { InventoryEntry, InventoryState } from "@/lib/game/inventory-store";
-import type { PetVitals } from "@/lib/game/pet-state";
+import { getPetVitalsForCompanion, type PetVitals } from "@/lib/game/pet-state";
 import type { GameReward, RewardLedgerEntry, StoredRewardState } from "@/lib/game/rewards";
 import type { Wallet } from "@/lib/game/types";
 
@@ -306,7 +306,7 @@ function petRowToVitals(row: ServerPetRow): PetVitals {
 export async function loadServerPetState(
   localRoster: CompanionRosterState,
   localVitals: PetVitals,
-): Promise<{ roster: CompanionRosterState; vitals: PetVitals } | null> {
+): Promise<{ roster: CompanionRosterState; vitals: PetVitals; vitalsByCompanion: Record<string, PetVitals> } | null> {
   const context = await getPhase2Context();
   if (!context) return null;
 
@@ -323,7 +323,13 @@ export async function loadServerPetState(
 
     if (rows.length === 0) {
       await syncServerPetState(localRoster, localVitals);
-      return { roster: localRoster, vitals: localVitals };
+      return {
+        roster: localRoster,
+        vitals: localVitals,
+        vitalsByCompanion: {
+          [localRoster.activeId]: localVitals,
+        },
+      };
     }
 
     const companions = rows.map((row): CompanionRecord => ({
@@ -337,6 +343,10 @@ export async function loadServerPetState(
     }));
     const active = companions.find((companion) => companion.active) ?? companions[0];
     const activeRow = rows.find((row) => (row.client_pet_id ?? row.id) === active.id) ?? rows[0];
+    const vitalsByCompanion = rows.reduce<Record<string, PetVitals>>((acc, row) => {
+      acc[row.client_pet_id ?? row.id] = petRowToVitals(row);
+      return acc;
+    }, {});
 
     return {
       roster: {
@@ -344,6 +354,7 @@ export async function loadServerPetState(
         companions: companions.map((companion) => ({ ...companion, active: companion.id === active.id })),
       },
       vitals: petRowToVitals(activeRow),
+      vitalsByCompanion,
     };
   } catch (error) {
     maybeWarn("pet hydrate failed", error);
@@ -356,8 +367,8 @@ export async function syncServerPetState(roster: CompanionRosterState, vitals: P
   if (!context) return;
 
   try {
-    const vitalPayload = vitalsToServerPayload(vitals);
     const rows = roster.companions.slice(0, 24).map((companion) => ({
+      ...vitalsToServerPayload(companion.id === roster.activeId ? vitals : getPetVitalsForCompanion(companion.id)),
       owner_id: context.userId,
       client_pet_id: companion.id,
       species: companion.speciesId,
@@ -365,13 +376,6 @@ export async function syncServerPetState(roster: CompanionRosterState, vitals: P
       tone: companion.toneId,
       accessory: companion.accessory,
       active: companion.id === roster.activeId,
-      happiness: companion.id === roster.activeId ? vitalPayload.happiness : 86,
-      hunger: companion.id === roster.activeId ? vitalPayload.hunger : 20,
-      fullness: companion.id === roster.activeId ? vitalPayload.fullness : 80,
-      energy: companion.id === roster.activeId ? vitalPayload.energy : 80,
-      cleanliness: companion.id === roster.activeId ? vitalPayload.cleanliness : 80,
-      last_action_at: companion.id === roster.activeId ? vitalPayload.last_action_at : undefined,
-      nap_until: companion.id === roster.activeId ? vitalPayload.nap_until : null,
     }));
 
     const { error } = await context.supabase

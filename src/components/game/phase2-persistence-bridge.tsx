@@ -60,10 +60,20 @@ export function Phase2PersistenceBridge() {
 
       const localRoster = getCompanionRoster();
       const localVitals = getPetVitals();
+      const rosterSnapshot = JSON.stringify(localRoster);
       const serverPet = await loadServerPetState(localRoster, localVitals);
       if (!cancelled && serverPet) {
-        replaceCompanionRosterState(serverPet.roster);
-        replacePetVitalsState(serverPet.vitals);
+        const currentRoster = getCompanionRoster();
+        const selectionChangedDuringHydrate = JSON.stringify(currentRoster) !== rosterSnapshot;
+        if (selectionChangedDuringHydrate) {
+          await syncServerPetState(currentRoster, getPetVitals());
+        } else {
+          replaceCompanionRosterState(serverPet.roster);
+          for (const [companionId, companionVitals] of Object.entries(serverPet.vitalsByCompanion)) {
+            replacePetVitalsState(companionVitals, companionId);
+          }
+          replacePetVitalsState(serverPet.vitals, serverPet.roster.activeId);
+        }
       }
 
       hydratingUntilRef.current = Date.now() + 600;

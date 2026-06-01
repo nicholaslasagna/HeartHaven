@@ -162,7 +162,7 @@ function CareAnimation({
 }
 
 export function PetCarePanel({ compact = false }: { compact?: boolean }) {
-  const { vitals, mood, neediest, cooldowns, care, feedFood, ready } = usePetCare();
+  const { vitals, mood, neediest, cooldowns, care, feedFood, careProfile, ready } = usePetCare();
   const [petName, setPetName] = useState("Casper");
   const [speciesId, setSpeciesId] = useState<ReturnType<typeof readPetCustomization>["speciesId"]>("kitten");
   const [toneId, setToneId] = useState<ReturnType<typeof readPetCustomization>["toneId"]>("cream");
@@ -268,6 +268,7 @@ export function PetCarePanel({ compact = false }: { compact?: boolean }) {
           </div>
           <h2 className="mt-1 font-display text-3xl text-ink-900">{petName}</h2>
           <p className="text-sm font-bold text-ink-700">{species.label}</p>
+          {!compact && <p className="mt-1 text-xs font-bold leading-5 text-ink-500">{careProfile.careStyle}</p>}
           <span className={cn("mt-2 inline-block w-fit rounded-full px-2.5 py-1 text-xs font-extrabold", moodCopy.tone)}>
             {moodCopy.label}
           </span>

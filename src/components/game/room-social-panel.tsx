@@ -31,7 +31,7 @@ type RoomSocialPanelProps = {
   players: RealtimeRoomPlayer[];
   roomCode: string;
   roomId?: string;
-  sendChat: (input: string) => { ok: true; text: string } | { ok: false; reason: string };
+  sendChat: (input: string) => Promise<{ ok: true; text: string } | { ok: false; reason: string }>;
   status: string;
 };
 
@@ -100,8 +100,8 @@ export function RoomSocialPanel({
     window.dispatchEvent(new CustomEvent("hearthaven:text-input-focus", { detail: isTyping }));
   }
 
-  function submitMessage() {
-    const result = sendChat(input);
+  async function submitMessage() {
+    const result = await sendChat(input);
     // Only fire the speech cue when the message ACTUALLY broadcasts.
     // Moderated / rate-limited rejections should be silent.
     if (result.ok) {
@@ -261,13 +261,13 @@ export function RoomSocialPanel({
             onFocus={() => markTyping(true)}
             onKeyDown={(event) => {
               event.stopPropagation();
-              if (event.key === "Enter") submitMessage();
+              if (event.key === "Enter") void submitMessage();
             }}
             onKeyUp={(event) => event.stopPropagation()}
             placeholder="Say something cozy..."
             value={input}
           />
-          <CozyButton onClick={submitMessage} size="sm">
+          <CozyButton onClick={() => void submitMessage()} size="sm">
             <Send />
           </CozyButton>
         </div>

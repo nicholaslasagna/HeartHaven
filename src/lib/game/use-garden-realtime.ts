@@ -27,6 +27,7 @@ import {
 } from "@/lib/game/safety";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 import { hardenGardenPlots, type GardenPlotState } from "@/lib/game/garden-plots";
+import { getPlaceChatMessages, sendPlaceChatMessage, type PlaceChatType } from "@/lib/game/place-chat";
 
 type UseGardenRealtimeOptions = {
   gardenId: string;
@@ -114,6 +115,7 @@ export function useGardenRealtime({
   const [status, setStatus] = useState("Solo garden mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const localPlayerRef = useRef<RealtimeRoomPlayer | null>(null);
+  const realtimeReadyRef = useRef(false);
   // Holds the freshest friend code so the broadcast tick picks it up
   // without us having to write back into `localPlayerRef.current` (which
   // tripped the react-hooks/immutability rule because of cascade).
@@ -142,6 +144,11 @@ export function useGardenRealtime({
     () => `${normalizedHostCode || "anon"}.${normalizedGardenId}`,
     [normalizedHostCode, normalizedGardenId],
   );
+  const placeChatType: PlaceChatType = useMemo(() => {
+    if (inviteZone === "park" || invitePath === "/app/park") return "park";
+    if (invitePath === "/app/partner-garden") return "partner-garden";
+    return "garden";
+  }, [invitePath, inviteZone]);
 
   const inviteUrl = useMemo(() => {
     if (typeof window === "undefined") {
@@ -162,6 +169,17 @@ export function useGardenRealtime({
 
   const appendMessage = useCallback((message: GardenChatMessage) => {
     setMessages((current) => [message, ...current.filter((entry) => entry.id !== message.id)].slice(0, 20));
+  }, []);
+  const mergeMessages = useCallback((incoming: GardenChatMessage[]) => {
+    setMessages((current) => {
+      const byId = new Map<string, GardenChatMessage>();
+      for (const message of [...incoming, ...current]) {
+        byId.set(message.id, message);
+      }
+      return Array.from(byId.values())
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 20);
+    });
   }, []);
 
   useEffect(() => {
@@ -189,6 +207,7 @@ export function useGardenRealtime({
 
     let cancelled = false;
     let customizationCleanup: (() => void) | null = null;
+    let chatPollTimer: number | null = null;
 
     async function connect() {
       setConnectionState("connecting");
@@ -224,6 +243,21 @@ export function useGardenRealtime({
         });
 
         channelRef.current = channel;
+        realtimeReadyRef.current = false;
+
+        async function refreshGardenChat() {
+          try {
+            const recent = await getPlaceChatMessages({
+              placeType: placeChatType,
+              hostFriendCode: normalizedHostCode,
+              placeId: normalizedGardenId,
+              limit: 30,
+            });
+            if (!cancelled && recent.length > 0) mergeMessages(recent);
+          } catch {
+            /* Chat history falls back to live broadcast until the migration is applied. */
+          }
+        }
 
         // --- Hydrate server-canonical decor + grants -------------------
         // Before subscribing, pull the host's saved decor and approved-
@@ -359,13 +393,19 @@ export function useGardenRealtime({
           .subscribe(async (state) => {
             if (cancelled) return;
             if (state === "SUBSCRIBED") {
+              realtimeReadyRef.current = true;
               await channel.track(localPlayer);
+              void refreshGardenChat();
+              if (chatPollTimer) window.clearInterval(chatPollTimer);
+              chatPollTimer = window.setInterval(() => void refreshGardenChat(), 3000);
               setConnectionState("connected");
               setStatus(`Live in garden ${gardenCode}`);
             } else if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") {
+              realtimeReadyRef.current = false;
               setConnectionState("error");
               setStatus("Online garden visits could not connect. The garden still works.");
             } else if (state === "CLOSED") {
+              realtimeReadyRef.current = false;
               setConnectionState("offline");
               setStatus("Garden visit connection closed.");
             }
@@ -409,15 +449,18 @@ export function useGardenRealtime({
       cancelled = true;
       customizationCleanup?.();
       customizationCleanup = null;
+      if (chatPollTimer) window.clearInterval(chatPollTimer);
+      chatPollTimer = null;
       const channel = channelRef.current;
       if (channel) {
         void getSupabaseBrowserClient().removeChannel(channel);
       }
       channelRef.current = null;
+      realtimeReadyRef.current = false;
       localPlayerRef.current = null;
       setPlayers([]);
     };
-  }, [appendMessage, channelKey, gardenCode, gardenName, normalizedGardenId, normalizedHostCode]);
+  }, [appendMessage, channelKey, gardenCode, gardenName, mergeMessages, normalizedGardenId, normalizedHostCode, placeChatType]);
 
   const sendMove = useCallback((position: {
     x: number;
@@ -452,7 +495,7 @@ export function useGardenRealtime({
     void channel.send({ type: "broadcast", event: "garden_move", payload });
   }, []);
 
-  const sendChat = useCallback((input: string): ChatModerationResult => {
+  const sendChat = useCallback(async (input: string): Promise<ChatModerationResult> => {
     const safety = readSafetyState();
     if (isLocallyQuarantined(safety)) {
       return {
@@ -480,9 +523,18 @@ export function useGardenRealtime({
       return moderation;
     }
 
+    const channel = channelRef.current;
+    if (isSupabaseConfigured() && (!channel || !realtimeReadyRef.current)) {
+      return {
+        ok: false,
+        severity: "soft-block",
+        reason: "Garden chat is reconnecting. Try again in a moment.",
+      };
+    }
+
     const localPlayer = localPlayerRef.current;
     const social = getSocialState();
-    const message: GardenChatMessage = {
+    let message: GardenChatMessage = {
       id: crypto.randomUUID(),
       playerId: localPlayer?.id ?? createGuestId(),
       displayName: localPlayer?.displayName ?? getCachedPublicUsername(),
@@ -491,14 +543,31 @@ export function useGardenRealtime({
       createdAt: Date.now(),
     };
 
+    if (isSupabaseConfigured()) {
+      try {
+        const savedMessage = await sendPlaceChatMessage({
+          placeType: placeChatType,
+          hostFriendCode: normalizedHostCode,
+          placeId: normalizedGardenId,
+          body: moderation.text,
+        });
+        if (savedMessage) message = savedMessage;
+      } catch (error) {
+        return {
+          ok: false,
+          severity: "soft-block",
+          reason: error instanceof Error ? error.message : "Garden chat could not sync.",
+        };
+      }
+    }
+
     appendMessage(message);
     window.dispatchEvent(new CustomEvent("hearthaven:garden-chat-bubble", { detail: message }));
 
-    const channel = channelRef.current;
     if (channel) void channel.send({ type: "broadcast", event: "garden_chat", payload: message });
 
     return moderation;
-  }, [appendMessage, invitePath]);
+  }, [appendMessage, invitePath, normalizedGardenId, normalizedHostCode, placeChatType]);
 
   const toggleDecoratorPermission = useCallback(async (friendCode: string) => {
     const normalized = normalizeFriendCode(friendCode);

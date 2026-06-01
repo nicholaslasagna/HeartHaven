@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Clock, DoorOpen, X } from "lucide-react";
-import { CozyButton } from "@/components/cozy/cozy-button";
+import { ArrowRight, Clock, DoorOpen, Users, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { usePlaceInvites, type PlaceInvite } from "@/lib/game/place-invites";
 import { recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
 import { cn } from "@/lib/utils";
@@ -52,49 +52,71 @@ export function PlaceInviteInboxHost() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-[140] flex w-[min(390px,calc(100vw-2rem))] flex-col gap-2">
-      {invites.slice(0, 3).map((invite) => (
-        <div
-          className="rounded-lg border border-blush-300/60 bg-white/95 p-3 shadow-[0_18px_45px_rgba(91,63,63,0.18)] backdrop-blur"
-          key={invite.id}
-        >
-          <div className="flex items-start gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-blush-100 text-blush-600">
-              <DoorOpen className="size-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-extrabold uppercase tracking-normal text-blush-600">{inviteTitle(invite)}</p>
-              <p className="mt-0.5 truncate text-sm font-black text-ink-900">
-                {invite.inviterDisplayName} invited you
-              </p>
-              <p className="mt-0.5 text-xs font-bold capitalize text-ink-600">{inviteTarget(invite)}</p>
-              <p className="mt-1 flex items-center gap-1 text-[11px] font-bold text-ink-500">
-                <Clock className="size-3" /> Expires soon
-              </p>
+    <div className="pointer-events-none fixed bottom-5 right-5 z-[140] flex w-[min(390px,calc(100vw-2rem))] flex-col gap-2">
+      <AnimatePresence>
+        {invites.slice(0, 3).map((invite) => (
+          <motion.div
+            animate={{ opacity: 1, x: 0, y: 0 }}
+            className="pointer-events-auto flex items-start gap-3 rounded-lg border border-lavender-300/60 bg-cream-50 p-4 shadow-[0_18px_44px_-22px_rgba(91,63,63,0.45)]"
+            exit={{ opacity: 0, x: 24, transition: { duration: 0.2 } }}
+            initial={{ opacity: 0, x: 24, y: 6 }}
+            key={invite.id}
+            role="status"
+            transition={{ type: "spring", stiffness: 280, damping: 28 }}
+          >
+            <div className="grid size-10 shrink-0 place-items-center rounded-full bg-lavender-100">
+              {invite.inviteType === "party" ? (
+                <Users className="size-5 text-lavender-500" aria-hidden />
+              ) : (
+                <DoorOpen className="size-5 text-lavender-500" aria-hidden />
+              )}
             </div>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <CozyButton
-              className={cn("flex-1", busyId === invite.id && "opacity-70")}
-              disabled={busyId === invite.id}
-              onClick={() => void act(invite, "accepted")}
-              size="sm"
-            >
-              <Check /> Accept
-            </CozyButton>
-            <CozyButton
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-extrabold uppercase tracking-normal text-lavender-500">
+                @{invite.inviterDisplayName} invited you
+              </p>
+              <p className="mt-1 text-sm font-bold leading-5 text-ink-800">
+                Join {inviteTarget(invite)}?
+              </p>
+              <p className="mt-1 flex items-center gap-1 text-[11px] font-bold text-ink-500">
+                <Clock className="size-3" /> {inviteTitle(invite)} expires soon
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full bg-blush-500 px-3 py-1.5 text-xs font-extrabold text-cream-50 shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-300 disabled:opacity-65",
+                    busyId === invite.id && "opacity-70",
+                  )}
+                  disabled={busyId === invite.id}
+                  onClick={() => void act(invite, "accepted")}
+                  type="button"
+                >
+                  Accept <ArrowRight className="size-3.5" />
+                </button>
+                <button
+                  className="inline-flex items-center gap-1 rounded-full border border-cream-300 bg-white/80 px-3 py-1.5 text-xs font-extrabold text-ink-600 transition hover:bg-cream-200 disabled:opacity-65"
+                  disabled={busyId === invite.id}
+                  onClick={() => void act(invite, "declined")}
+                  type="button"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+            <button
+              aria-label="Dismiss invite"
+              className="grid size-7 place-items-center rounded-full text-ink-500 transition-colors hover:bg-cream-200"
               disabled={busyId === invite.id}
               onClick={() => void act(invite, "declined")}
-              size="sm"
-              variant="warm"
+              type="button"
             >
-              <X /> Decline
-            </CozyButton>
-          </div>
-        </div>
-      ))}
+              <X className="size-4" />
+            </button>
+          </motion.div>
+        ))}
+      </AnimatePresence>
       {error && (
-        <p className="rounded-md border border-blush-300 bg-blush-100 px-3 py-2 text-xs font-extrabold text-blush-700">
+        <p className="pointer-events-auto rounded-md border border-blush-300 bg-blush-100 px-3 py-2 text-xs font-extrabold text-blush-700">
           {error}
         </p>
       )}

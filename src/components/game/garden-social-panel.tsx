@@ -32,7 +32,7 @@ type GardenSocialPanelProps = {
   onToggleDecorator?: (friendCode: string) => void;
   players: RealtimeRoomPlayer[];
   roomCode: string;
-  sendChat: (input: string) => { ok: true; text: string } | { ok: false; reason: string };
+  sendChat: (input: string) => Promise<{ ok: true; text: string } | { ok: false; reason: string }>;
   status: string;
 };
 
@@ -100,8 +100,8 @@ export function GardenSocialPanel({
     setNotice(`Could not invite ${friend.displayName}: ${result.reason}`);
   }
 
-  function submitMessage() {
-    const result = sendChat(input);
+  async function submitMessage() {
+    const result = await sendChat(input);
     // Only fire the speech cue when the message ACTUALLY broadcasts.
     // Firing on soft-block / hard-block / rate-limit rejections was
     // confusing — the user got a "ping" for a message that never sent.
@@ -273,13 +273,13 @@ export function GardenSocialPanel({
             onFocus={() => markTyping(true)}
             onKeyDown={(event) => {
               event.stopPropagation();
-              if (event.key === "Enter") submitMessage();
+              if (event.key === "Enter") void submitMessage();
             }}
             onKeyUp={(event) => event.stopPropagation()}
             placeholder="Say something cozy..."
             value={input}
           />
-          <CozyButton onClick={submitMessage} size="sm">
+          <CozyButton onClick={() => void submitMessage()} size="sm">
             <Send />
           </CozyButton>
         </div>

@@ -22,6 +22,7 @@ import { getSocialState, recordPlayedWith } from "@/lib/game/social";
 import { isBlocked, isLocallyQuarantined, readSafetyState, submitReport } from "@/lib/game/safety";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 import { recordActivity } from "@/lib/game/activity";
+import { getPlaceChatMessages, sendPlaceChatMessage } from "@/lib/game/place-chat";
 
 type UseRoomRealtimeOptions = {
   roomId: string;
@@ -109,6 +110,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
   const [status, setStatus] = useState("Solo room mode");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const localPlayerRef = useRef<RealtimeRoomPlayer | null>(null);
+  const realtimeReadyRef = useRef(false);
   // Latest friend code (refreshed on regen) — merged into broadcast
   // payloads so the next presence tick carries the new code without us
   // having to mutate the larger localPlayerRef.
@@ -141,6 +143,17 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
   const appendMessage = useCallback((message: GardenChatMessage) => {
     setMessages((current) => [message, ...current.filter((entry) => entry.id !== message.id)].slice(0, 24));
   }, []);
+  const mergeMessages = useCallback((incoming: GardenChatMessage[]) => {
+    setMessages((current) => {
+      const byId = new Map<string, GardenChatMessage>();
+      for (const message of [...incoming, ...current]) {
+        byId.set(message.id, message);
+      }
+      return Array.from(byId.values())
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 24);
+    });
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -170,6 +183,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     let customizationPoll: number | null = null;
     let heartbeatTimer: number | null = null;
     let placementPollTimer: number | null = null;
+    let chatPollTimer: number | null = null;
 
     async function connect() {
       setConnectionState("connecting");
@@ -217,6 +231,21 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         });
 
         channelRef.current = channel;
+        realtimeReadyRef.current = false;
+
+        async function refreshRoomChat() {
+          try {
+            const recent = await getPlaceChatMessages({
+              placeType: "room",
+              hostFriendCode: channelKey,
+              placeId: normalizedRoomId,
+              limit: 30,
+            });
+            if (!cancelled && recent.length > 0) mergeMessages(recent);
+          } catch {
+            /* Chat history falls back to live broadcast until the migration is applied. */
+          }
+        }
 
         async function publishLocalPresence() {
           const current = localPlayerRef.current;
@@ -459,11 +488,15 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           .subscribe(async (state) => {
             if (cancelled) return;
             if (state === "SUBSCRIBED") {
+              realtimeReadyRef.current = true;
               await publishLocalPresence();
+              void refreshRoomChat();
               if (heartbeatTimer) window.clearInterval(heartbeatTimer);
               heartbeatTimer = window.setInterval(() => void publishLocalPresence(), 2000);
               if (placementPollTimer) window.clearInterval(placementPollTimer);
               placementPollTimer = window.setInterval(() => void refreshRoomPlacements("poll"), 1200);
+              if (chatPollTimer) window.clearInterval(chatPollTimer);
+              chatPollTimer = window.setInterval(() => void refreshRoomChat(), 3000);
               setConnectionState("connected");
               setStatus(`Live in room ${roomCode}`);
               recordRoomRealtimeDiagnostic({
@@ -474,6 +507,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
                 roomPlacementVersion: placementsVersionRef.current,
               });
             } else if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") {
+              realtimeReadyRef.current = false;
               setConnectionState("error");
               setStatus("Online room visits could not connect. The room still works.");
               recordRoomRealtimeDiagnostic({
@@ -484,6 +518,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
                 roomId: normalizedRoomId,
               });
             } else if (state === "CLOSED") {
+              realtimeReadyRef.current = false;
               setConnectionState("offline");
               setStatus("Room visit connection closed.");
               recordRoomRealtimeDiagnostic({
@@ -556,15 +591,18 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       heartbeatTimer = null;
       if (placementPollTimer) window.clearInterval(placementPollTimer);
       placementPollTimer = null;
+      if (chatPollTimer) window.clearInterval(chatPollTimer);
+      chatPollTimer = null;
       const channel = channelRef.current;
       if (channel) {
         void getSupabaseBrowserClient().removeChannel(channel);
       }
       channelRef.current = null;
+      realtimeReadyRef.current = false;
       localPlayerRef.current = null;
       setPlayers([]);
     };
-  }, [appendMessage, channelKey, normalizedRoomId, roomCode, roomName]);
+  }, [appendMessage, channelKey, mergeMessages, normalizedRoomId, roomCode, roomName]);
 
   const sendMove = useCallback((position: {
     x: number;
@@ -801,7 +839,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     [channelKey, normalizedRoomId],
   );
 
-  const sendChat = useCallback((input: string): ChatModerationResult => {
+  const sendChat = useCallback(async (input: string): Promise<ChatModerationResult> => {
     const safety = readSafetyState();
     if (isLocallyQuarantined(safety)) {
       return {
@@ -829,9 +867,18 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       return moderation;
     }
 
+    const channel = channelRef.current;
+    if (isSupabaseConfigured() && (!channel || !realtimeReadyRef.current)) {
+      return {
+        ok: false,
+        severity: "soft-block",
+        reason: "Room chat is reconnecting. Try again in a moment.",
+      };
+    }
+
     const localPlayer = localPlayerRef.current;
     const social = getSocialState();
-    const message: GardenChatMessage = {
+    let message: GardenChatMessage = {
       id: crypto.randomUUID(),
       playerId: localPlayer?.id ?? createGuestId(),
       displayName: localPlayer?.displayName ?? getCachedPublicUsername(),
@@ -841,14 +888,33 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       createdAt: Date.now(),
     };
 
+    if (isSupabaseConfigured()) {
+      try {
+        const savedMessage = await sendPlaceChatMessage({
+          placeType: "room",
+          hostFriendCode: channelKey,
+          placeId: normalizedRoomIdRef.current,
+          body: moderation.text,
+        });
+        if (savedMessage) {
+          message = savedMessage;
+        }
+      } catch (error) {
+        return {
+          ok: false,
+          severity: "soft-block",
+          reason: error instanceof Error ? error.message : "Room chat could not sync.",
+        };
+      }
+    }
+
     appendMessage(message);
     window.dispatchEvent(new CustomEvent("hearthaven:room-chat-bubble", { detail: message }));
 
-    const channel = channelRef.current;
     if (channel) void channel.send({ type: "broadcast", event: "room_chat", payload: message });
 
     return moderation;
-  }, [appendMessage]);
+  }, [appendMessage, channelKey]);
 
   return {
     approvedDecoratorCodes,

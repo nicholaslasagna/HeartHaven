@@ -29,7 +29,7 @@ import { sendPlaceInviteToFriend } from "@/lib/game/place-invites";
 import { cn } from "@/lib/utils";
 
 const partySizes = [2, 4, 6, 8] as const;
-const friendCodePattern = /^HH-[A-Z]{4,6}-[0-9]{2,4}$/;
+const joinCodePattern = /^HH-[A-Z]{5,6}-[0-9]{3,4}$/;
 
 function extractLobbyCode(value: string) {
   const trimmed = value.trim();
@@ -53,8 +53,8 @@ function extractLobbyCode(value: string) {
 function startErrorCopy(reason: string, maxPlayers?: number, occupied?: number, ready?: number) {
   if (reason === "no-lobby") return "Create a lobby first.";
   if (reason === "no-game") return "Pick a game first.";
-  if (reason === "not-full") return `Waiting for players: ${occupied ?? 0}/${maxPlayers ?? 0} seats filled.`;
-  if (reason === "not-ready") return `Waiting for ready: ${ready ?? 0}/${maxPlayers ?? 0} players ready.`;
+  if (reason === "empty") return "Your host seat is still loading.";
+  if (reason === "not-ready") return `Waiting for ready: ${ready ?? 0}/${occupied ?? maxPlayers ?? 0} seated players ready.`;
   if (reason === "not-host") return "Only the host can start.";
   return "The party cannot start yet.";
 }
@@ -66,7 +66,7 @@ function actionErrorCopy(reason: string) {
     return "The lobby code collided. Try opening the lobby again.";
   }
   if (reason.toLowerCase().includes("no active lobby")) return "That friend does not have an open lobby right now.";
-  if (reason.toLowerCase().includes("invalid")) return "Use a HeartHaven friend code like HH-ABCD-123.";
+  if (reason.toLowerCase().includes("invalid")) return "Use a HeartHaven lobby code or invite link.";
   return reason || "That action could not finish.";
 }
 
@@ -112,9 +112,9 @@ export function GamesClient() {
     const code = extractLobbyCode(join);
     if (handledInviteCodeRef.current === code) return;
     handledInviteCodeRef.current = code;
-    if (!friendCodePattern.test(code)) {
+    if (!joinCodePattern.test(code)) {
       queueMicrotask(() => {
-        setNotice({ kind: "error", message: "That invite link is not a valid HeartHaven friend code." });
+        setNotice({ kind: "error", message: "That invite link is not a valid HeartHaven lobby code." });
       });
       router.replace("/app/games", { scroll: false });
       return;
@@ -167,19 +167,20 @@ export function GamesClient() {
     });
     setNotice({
       kind: result.ok ? "ok" : "error",
-      message: result.ok ? `${game.title} picked. Fill the seats and ready up.` : actionErrorCopy(result.reason),
+      message: result.ok ? `${game.title} picked. Invite friends or ready up to play solo.` : actionErrorCopy(result.reason),
     });
   }
 
   function copyLobbyLink() {
     const code = lobby?.host_friend_code;
-    if (!code) return;
-    const link = `${window.location.origin}/app/games?join=${encodeURIComponent(code)}`;
+    const inviteCode = lobby?.invite_code || code;
+    if (!inviteCode) return;
+    const link = `${window.location.origin}/app/games?join=${encodeURIComponent(inviteCode)}`;
     void copyText(link, "party-link");
   }
 
   async function inviteFriend(friend: Friend) {
-    const code = lobby?.host_friend_code;
+    const code = lobby?.invite_code || lobby?.host_friend_code;
     if (!code) {
       setNotice({ kind: "error", message: "Create a lobby before inviting friends." });
       return;
@@ -189,7 +190,7 @@ export function GamesClient() {
       friendCode: friend.code,
       inviteType: "party",
       targetSessionId: lobby.session_id,
-      targetUrl: "/app/games",
+      targetUrl: `/app/games?join=${encodeURIComponent(code)}`,
     });
     if (!result.ok) {
       setNotice({ kind: "error", message: actionErrorCopy(result.reason) });
@@ -202,8 +203,8 @@ export function GamesClient() {
 
   async function requestToJoin() {
     const code = extractLobbyCode(joinInput);
-    if (!friendCodePattern.test(code)) {
-      setNotice({ kind: "error", message: "Paste a friend's lobby link or friend code like HH-ABCD-123." });
+    if (!joinCodePattern.test(code)) {
+      setNotice({ kind: "error", message: "Paste a lobby link, lobby code, or friend code." });
       return;
     }
 
@@ -326,7 +327,7 @@ export function GamesClient() {
                 </Link>
               </CozyButton>
               <p className="rounded-md border border-cream-300 bg-white/65 px-3 py-2 text-xs font-extrabold text-ink-600">
-                Lobby code: <span className="font-mono">{lobby.host_friend_code}</span>
+                Lobby code: <span className="font-mono">{lobby.invite_code || lobby.host_friend_code}</span>
               </p>
               <div className="rounded-lg border border-blush-300/40 bg-blush-100/45 p-3">
                 <div className="flex items-center justify-between gap-2">
@@ -373,7 +374,7 @@ export function GamesClient() {
                   setJoinInput(event.target.value);
                   if (notice.kind !== "idle") setNotice({ kind: "idle", message: "" });
                 }}
-                placeholder="Paste invite link or friend code"
+                placeholder="Paste lobby invite link or lobby code"
                 className="min-w-0 rounded-md border border-cream-300 bg-white p-2.5 text-sm font-bold text-ink-900 placeholder:font-normal focus:border-lavender-300 focus:outline-none"
               />
               <CozyButton onClick={() => void requestToJoin()}>
@@ -406,7 +407,7 @@ export function GamesClient() {
             {selectedGame?.title ?? lobby?.selected_game_label ?? "Pick a game first."}
             <span className="mt-2 block text-xs font-extrabold text-ink-600">
               {party.startStatus.ok
-                ? "Everyone is ready. Host can start."
+                ? "Seated players are ready. Host can start."
                 : startErrorCopy(party.startStatus.reason, totalSeats, occupiedCount, readyCount)}
             </span>
           </div>
@@ -455,7 +456,7 @@ export function GamesClient() {
               <h2 className="font-display text-2xl text-ink-900">Lobby</h2>
             </div>
             <Badge variant="garden">
-              {readyCount}/{totalSeats} ready
+              {readyCount}/{Math.max(occupiedCount, 1)} ready
             </Badge>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

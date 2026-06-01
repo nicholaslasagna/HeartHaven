@@ -46,6 +46,7 @@ export type LobbyState = {
   session_id: string;
   host_profile_id: string;
   host_friend_code: string;
+  invite_code: string;
   status: "waiting" | "active" | "complete" | "cancelled";
   max_players: number;
   selected_game_key: string | null;
@@ -66,7 +67,7 @@ export type LobbyJoinRequest = {
 
 export type StartStatus =
   | { ok: true }
-  | { ok: false; reason: "not-host" | "no-game" | "no-lobby" | "not-full" | "not-ready" };
+  | { ok: false; reason: "not-host" | "no-game" | "no-lobby" | "empty" | "not-ready" };
 
 type Result<T = void> =
   | ({ ok: true } & (T extends void ? Record<string, never> : { value: T }))
@@ -125,7 +126,7 @@ export function useServerPartyLobby(initialSize = 4) {
       const { data: hostedSessions } = await supabase
         .from("game_sessions")
         .select(
-          "id, host_id, host_friend_code, status, max_players, selected_game_key, selected_game_href, selected_game_label, updated_at, created_at",
+          "id, host_id, host_friend_code, invite_code, status, max_players, selected_game_key, selected_game_href, selected_game_label, updated_at, created_at",
         )
         .eq("host_id", user.id)
         .in("status", ["waiting", "active"])
@@ -147,7 +148,7 @@ export function useServerPartyLobby(initialSize = 4) {
         ? await supabase
             .from("game_sessions")
             .select(
-              "id, host_id, host_friend_code, status, max_players, selected_game_key, selected_game_href, selected_game_label, updated_at, created_at",
+              "id, host_id, host_friend_code, invite_code, status, max_players, selected_game_key, selected_game_href, selected_game_label, updated_at, created_at",
             )
             .in("id", seatedSessionIds)
             .in("status", ["waiting", "active"])
@@ -185,6 +186,7 @@ export function useServerPartyLobby(initialSize = 4) {
         session_id: session.id,
         host_profile_id: session.host_id,
         host_friend_code: session.host_friend_code ?? "",
+        invite_code: session.invite_code ?? session.host_friend_code ?? "",
         status: session.status as LobbyState["status"],
         max_players: session.max_players,
         selected_game_key: session.selected_game_key,
@@ -198,14 +200,19 @@ export function useServerPartyLobby(initialSize = 4) {
       // this, but we skip the query when we aren't the host to save
       // bandwidth.
       if (session.host_id === user.id) {
-        const { data: requests } = await supabase
-          .from("lobby_join_requests")
-          .select(
-            "id, session_id, requester_profile_id, requester_friend_code, requester_display_name, status, created_at",
-          )
-          .eq("session_id", session.id)
-          .eq("status", "pending")
-          .order("created_at", { ascending: true });
+        const { data: rpcRequests, error: rpcRequestError } = await supabase.rpc("get_my_lobby_join_requests", {
+          p_session_id: session.id,
+        });
+        const requests = rpcRequestError
+          ? (await supabase
+              .from("lobby_join_requests")
+              .select(
+                "id, session_id, requester_profile_id, requester_friend_code, requester_display_name, status, created_at",
+              )
+              .eq("session_id", session.id)
+              .eq("status", "pending")
+              .order("created_at", { ascending: true })).data
+          : rpcRequests;
         setJoinRequests(Array.isArray(requests) ? (requests as LobbyJoinRequest[]) : []);
       } else {
         setJoinRequests([]);
@@ -315,12 +322,27 @@ export function useServerPartyLobby(initialSize = 4) {
 
     void start();
 
+    const pollTimer = window.setInterval(() => {
+      void hydrate();
+    }, 2500);
+    const refreshOnFocus = () => {
+      void hydrate();
+    };
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") void hydrate();
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+
     return () => {
       cancelled = true;
       if (channelRef.current) {
         void getSupabaseBrowserClient().removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      window.clearInterval(pollTimer);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, [hydrate, router]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -502,9 +524,9 @@ export function useServerPartyLobby(initialSize = 4) {
     if (!lobby) return { ok: false, reason: "no-lobby" };
     if (lobby.host_profile_id !== userId) return { ok: false, reason: "not-host" };
     if (!lobby.selected_game_href) return { ok: false, reason: "no-game" };
-    if (lobby.seats.length < lobby.max_players) return { ok: false, reason: "not-full" };
+    if (lobby.seats.length < 1) return { ok: false, reason: "empty" };
     const ready = lobby.seats.filter((seat) => seat.ready).length;
-    if (ready < lobby.max_players) return { ok: false, reason: "not-ready" };
+    if (ready < lobby.seats.length) return { ok: false, reason: "not-ready" };
     return { ok: true };
   }, [lobby, userId]);
 

@@ -30,6 +30,7 @@ export type CompanionRecord = {
 export type CompanionRosterState = {
   companions: CompanionRecord[];
   activeId: string;
+  updatedAt?: number;
 };
 
 function normalizeName(value: string | null | undefined, fallback = "Casper") {
@@ -86,6 +87,7 @@ function rawRead(): CompanionRosterState {
     return {
       companions: safeCompanions.map((companion) => ({ ...companion, active: companion.id === activeId })),
       activeId,
+      updatedAt: Number(parsed.updatedAt ?? 0),
     };
   } catch {
     const starter = starterCompanion();
@@ -95,8 +97,9 @@ function rawRead(): CompanionRosterState {
 
 function rawWrite(state: CompanionRosterState) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(COMPANION_ROSTER_KEY, JSON.stringify(state));
-  window.dispatchEvent(new CustomEvent(COMPANION_ROSTER_EVENT, { detail: state }));
+  const next = { ...state, updatedAt: Date.now() };
+  window.localStorage.setItem(COMPANION_ROSTER_KEY, JSON.stringify(next));
+  window.dispatchEvent(new CustomEvent(COMPANION_ROSTER_EVENT, { detail: next }));
 }
 
 function activatePet(companion: CompanionRecord) {
@@ -107,6 +110,7 @@ function activatePet(companion: CompanionRecord) {
     toneId: companion.toneId,
     accessory: companion.accessory,
   });
+  window.dispatchEvent(new CustomEvent("hearthaven:pet-vitals-changed", { detail: { companionId: companion.id } }));
 }
 
 export function getCompanionRoster(): CompanionRosterState {
