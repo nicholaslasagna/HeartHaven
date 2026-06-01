@@ -78,6 +78,13 @@ function withSessionParam(href: string, sessionId: string) {
   return `${href}${href.includes("?") ? "&" : "?"}session=${encodeURIComponent(sessionId)}`;
 }
 
+function friendlyPartyError(message: string) {
+  if (/session_id.*ambiguous|column reference.*session_id/i.test(message)) {
+    return "Lobby setup needs the latest server update. Apply migration 0054, then try again.";
+  }
+  return message;
+}
+
 export function useServerPartyLobby(initialSize = 4) {
   const router = useRouter();
   const [lobby, setLobby] = useState<LobbyState | null>(null);
@@ -356,7 +363,7 @@ export function useServerPartyLobby(initialSize = 4) {
       const { error: rpcError } = await supabase.rpc("create_party_lobby", { p_max_players: maxPlayers });
       if (rpcError) {
         recordMultiplayerRpc("create_party_lobby", rpcError);
-        return { ok: false, reason: rpcError.message };
+        return { ok: false, reason: friendlyPartyError(rpcError.message) };
       }
       recordMultiplayerRpc("create_party_lobby");
       await hydrate();
@@ -375,7 +382,7 @@ export function useServerPartyLobby(initialSize = 4) {
       });
       if (rpcError) {
         recordMultiplayerRpc("request_join_party", rpcError);
-        return { ok: false, reason: rpcError.message };
+        return { ok: false, reason: friendlyPartyError(rpcError.message) };
       }
       recordMultiplayerRpc("request_join_party");
       const requestId = typeof data === "string" ? data : null;

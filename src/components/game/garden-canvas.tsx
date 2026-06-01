@@ -1850,7 +1850,8 @@ export function GardenCanvas({
               const rect = this.game.canvas.getBoundingClientRect();
               const localX = ((detail.clientX - rect.left) / rect.width) * GARDEN_WIDTH;
               const localY = ((detail.clientY - rect.top) / rect.height) * GARDEN_HEIGHT;
-              point = this.constrainToWorldBounds(this.cameras.main.scrollX + localX, this.cameras.main.scrollY + localY);
+              const worldPoint = this.cameras.main.getWorldPoint(localX, localY);
+              point = this.constrainToWorldBounds(worldPoint.x, worldPoint.y);
             }
             this.addDecorFromDrawer(kind, point);
           };
@@ -3149,7 +3150,9 @@ export function GardenCanvas({
           this.applyPendingDecorStyle(decoration.id);
 
           container.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            if (pointer.rightButtonDown()) return;
             pointer.event.stopPropagation();
+            container.setData("wasSelectedOnPointerDown", this.selectedDecor?.id === decoration.id);
             this.selectDecor(decoration.id);
           });
           container.on("pointerover", () => {
@@ -3182,6 +3185,12 @@ export function GardenCanvas({
           });
           container.on("pointerup", () => {
             if (this.decorDragging) return;
+            const wasSelected = Boolean(container.getData("wasSelectedOnPointerDown"));
+            container.setData("wasSelectedOnPointerDown", false);
+            if (!wasSelected) {
+              setStatus(`${decoration.label} selected. Use the menu, drag it, or tap again to interact.`);
+              return;
+            }
             const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? decoration.x, this.avatar?.y ?? decoration.y, decoration.x, decoration.y);
             if (distance > 180 && this.avatar) {
               const pathPoint = this.constrainAvatarToWalkable(decoration.x, decoration.y + 62);

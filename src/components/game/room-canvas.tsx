@@ -89,6 +89,10 @@ type RoomCanvasProps = {
   onRoomEmote?: (emote: RoomEmote) => void;
   onRoomNavigate?: (href: string) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
+  onRoomItemDrop?: (
+    itemId: string,
+    point: { x: number; y: number },
+  ) => void;
 };
 
 type FurnitureKind =
@@ -213,6 +217,7 @@ export function RoomCanvas({
   onRoomEmote,
   onRoomNavigate,
   onPlacementsChange,
+  onRoomItemDrop,
   worldWidth: worldWidthProp,
   worldHeight: worldHeightProp,
   roomPortals,
@@ -230,7 +235,11 @@ export function RoomCanvas({
   const placementsRef = useRef(placements);
   const pendingPlacementIdsRef = useRef(pendingPlacementIds);
   const onPlacementsChangeRef = useRef(onPlacementsChange);
+  const onRoomItemDropRef = useRef(onRoomItemDrop);
   const onRoomNavigateRef = useRef(onRoomNavigate);
+  const roomSceneRef = useRef<{
+    dropPointFromClient: (clientX: number, clientY: number, placementType: "floor" | "wall") => { x: number; y: number };
+  } | null>(null);
   const [status, setStatus] = useState("Lighting the Moonlit Loft");
   const [selected, setSelected] = useState("No item selected");
   const { activeEvent } = useSeasonalEvent();
@@ -243,6 +252,10 @@ export function RoomCanvas({
   useEffect(() => {
     onPlacementsChangeRef.current = onPlacementsChange;
   }, [onPlacementsChange]);
+
+  useEffect(() => {
+    onRoomItemDropRef.current = onRoomItemDrop;
+  }, [onRoomItemDrop]);
 
   useEffect(() => {
     onRoomNavigateRef.current = onRoomNavigate;
@@ -397,6 +410,7 @@ export function RoomCanvas({
         }
 
         create() {
+          roomSceneRef.current = this;
           this.cameras.main.setBackgroundColor("#fbf3e2");
           // Big-room camera setup. Setting the camera bounds to the
           // configured world size lets the 960×600 viewport scroll
@@ -443,6 +457,23 @@ export function RoomCanvas({
             .setDepth(5000);
 
           setStatus(activeEvent?.roomMessage ?? "Click the floor to move. Hover, drag, click, and flip furniture.");
+        }
+
+        dropPointFromClient(clientX: number, clientY: number, placementType: "floor" | "wall") {
+          const rect = this.game.canvas.getBoundingClientRect();
+          const localX = ((clientX - rect.left) / rect.width) * ROOM_WIDTH;
+          const localY = ((clientY - rect.top) / rect.height) * ROOM_HEIGHT;
+          const worldPoint = this.cameras.main.getWorldPoint(localX, localY);
+
+          if (placementType === "wall") {
+            const wallTop = Math.round(worldHeight * 0.4);
+            return {
+              x: PhaserModule.Math.Clamp(worldPoint.x, Math.round(worldWidth * 0.08), Math.round(worldWidth * 0.92)),
+              y: PhaserModule.Math.Clamp(worldPoint.y, 92, Math.max(120, wallTop - 58)),
+            };
+          }
+
+          return this.constrainToFloor(worldPoint.x, worldPoint.y);
         }
 
         update(_time: number, delta: number) {
@@ -852,6 +883,7 @@ export function RoomCanvas({
           });
 
           container.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            if (pointer.rightButtonDown()) return;
             pointer.event.stopPropagation();
             this.dragStarted = false;
             playCozyCue("place");
@@ -1109,7 +1141,7 @@ export function RoomCanvas({
             // Scales with the world so big rooms don't accidentally
             // ignore most of the upper half.
             if (pointer.y < worldHeight * 0.33 || this.dragStarted) return;
-            const target = this.constrainToFloor(pointer.x, pointer.y);
+            const target = this.constrainToFloor(pointer.worldX, pointer.worldY);
             this.clearFurnitureInteraction("keeper");
             if (this.playMode === "companion") this.clearFurnitureInteraction("companion");
             this.target = new PhaserModule.Math.Vector2(target.x, target.y);
@@ -2442,56 +2474,23 @@ export function RoomCanvas({
             .setOrigin(0.5);
 
           const flipX = canEditRoom ? -40 : 0;
-          const flipButton = this.add
-            .text(flipX, bubbleHeight / 2 - 22, "Flip", {
-              color: "#8E70BD",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "12px",
-              fontStyle: "900",
-              backgroundColor: "#EFE6F7",
-              padding: { x: 9, y: 5 },
-            })
-            .setOrigin(0.5)
-            .setInteractive({ useHandCursor: true });
-          flipButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            pointer.event.stopPropagation();
-            this.toggleSelectedFurnitureFacing();
-          });
-
-          const downButton = this.add
-            .text(-124, bubbleHeight / 2 - 22, "Depth -", {
-              color: "#5B3F3F",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "12px",
-              fontStyle: "900",
-              backgroundColor: "#F5E9D0",
-              padding: { x: 10, y: 5 },
-            })
-            .setOrigin(0.5)
-            .setInteractive({ useHandCursor: true });
-          downButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            pointer.event.stopPropagation();
-            this.changeSelectedLayer(-1);
-          });
-
-          const upButton = this.add
-            .text(124, bubbleHeight / 2 - 22, "Depth +", {
-              color: "#5B3F3F",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "12px",
-              fontStyle: "900",
-              backgroundColor: "#E4EFD7",
-              padding: { x: 10, y: 5 },
-            })
-            .setOrigin(0.5)
-            .setInteractive({ useHandCursor: true });
-          upButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            pointer.event.stopPropagation();
-            this.changeSelectedLayer(1);
-          });
-
-          const children: Phaser.GameObjects.GameObject[] = [bg, label, downButton, flipButton, upButton];
+          const children: Phaser.GameObjects.GameObject[] = [bg, label];
           if (canEditRoom) {
+            const flipButton = this.add
+              .text(flipX, bubbleHeight / 2 - 22, "Flip", {
+                color: "#8E70BD",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "12px",
+                fontStyle: "900",
+                backgroundColor: "#EFE6F7",
+                padding: { x: 12, y: 6 },
+              })
+              .setOrigin(0.5)
+              .setInteractive({ useHandCursor: true });
+            flipButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+              pointer.event.stopPropagation();
+              this.toggleSelectedFurnitureFacing();
+            });
             const removeButton = this.add
               .text(44, bubbleHeight / 2 - 22, "Remove", {
                 color: "#9F4D5D",
@@ -2499,7 +2498,7 @@ export function RoomCanvas({
                 fontSize: "12px",
                 fontStyle: "900",
                 backgroundColor: "#FCE6E9",
-                padding: { x: 10, y: 5 },
+                padding: { x: 12, y: 6 },
               })
               .setOrigin(0.5)
               .setInteractive({ useHandCursor: true });
@@ -2507,7 +2506,7 @@ export function RoomCanvas({
               pointer.event.stopPropagation();
               this.removeSelectedFurniture();
             });
-            children.push(removeButton);
+            children.push(flipButton, removeButton);
           }
 
           actions.forEach((action, index) => {
@@ -2761,6 +2760,7 @@ export function RoomCanvas({
 
     return () => {
       destroyed = true;
+      roomSceneRef.current = null;
       game?.destroy(true);
     };
   }, [activeEvent, canEditRoom, onAvatarMove, onRoomEmote, roomName, roomPortals, roomSurfaces, roomTheme, worldHeight, worldWidth]);
@@ -2785,6 +2785,27 @@ export function RoomCanvas({
       </div>
       <div
         ref={mountRef}
+        onDragOver={(event) => {
+          if (!canEditRoom || !onRoomItemDropRef.current) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }}
+        onDrop={(event) => {
+          if (!canEditRoom || !onRoomItemDropRef.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const itemId =
+            event.dataTransfer.getData("application/hearthaven-room-item") ||
+            event.dataTransfer.getData("text/plain");
+          if (!itemId) return;
+          const placementType =
+            event.dataTransfer.getData("application/hearthaven-room-item-placement-type") === "wall"
+              ? "wall"
+              : "floor";
+          const point = roomSceneRef.current?.dropPointFromClient(event.clientX, event.clientY, placementType);
+          if (!point) return;
+          onRoomItemDropRef.current(itemId, point);
+        }}
         aria-label="Interactive 2.5D room canvas with player movement, Casper, and draggable furniture"
         className="mx-auto block aspect-[960/600] w-full min-w-0 max-w-[960px] overflow-hidden bg-cream-100 [&>canvas]:!block [&>canvas]:!h-full [&>canvas]:!max-w-full [&>canvas]:!w-full"
         role="application"

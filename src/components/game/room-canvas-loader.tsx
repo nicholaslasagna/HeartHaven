@@ -42,6 +42,7 @@ type RoomCanvasLoaderProps = {
   onRoomEmote?: (emote: RoomEmote) => void;
   onRoomNavigate?: (href: string) => void;
   onPlacementsChange?: (placements: RoomPlacement[]) => void;
+  onRoomItemDrop?: (itemId: string, point: { x: number; y: number }) => void;
 };
 
 export function RoomCanvasLoader({
@@ -59,6 +60,7 @@ export function RoomCanvasLoader({
   onRoomEmote,
   onRoomNavigate,
   onPlacementsChange,
+  onRoomItemDrop,
 }: RoomCanvasLoaderProps) {
   const [keeperReady, setKeeperReady] = useState(false);
 
@@ -86,6 +88,7 @@ export function RoomCanvasLoader({
       onAvatarMove={onAvatarMove}
       onRoomNavigate={onRoomNavigate}
       onPlacementsChange={onPlacementsChange}
+      onRoomItemDrop={onRoomItemDrop}
       onRoomEmote={onRoomEmote}
       pendingPlacementIds={pendingPlacementIds}
       placements={placements}

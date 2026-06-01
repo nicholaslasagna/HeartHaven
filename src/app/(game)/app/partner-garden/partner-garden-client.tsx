@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HeartHandshake, LockKeyhole, Sparkles, Sun } from "lucide-react";
+import { Check, HeartHandshake, Loader2, LockKeyhole, Send, Sparkles, Sun, UserPlus, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
@@ -14,8 +14,10 @@ import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner
 import { Badge } from "@/components/ui/badge";
 import { recordActivity } from "@/lib/game/activity";
 import { getSocialState, isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
+import { useSocial } from "@/lib/game/use-social";
 import { mergeGardenPlotsWithDefaults, type GardenPlotState } from "@/lib/game/garden-plots";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
+import { usePartnerLink } from "@/lib/game/use-partner-link";
 import {
   clearPendingGardenSave,
   queuePendingGardenSave,
@@ -84,6 +86,11 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
   const [message, setMessage] = useState(
     "First time? Sunshine spends one daily pulse to warm the shared garden, water every visible plot, cheer your companion, and add a tiny care reward.",
   );
+  const social = useSocial();
+  const partner = usePartnerLink();
+  const [partnerCode, setPartnerCode] = useState("");
+  const [partnerNotice, setPartnerNotice] = useState("Choose one trusted keeper. Partner-only memories and the shared garden unlock after they accept.");
+  const [partnerBusy, setPartnerBusy] = useState<string | null>(null);
   useEffect(() => {
     if (!visitTarget || !isFriendCodeShape(visitTarget)) return;
     recordPlayedWith({
@@ -278,6 +285,44 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
     setMessage("Sunshine sent: every visible plot gets a warm watering pulse, your companion cheers, and your wallet receives +18 coins and +1 heart.");
   }
 
+  async function requestPartnerLink(targetCode?: string) {
+    const code = normalizeFriendCode(targetCode ?? partnerCode);
+    if (!isFriendCodeShape(code)) {
+      setPartnerNotice("Enter a valid friend code like HH-ABCDE-123.");
+      return;
+    }
+    setPartnerBusy(`request:${code}`);
+    const result = await partner.requestPartner(code);
+    setPartnerBusy(null);
+    if (!result.ok) {
+      setPartnerNotice(result.reason === "offline" ? "Partner linking needs online play enabled." : result.reason);
+      return;
+    }
+    setPartnerCode("");
+    setPartnerNotice("Partner invite sent. They will see it here and can accept from their Partner page.");
+  }
+
+  async function respondToPartnerLink(accept: boolean) {
+    if (!partner.link) return;
+    setPartnerBusy(accept ? "accept" : "decline");
+    const result = accept
+      ? await partner.acceptPartner(partner.link.link_id)
+      : await partner.declinePartner(partner.link.link_id);
+    setPartnerBusy(null);
+    if (!result.ok) {
+      setPartnerNotice(result.reason);
+      return;
+    }
+    setPartnerNotice(accept ? "Partner link accepted. Your shared garden is ready." : "Partner invite declined.");
+  }
+
+  async function unlinkPartner() {
+    setPartnerBusy("unlink");
+    const result = await partner.unlinkPartner();
+    setPartnerBusy(null);
+    setPartnerNotice(result.ok ? "Partner link ended." : result.reason);
+  }
+
   return (
     <div className="grid gap-5">
       <SeasonalEventBanner compact />
@@ -345,13 +390,106 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
             <h2 className="font-display text-2xl text-ink-900">Partner link</h2>
           </div>
           <p className="mt-2 text-sm font-semibold leading-6 text-ink-700">
-            Once connected, this page will open the accepted partner link and shared garden.
+            Connect with one trusted keeper. They receive the invite here, then both of you share this garden.
           </p>
           <div className="mt-4 rounded-lg border border-lavender-300/50 bg-lavender-100 p-3 text-sm font-extrabold text-ink-700">
             <LockKeyhole className="mr-2 inline size-4 text-lavender-500" />
             Private love note and memory unlocks stay visible only to the linked partners.
           </div>
-          <CozyButton className="mt-4" variant="warm">Manage partner invite</CozyButton>
+          {partner.loading ? (
+            <div className="mt-4 flex items-center gap-2 rounded-lg border border-cream-300 bg-cream-50 px-3 py-3 text-sm font-extrabold text-ink-600">
+              <Loader2 className="size-4 animate-spin text-lavender-500" /> Checking partner link...
+            </div>
+          ) : partner.isPartnered && partner.link ? (
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-lg border border-garden-300/50 bg-garden-100/75 p-3">
+                <p className="text-xs font-extrabold uppercase tracking-normal text-garden-700">Linked partner</p>
+                <p className="mt-1 font-display text-2xl text-ink-900">@{partner.link.other_display_name}</p>
+                <p className="font-mono text-xs font-bold text-ink-500">{partner.link.other_friend_code}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <CozyButton onClick={() => setPartnerNotice("You are already in your shared garden.")}>
+                  <HeartHandshake /> Shared garden active
+                </CozyButton>
+                <CozyButton disabled={partnerBusy === "unlink"} onClick={() => void unlinkPartner()} variant="secondary">
+                  <X /> End link
+                </CozyButton>
+              </div>
+            </div>
+          ) : partner.pendingIncoming && partner.link ? (
+            <div className="mt-4 rounded-lg border border-blush-300/50 bg-blush-100/65 p-3">
+              <p className="text-xs font-extrabold uppercase tracking-normal text-blush-600">Partner invite received</p>
+              <p className="mt-1 text-sm font-bold text-ink-800">
+                @{partner.link.other_display_name} wants to link gardens with you.
+              </p>
+              <p className="font-mono text-xs font-bold text-ink-500">{partner.link.other_friend_code}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <CozyButton disabled={partnerBusy === "accept"} onClick={() => void respondToPartnerLink(true)}>
+                  <Check /> Accept
+                </CozyButton>
+                <CozyButton disabled={partnerBusy === "decline"} onClick={() => void respondToPartnerLink(false)} variant="secondary">
+                  <X /> Decline
+                </CozyButton>
+              </div>
+            </div>
+          ) : partner.pendingOutgoing && partner.link ? (
+            <div className="mt-4 rounded-lg border border-honey-500/35 bg-honey-100/70 p-3">
+              <p className="text-xs font-extrabold uppercase tracking-normal text-honey-700">Invite sent</p>
+              <p className="mt-1 text-sm font-bold text-ink-800">
+                Waiting for @{partner.link.other_display_name} to accept.
+              </p>
+              <p className="font-mono text-xs font-bold text-ink-500">{partner.link.other_friend_code}</p>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-3">
+              <div className="grid gap-2 rounded-lg border border-cream-300 bg-cream-50/80 p-3">
+                <label className="text-xs font-extrabold uppercase tracking-normal text-ink-500" htmlFor="partner-code">
+                  Partner friend code
+                </label>
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <input
+                    className="min-w-0 rounded-md border border-cream-300 bg-white px-3 py-2 text-sm font-bold text-ink-900 placeholder:font-normal focus:border-lavender-300 focus:outline-none"
+                    id="partner-code"
+                    onChange={(event) => setPartnerCode(event.target.value)}
+                    placeholder="HH-ABCDE-123"
+                    value={partnerCode}
+                  />
+                  <CozyButton disabled={partnerBusy?.startsWith("request")} onClick={() => void requestPartnerLink()} variant="warm">
+                    <Send /> Send
+                  </CozyButton>
+                </div>
+              </div>
+              {social.friends.length > 0 && (
+                <div className="rounded-lg border border-blush-300/40 bg-blush-100/45 p-3">
+                  <p className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-blush-600">
+                    <UserPlus className="size-3.5" /> Pick from friends
+                  </p>
+                  <div className="grid max-h-44 gap-2 overflow-y-auto pr-1">
+                    {social.friends.map((friend) => (
+                      <button
+                        className="flex items-center justify-between gap-2 rounded-md border border-white/70 bg-white/80 px-2.5 py-2 text-left transition hover:-translate-y-0.5 hover:border-blush-300"
+                        disabled={partnerBusy === `request:${friend.code}`}
+                        key={friend.code}
+                        onClick={() => void requestPartnerLink(friend.code)}
+                        type="button"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-extrabold text-ink-900">{friend.displayName}</span>
+                          <span className="block font-mono text-[11px] font-bold text-ink-500">{friend.code}</span>
+                        </span>
+                        <span className="rounded-full bg-blush-200 px-3 py-1 text-xs font-extrabold text-blush-700">
+                          Link
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <p className="mt-3 rounded-md border border-cream-300 bg-white/75 px-3 py-2 text-xs font-extrabold text-ink-600">
+            {partnerNotice}
+          </p>
         </CozyCard>
       </div>
     </div>

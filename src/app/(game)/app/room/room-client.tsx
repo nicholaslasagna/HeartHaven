@@ -45,10 +45,6 @@ const ROOM_EXPANSION_STORAGE_PREFIX = "hearthaven:room-expansions:v1:";
 const ROOM_CANVAS_WIDTH = 960;
 const ROOM_CANVAS_HEIGHT = 600;
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function getRoomStorageKey(roomId: string) {
   return `${ROOM_STORAGE_PREFIX}${roomId}`;
 }
@@ -136,7 +132,6 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   const [progression, setProgression] = useState(() => readPlayerProgression());
   const [roomSurfaces, setRoomSurfaces] = useState<RoomSurfaceSelection>(defaultRoomSurfaceSelection);
   const placementCounter = useRef(0);
-  const roomDropRef = useRef<HTMLDivElement | null>(null);
   const latestPersistedPlacementsRef = useRef<RoomPlacement[]>(starterPlacements);
   const lastCommittedVersionRef = useRef(0);
   const hasPendingLocalEditRef = useRef(false);
@@ -495,26 +490,6 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     });
   }
 
-  function dropPointForItem(item: CatalogItem, event: DragEvent<HTMLDivElement>) {
-    const canvas = roomDropRef.current?.querySelector("canvas");
-    const rect = canvas?.getBoundingClientRect() ?? roomDropRef.current?.getBoundingClientRect();
-    if (!rect) return undefined;
-    const x = ((event.clientX - rect.left) / rect.width) * ROOM_CANVAS_WIDTH;
-    const y = ((event.clientY - rect.top) / rect.height) * ROOM_CANVAS_HEIGHT;
-
-    if (item.placementType === "wall") {
-      return {
-        x: clamp(x, 180, 780),
-        y: clamp(y, 112, 230),
-      };
-    }
-
-    return {
-      x: clamp(x, 130, 830),
-      y: clamp(y, 250, 520),
-    };
-  }
-
   function addRoomItem(item: CatalogItem, point?: { x: number; y: number }) {
     if (!canEditRoom) {
       setSaveStatus("Ask the host for decorator access before adding furniture.");
@@ -539,21 +514,19 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     if (!canEditRoom) return;
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("application/hearthaven-room-item", item.id);
+    event.dataTransfer.setData("application/hearthaven-room-item-placement-type", item.placementType);
     event.dataTransfer.setData("text/plain", item.id);
     setSaveStatus(`Dragging ${item.name}. Drop it onto the room canvas.`);
   }
 
-  function handleRoomDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
+  function handleRoomItemDrop(itemId: string, point: { x: number; y: number }) {
     if (!canEditRoom) {
       setSaveStatus("Ask the host for decorator access before adding furniture.");
       return;
     }
-    const itemId =
-      event.dataTransfer.getData("application/hearthaven-room-item") || event.dataTransfer.getData("text/plain");
     const row = roomDrawerItems.find((entry) => entry.catalog.id === itemId);
     if (!row) return;
-    addRoomItem(row.catalog, dropPointForItem(row.catalog, event));
+    addRoomItem(row.catalog, point);
   }
 
   if (!isVisitAllowed) {
@@ -642,16 +615,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       </section>
       <section className="grid w-full min-w-0 max-w-full grid-cols-[minmax(0,1fr)] gap-4 overflow-hidden xl:grid-cols-[minmax(0,980px)_minmax(300px,360px)] xl:items-start xl:justify-center">
-        <div
-          className="grid w-full min-w-0 max-w-full grid-cols-[minmax(0,1fr)] content-start gap-3 overflow-hidden"
-          onDragOver={(event) => {
-            if (!canEditRoom) return;
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "copy";
-          }}
-          onDrop={handleRoomDrop}
-          ref={roomDropRef}
-        >
+        <div className="grid w-full min-w-0 max-w-full grid-cols-[minmax(0,1fr)] content-start gap-3 overflow-hidden">
           <div className="relative mx-auto min-w-0 w-full max-w-[980px] overflow-visible">
             {canEditRoom && (
               <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-white/70 bg-white/82 px-3 py-1 text-xs font-black text-ink-700 shadow-sm backdrop-blur">
@@ -662,6 +626,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
               canEditRoom={canEditRoom}
               onAvatarMove={realtime.sendMove}
               onPlacementsChange={handlePlacementsChange}
+              onRoomItemDrop={handleRoomItemDrop}
               onRoomNavigate={handleRoomNavigate}
               onRoomEmote={realtime.sendEmote}
               pendingPlacementIds={savingPlacementIds}

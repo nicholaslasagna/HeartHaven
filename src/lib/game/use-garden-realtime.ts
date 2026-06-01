@@ -208,6 +208,8 @@ export function useGardenRealtime({
     let cancelled = false;
     let customizationCleanup: (() => void) | null = null;
     let chatPollTimer: number | null = null;
+    let decorPollTimer: number | null = null;
+    let plotsPollTimer: number | null = null;
 
     async function connect() {
       setConnectionState("connecting");
@@ -259,6 +261,54 @@ export function useGardenRealtime({
           }
         }
 
+        async function refreshGardenDecor(source: "hydrate" | "poll") {
+          const { data } = await supabase.rpc("get_garden_decor", {
+            p_host_friend_code: normalizedHostCode,
+            p_garden_id: normalizedGardenId,
+          });
+          const row = Array.isArray(data) ? data[0] : null;
+          if (!row) return null;
+          const safe = hardenGardenDecor((row as { decor?: unknown }).decor);
+          const versionNumber = Number((row as { version?: number }).version);
+          const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
+          if (!cancelled && (source === "hydrate" || safeVersion > decorVersionRef.current)) {
+            setDecor(safe);
+            setDecorVersion(safeVersion);
+            decorVersionRef.current = safeVersion;
+          }
+          return { decor: safe, version: safeVersion };
+        }
+
+        async function refreshGardenPlots(source: "hydrate" | "poll") {
+          const { data } = await supabase.rpc("get_garden_plots", {
+            p_host_friend_code: normalizedHostCode,
+            p_garden_id: normalizedGardenId,
+          });
+          const row = Array.isArray(data) ? data[0] : null;
+          if (!row) return null;
+          const safe = hardenGardenPlots((row as { plots?: unknown }).plots);
+          const versionNumber = Number((row as { version?: number }).version);
+          const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
+          if (!cancelled && (source === "hydrate" || safeVersion > plotsVersionRef.current)) {
+            setPlots(safe);
+            setPlotsVersion(safeVersion);
+            plotsVersionRef.current = safeVersion;
+          }
+          return { plots: safe, version: safeVersion };
+        }
+
+        function startFallbackPollers() {
+          if (!decorPollTimer) {
+            decorPollTimer = window.setInterval(() => void refreshGardenDecor("poll"), 1200);
+          }
+          if (!plotsPollTimer) {
+            plotsPollTimer = window.setInterval(() => void refreshGardenPlots("poll"), 1400);
+          }
+          if (!chatPollTimer) {
+            chatPollTimer = window.setInterval(() => void refreshGardenChat(), 3000);
+          }
+        }
+
         // --- Hydrate server-canonical decor + grants -------------------
         // Before subscribing, pull the host's saved decor and approved-
         // decorator list so the first paint is the real shared state. We
@@ -266,30 +316,16 @@ export function useGardenRealtime({
         setDecorLoading(true);
         setPlotsLoading(true);
         const hydration = await Promise.all([
-          supabase.rpc("get_garden_decor", {
-            p_host_friend_code: normalizedHostCode,
-            p_garden_id: normalizedGardenId,
-          }),
+          refreshGardenDecor("hydrate"),
           supabase.rpc("get_garden_decorators", {
             p_host_friend_code: normalizedHostCode,
             p_garden_id: normalizedGardenId,
           }),
-          supabase.rpc("get_garden_plots", {
-            p_host_friend_code: normalizedHostCode,
-            p_garden_id: normalizedGardenId,
-          }),
+          refreshGardenPlots("hydrate"),
         ]);
         if (cancelled) return;
 
-        const decorRow = Array.isArray(hydration[0].data) ? hydration[0].data[0] : null;
-        if (decorRow) {
-          const safe = hardenGardenDecor(decorRow.decor);
-          setDecor(safe);
-          const versionNumber = Number(decorRow.version);
-          const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
-          setDecorVersion(safeVersion);
-          decorVersionRef.current = safeVersion;
-        } else {
+        if (!hydration[0]) {
           // No row yet — the host hasn't placed any decor. Caller falls
           // back to its starter default.
           setDecor(null);
@@ -298,20 +334,18 @@ export function useGardenRealtime({
         }
         setDecorLoading(false);
 
-        const plotsRow = Array.isArray(hydration[2].data) ? hydration[2].data[0] : null;
-        if (plotsRow) {
-          const safe = hardenGardenPlots((plotsRow as { plots?: unknown }).plots);
-          setPlots(safe);
-          const versionNumber = Number((plotsRow as { version?: number }).version);
-          const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
-          setPlotsVersion(safeVersion);
-          plotsVersionRef.current = safeVersion;
-        } else {
+        if (!hydration[2]) {
           setPlots(null);
           setPlotsVersion(0);
           plotsVersionRef.current = 0;
         }
         setPlotsLoading(false);
+
+        // Broadcasts make shared gardens feel instant, but persisted state
+        // still needs a reload-free fallback when Realtime reconnects late or
+        // misses an event. Keep decor, plots, and chat polling regardless of
+        // channel subscription status.
+        startFallbackPollers();
 
         const grantsData = Array.isArray(hydration[1].data) ? hydration[1].data : [];
         const hydratedGrants = grantsData
@@ -396,8 +430,7 @@ export function useGardenRealtime({
               realtimeReadyRef.current = true;
               await channel.track(localPlayer);
               void refreshGardenChat();
-              if (chatPollTimer) window.clearInterval(chatPollTimer);
-              chatPollTimer = window.setInterval(() => void refreshGardenChat(), 3000);
+              startFallbackPollers();
               setConnectionState("connected");
               setStatus(`Live in garden ${gardenCode}`);
             } else if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") {
@@ -451,6 +484,10 @@ export function useGardenRealtime({
       customizationCleanup = null;
       if (chatPollTimer) window.clearInterval(chatPollTimer);
       chatPollTimer = null;
+      if (decorPollTimer) window.clearInterval(decorPollTimer);
+      decorPollTimer = null;
+      if (plotsPollTimer) window.clearInterval(plotsPollTimer);
+      plotsPollTimer = null;
       const channel = channelRef.current;
       if (channel) {
         void getSupabaseBrowserClient().removeChannel(channel);

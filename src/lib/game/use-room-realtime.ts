@@ -183,6 +183,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     let customizationPoll: number | null = null;
     let heartbeatTimer: number | null = null;
     let placementPollTimer: number | null = null;
+    let surfacePollTimer: number | null = null;
     let chatPollTimer: number | null = null;
 
     async function connect() {
@@ -298,6 +299,46 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           return parsed;
         }
 
+        async function refreshRoomSurfaces(source: "hydrate" | "poll") {
+          const { data, error } = await supabase.rpc("get_room_surfaces", {
+            p_host_friend_code: channelKey,
+            p_room_id: normalizedRoomId,
+          });
+          if (error) {
+            recordRoomRealtimeDiagnostic({
+              lastRealtimeError: error.message,
+              resolvedRoomHostCode: channelKey,
+              roomChannelName: `room:${channelKey}`,
+              roomId: normalizedRoomId,
+            });
+            return null;
+          }
+          const row = Array.isArray(data) ? data[0] : null;
+          if (!row) return null;
+          const safe = hardenServerRoomSurfaces(row as { floor_id?: string; wall_id?: string });
+          if (!safe) return null;
+          const versionNumber = Number((row as { version?: number }).version);
+          const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
+          if (!cancelled && (source === "hydrate" || safeVersion > surfacesVersionRef.current)) {
+            setSurfaces(safe);
+            setSurfacesVersion(safeVersion);
+            surfacesVersionRef.current = safeVersion;
+          }
+          return { surfaces: safe, version: safeVersion };
+        }
+
+        function startFallbackPollers() {
+          if (!placementPollTimer) {
+            placementPollTimer = window.setInterval(() => void refreshRoomPlacements("poll"), 1200);
+          }
+          if (!surfacePollTimer) {
+            surfacePollTimer = window.setInterval(() => void refreshRoomSurfaces("poll"), 1600);
+          }
+          if (!chatPollTimer) {
+            chatPollTimer = window.setInterval(() => void refreshRoomChat(), 3000);
+          }
+        }
+
         function syncPresence() {
           const state = channel.presenceState<RealtimeRoomPlayer>();
           // Every realtime payload is untrusted — clamp coords, scrub
@@ -346,10 +387,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             p_host_friend_code: channelKey,
             p_room_id: normalizedRoomId,
           }),
-          supabase.rpc("get_room_surfaces", {
-            p_host_friend_code: channelKey,
-            p_room_id: normalizedRoomId,
-          }),
+          refreshRoomSurfaces("hydrate"),
         ]);
         if (cancelled) return;
 
@@ -365,22 +403,18 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         }
         setPlacementsLoading(false);
 
-        const surfacesRow = Array.isArray(hydration[2].data) ? hydration[2].data[0] : null;
-        if (surfacesRow) {
-          const safe = hardenServerRoomSurfaces(surfacesRow as { floor_id?: string; wall_id?: string });
-          if (safe) {
-            setSurfaces(safe);
-            const versionNumber = Number((surfacesRow as { version?: number }).version);
-            const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
-            setSurfacesVersion(safeVersion);
-            surfacesVersionRef.current = safeVersion;
-          }
-        } else {
+        if (!hydration[2]) {
           setSurfaces(null);
           setSurfacesVersion(0);
           surfacesVersionRef.current = 0;
         }
         setSurfacesLoading(false);
+
+        // Poll persisted room state independently of Realtime subscription
+        // health. Broadcasts keep the UI instant when available, while these
+        // timers make saved furniture/surfaces/chat appear without a reload if
+        // a channel event is missed or the browser reconnects late.
+        startFallbackPollers();
 
         const grantsData = Array.isArray(hydration[1].data) ? hydration[1].data : [];
         const hydratedGrants = grantsData
@@ -493,10 +527,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
               void refreshRoomChat();
               if (heartbeatTimer) window.clearInterval(heartbeatTimer);
               heartbeatTimer = window.setInterval(() => void publishLocalPresence(), 2000);
-              if (placementPollTimer) window.clearInterval(placementPollTimer);
-              placementPollTimer = window.setInterval(() => void refreshRoomPlacements("poll"), 1200);
-              if (chatPollTimer) window.clearInterval(chatPollTimer);
-              chatPollTimer = window.setInterval(() => void refreshRoomChat(), 3000);
+              startFallbackPollers();
               setConnectionState("connected");
               setStatus(`Live in room ${roomCode}`);
               recordRoomRealtimeDiagnostic({
@@ -591,6 +622,8 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       heartbeatTimer = null;
       if (placementPollTimer) window.clearInterval(placementPollTimer);
       placementPollTimer = null;
+      if (surfacePollTimer) window.clearInterval(surfacePollTimer);
+      surfacePollTimer = null;
       if (chatPollTimer) window.clearInterval(chatPollTimer);
       chatPollTimer = null;
       const channel = channelRef.current;
