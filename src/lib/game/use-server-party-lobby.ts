@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
 import { getSocialState } from "@/lib/game/social";
 
 /**
@@ -331,7 +332,11 @@ export function useServerPartyLobby(initialSize = 4) {
     try {
       const supabase = getSupabaseBrowserClient();
       const { error: rpcError } = await supabase.rpc("create_party_lobby", { p_max_players: maxPlayers });
-      if (rpcError) return { ok: false, reason: rpcError.message };
+      if (rpcError) {
+        recordMultiplayerRpc("create_party_lobby", rpcError);
+        return { ok: false, reason: rpcError.message };
+      }
+      recordMultiplayerRpc("create_party_lobby");
       await hydrate();
       return { ok: true } as Result<LobbyState>;
     } catch (err) {
@@ -346,7 +351,11 @@ export function useServerPartyLobby(initialSize = 4) {
       const { data, error: rpcError } = await supabase.rpc("request_join_party", {
         p_host_friend_code: hostFriendCode,
       });
-      if (rpcError) return { ok: false, reason: rpcError.message };
+      if (rpcError) {
+        recordMultiplayerRpc("request_join_party", rpcError);
+        return { ok: false, reason: rpcError.message };
+      }
+      recordMultiplayerRpc("request_join_party");
       const requestId = typeof data === "string" ? data : null;
       // requestId === null means "already seated" — the post-hydrate
       // pull will put us into the lobby state automatically.
@@ -365,7 +374,11 @@ export function useServerPartyLobby(initialSize = 4) {
         p_request_id: requestId,
         p_approve: approve,
       });
-      if (rpcError) return { ok: false, reason: rpcError.message };
+      if (rpcError) {
+        recordMultiplayerRpc("respond_join_request", rpcError);
+        return { ok: false, reason: rpcError.message };
+      }
+      recordMultiplayerRpc("respond_join_request");
       await hydrate();
       return { ok: true } as Result;
     } catch (err) {
@@ -386,7 +399,11 @@ export function useServerPartyLobby(initialSize = 4) {
           p_game_href: game.href,
           p_game_label: game.label ?? "",
         });
-        if (rpcError) return { ok: false, reason: rpcError.message };
+        if (rpcError) {
+          recordMultiplayerRpc("select_party_game", rpcError);
+          return { ok: false, reason: rpcError.message };
+        }
+        recordMultiplayerRpc("select_party_game");
         await hydrate();
         return { ok: true } as Result;
       } catch (err) {
@@ -401,7 +418,11 @@ export function useServerPartyLobby(initialSize = 4) {
     try {
       const supabase = getSupabaseBrowserClient();
       const { data, error: rpcError } = await supabase.rpc("start_party_lobby");
-      if (rpcError) return { ok: false, reason: rpcError.message };
+      if (rpcError) {
+        recordMultiplayerRpc("start_party_lobby", rpcError);
+        return { ok: false, reason: rpcError.message };
+      }
+      recordMultiplayerRpc("start_party_lobby");
       const href = typeof data === "string" && lobbyRef.current
         ? withSessionParam(data, lobbyRef.current.session_id)
         : typeof data === "string"
@@ -421,7 +442,11 @@ export function useServerPartyLobby(initialSize = 4) {
     try {
       const supabase = getSupabaseBrowserClient();
       const { error: rpcError } = await supabase.rpc("leave_party_lobby");
-      if (rpcError) return { ok: false, reason: rpcError.message };
+      if (rpcError) {
+        recordMultiplayerRpc("leave_party_lobby", rpcError);
+        return { ok: false, reason: rpcError.message };
+      }
+      recordMultiplayerRpc("leave_party_lobby");
       setLobby(null);
       setJoinRequests([]);
       return { ok: true } as Result;
@@ -435,7 +460,11 @@ export function useServerPartyLobby(initialSize = 4) {
     try {
       const supabase = getSupabaseBrowserClient();
       const { error: rpcError } = await supabase.rpc("kick_party_seat", { p_profile_id: profileId });
-      if (rpcError) return { ok: false, reason: rpcError.message };
+      if (rpcError) {
+        recordMultiplayerRpc("kick_party_seat", rpcError);
+        return { ok: false, reason: rpcError.message };
+      }
+      recordMultiplayerRpc("kick_party_seat");
       await hydrate();
       return { ok: true } as Result;
     } catch (err) {
@@ -455,7 +484,11 @@ export function useServerPartyLobby(initialSize = 4) {
         .update({ ready: !me.ready })
         .eq("session_id", current.session_id)
         .eq("profile_id", me.profile_id);
-      if (rpcError) return { ok: false, reason: rpcError.message };
+      if (rpcError) {
+        recordMultiplayerRpc("game_session_players.ready", rpcError);
+        return { ok: false, reason: rpcError.message };
+      }
+      recordMultiplayerRpc("game_session_players.ready");
       await hydrate();
       return { ok: true } as Result;
     } catch (err) {

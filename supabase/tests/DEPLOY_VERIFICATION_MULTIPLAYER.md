@@ -146,7 +146,7 @@ Raw redemption codes must stay out of git. Seed only SHA-256 hashes in `redempti
 
 ```sql
 -- Replace <PRIVATE_CODE> locally; do not commit real codes.
-select encode(digest(regexp_replace(upper('<PRIVATE_CODE>'), '[^A-Z0-9]', '', 'g'), 'sha256'), 'hex') as code_hash;
+select encode(extensions.digest(regexp_replace(upper('<PRIVATE_CODE>'), '[^A-Z0-9]', '', 'g'), 'sha256'), 'hex') as code_hash;
 ```
 
 | # | Action | Expected |

@@ -17,6 +17,7 @@ import {
   getPetVitals,
   replacePetVitalsState,
 } from "@/lib/game/pet-state";
+import { recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
 import { loadServerPetState } from "@/lib/game/phase2-server";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -76,6 +77,7 @@ export function RedemptionCodePanel() {
       const supabase = getSupabaseBrowserClient();
       const { data, error } = await supabase.rpc("redeem_code", { p_code: normalized });
       if (error) {
+        recordMultiplayerRpc("redeem_code", error);
         if (process.env.NODE_ENV !== "production") {
           console.error("[HeartHaven] redeem_code RPC failed", {
             code: error.code,
@@ -86,6 +88,7 @@ export function RedemptionCodePanel() {
         }
         throw error;
       }
+      recordMultiplayerRpc("redeem_code");
 
       const row = resultRow(data);
       if (!row) {

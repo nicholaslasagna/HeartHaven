@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
 import { normalizeFriendCode } from "@/lib/game/social";
 
 export type PlaceInviteType = "room" | "garden" | "park" | "party" | "game";
@@ -109,7 +110,11 @@ export async function sendPlaceInviteToFriend(input: SendPlaceInviteInput): Prom
       p_room_id: input.roomId ?? null,
     });
 
-    if (error) return { ok: false, reason: error.message };
+    if (error) {
+      recordMultiplayerRpc("invite_friend_to_current_place", error);
+      return { ok: false, reason: error.message };
+    }
+    recordMultiplayerRpc("invite_friend_to_current_place");
     const row = Array.isArray(data) ? data[0] : null;
     const inviteRow = row as SendPlaceInviteRow | null;
     const inviteId =
@@ -142,10 +147,12 @@ export function usePlaceInvites() {
       const supabase = getSupabaseBrowserClient();
       const { data, error: rpcError } = await supabase.rpc("get_my_pending_place_invites");
       if (rpcError) {
+        recordMultiplayerRpc("get_my_pending_place_invites", rpcError);
         setError(rpcError.message);
         setLoading(false);
         return;
       }
+      recordMultiplayerRpc("get_my_pending_place_invites");
       const mapped = Array.isArray(data)
         ? data.map((row) => mapPlaceInviteRow(row as PlaceInviteRow)).filter((row): row is PlaceInvite => Boolean(row))
         : [];
@@ -233,7 +240,11 @@ export function usePlaceInvites() {
         p_invite_id: inviteId,
         p_response: response,
       });
-      if (rpcError) return { ok: false, reason: rpcError.message };
+      if (rpcError) {
+        recordMultiplayerRpc("respond_to_place_invite", rpcError);
+        return { ok: false, reason: rpcError.message };
+      }
+      recordMultiplayerRpc("respond_to_place_invite");
       const row = Array.isArray(data) ? data[0] : null;
       if (!row?.ok) {
         return { ok: false, reason: typeof row?.message === "string" ? row.message : "Invite could not be updated." };

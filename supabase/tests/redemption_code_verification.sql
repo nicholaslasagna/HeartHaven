@@ -21,6 +21,15 @@ select p.proname,
 -- anon_can_execute=false
 -- authenticated_can_execute=true
 
+select
+  p.prosrc like '%extensions.digest%' as redeem_code_uses_schema_qualified_pgcrypto,
+  p.prosrc !~ '(^|[^.])\mdigest\s*\(' as no_obvious_unqualified_digest_pattern
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.proname = 'redeem_code';
+-- Expected after 0050: redeem_code_uses_schema_qualified_pgcrypto=true.
+
 -- 2) Confirm raw plaintext codes are not modeled or stored.
 select column_name
   from information_schema.columns
@@ -90,7 +99,7 @@ insert into public.redemption_codes (
   expires_at
 )
 select
-  encode(digest(normalized, 'sha256'), 'hex'),
+  encode(extensions.digest(normalized, 'sha256'), 'hex'),
   'Developer test Casper companion',
   'calico',
   'Casper',
@@ -122,7 +131,7 @@ on conflict (code_hash) do update
 /*
 with private_code as (
   select encode(
-    digest(regexp_replace(upper('HH-DEV-EXAMPLE-CASPER'), '[^A-Z0-9]', '', 'g'), 'sha256'
+    extensions.digest(regexp_replace(upper('HH-DEV-EXAMPLE-CASPER'), '[^A-Z0-9]', '', 'g'), 'sha256'
   ), 'hex') as code_hash
 ),
 redeemed as (
@@ -158,7 +167,7 @@ join public.pets on pets.id = redeemed.pet_id;
 --    and code_id = (
 --      select id
 --        from public.redemption_codes
---       where code_hash = encode(digest(regexp_replace(upper('HH-DEV-EXAMPLE-CASPER'), '[^A-Z0-9]', '', 'g'), 'sha256'), 'hex')
+--       where code_hash = encode(extensions.digest(regexp_replace(upper('HH-DEV-EXAMPLE-CASPER'), '[^A-Z0-9]', '', 'g'), 'sha256'), 'hex')
 --    );
 -- Expected: 1.
 
@@ -171,7 +180,7 @@ insert into public.redemption_codes (
   code_hash, label, reward_pet_species, reward_pet_name, reward_pet_tone,
   reward_pet_accessory, expires_at
 )
-select encode(digest(normalized, 'sha256'), 'hex'), 'Expired test', 'calico', 'Casper', 'cream', 'moonberry-bow', now() - interval '1 minute'
+select encode(extensions.digest(normalized, 'sha256'), 'hex'), 'Expired test', 'calico', 'Casper', 'cream', 'moonberry-bow', now() - interval '1 minute'
 from private_code
 on conflict (code_hash) do update set expires_at = excluded.expires_at, disabled_at = null;
 
@@ -189,7 +198,7 @@ insert into public.redemption_codes (
   code_hash, label, reward_pet_species, reward_pet_name, reward_pet_tone,
   reward_pet_accessory, disabled_at
 )
-select encode(digest(normalized, 'sha256'), 'hex'), 'Disabled test', 'calico', 'Casper', 'cream', 'moonberry-bow', now()
+select encode(extensions.digest(normalized, 'sha256'), 'hex'), 'Disabled test', 'calico', 'Casper', 'cream', 'moonberry-bow', now()
 from private_code
 on conflict (code_hash) do update set disabled_at = excluded.disabled_at;
 
@@ -222,7 +231,7 @@ insert into public.redemption_codes (
   expires_at
 )
 select
-  encode(digest(normalized, 'sha256'), 'hex'),
+  encode(extensions.digest(normalized, 'sha256'), 'hex'),
   'Developer test Super Snails companion',
   'super-snails',
   'Super Snails',
@@ -255,3 +264,31 @@ on conflict (code_hash) do update
 --  order by created_at desc
 --  limit 1;
 -- Expected: owner_id = auth.uid(), species='super-snails', active=true.
+
+-- 13) Real Super Snails row check. Do not paste the real code into this
+-- file. In the SQL editor only, replace <PRIVATE_SUPER_SNAILS_CODE> with
+-- the live code and run:
+/*
+with private_code as (
+  select encode(
+    extensions.digest(regexp_replace(upper('<PRIVATE_SUPER_SNAILS_CODE>'), '[^A-Z0-9]', '', 'g'), 'sha256'),
+    'hex'
+  ) as code_hash
+)
+select
+  c.label,
+  c.reward_pet_species,
+  c.reward_pet_name,
+  c.reward_pet_tone,
+  c.reward_pet_accessory,
+  c.disabled_at,
+  c.expires_at,
+  c.max_global_redemptions
+from public.redemption_codes c
+join private_code pc on pc.code_hash = c.code_hash;
+*/
+-- Expected for the live code:
+-- reward_pet_species='super-snails'
+-- reward_pet_tone='sky'
+-- reward_pet_accessory='lantern-scarf'
+-- disabled_at is null

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Gamepad2, HeartHandshake, Home, Inbox, Megaphone, Package, PawPrint, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 import { BanWatchdog } from "@/components/auth/ban-watchdog";
 import { Logo } from "@/components/brand/logo";
@@ -8,6 +9,7 @@ import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
 import { Phase2PersistenceBridge } from "@/components/game/phase2-persistence-bridge";
 import { PartyFollowToast } from "@/components/game/party-follow-toast";
 import { PlaceInviteInboxHost } from "@/components/game/place-invite-inbox-host";
+import { MultiplayerDiagnosticsPanel } from "@/components/game/multiplayer-diagnostics-panel";
 import { RewardToastHost } from "@/components/game/reward-toast-host";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { AnnouncementsNavBadge } from "@/components/layout/announcements-nav-badge";
@@ -81,6 +83,9 @@ export function GameShell({ children }: { children: React.ReactNode }) {
       <BanNotificationsHost />
       <BanWatchdog />
       <Phase2PersistenceBridge />
+      <Suspense fallback={null}>
+        <MultiplayerDiagnosticsPanel />
+      </Suspense>
     </div>
   );
 }
