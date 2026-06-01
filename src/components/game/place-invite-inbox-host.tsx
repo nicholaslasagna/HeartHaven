@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, Clock, DoorOpen, X } from "lucide-react";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { usePlaceInvites, type PlaceInvite } from "@/lib/game/place-invites";
+import { recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
 import { cn } from "@/lib/utils";
 
 function inviteTitle(invite: PlaceInvite) {
@@ -38,7 +39,14 @@ export function PlaceInviteInboxHost() {
       setError(result.reason);
       return;
     }
-    if (response === "accepted" && result.targetUrl) {
+    if (response === "accepted") {
+      if (!result.targetUrl) {
+        const message = "Invite accepted, but the destination is missing.";
+        recordMultiplayerRpc("place_invite_accept.navigate", message);
+        setError(message);
+        return;
+      }
+      recordMultiplayerRpc("place_invite_accept.navigate");
       router.push(result.targetUrl, { scroll: false });
     }
   }

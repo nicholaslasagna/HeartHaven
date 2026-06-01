@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
+import { isMultiplayerDiagnosticsEnabled, recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
 import { normalizeFriendCode } from "@/lib/game/social";
 
 export type PlaceInviteType = "room" | "garden" | "park" | "party" | "game";
@@ -22,6 +22,8 @@ export type PlaceInvite = {
   expiresAt: string;
   createdAt: string;
 };
+
+export const PLACE_INVITES_REFRESHED_EVENT = "hearthaven:place-invites-refreshed";
 
 type PlaceInviteRow = {
   id?: string;
@@ -157,6 +159,19 @@ export function usePlaceInvites() {
         ? data.map((row) => mapPlaceInviteRow(row as PlaceInviteRow)).filter((row): row is PlaceInvite => Boolean(row))
         : [];
       setInvites(mapped);
+      if (isMultiplayerDiagnosticsEnabled() && typeof window !== "undefined") {
+        const latest = mapped[0] ?? null;
+        window.dispatchEvent(
+          new CustomEvent(PLACE_INVITES_REFRESHED_EVENT, {
+            detail: {
+              count: mapped.length,
+              latestInviteId: latest?.id ?? null,
+              latestInviteType: latest?.inviteType ?? null,
+              latestTargetUrl: latest?.targetUrl ?? null,
+            },
+          }),
+        );
+      }
       setError(null);
       setLoading(false);
     } catch (err) {

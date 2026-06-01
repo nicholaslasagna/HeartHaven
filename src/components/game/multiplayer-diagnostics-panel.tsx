@@ -7,12 +7,16 @@ import {
   MULTIPLAYER_DIAGNOSTIC_EVENT,
   type MultiplayerRpcDiagnostic,
 } from "@/lib/game/multiplayer-diagnostics";
+import { PLACE_INVITES_REFRESHED_EVENT } from "@/lib/game/place-invites";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { getSupabaseConfig, isSupabaseConfigured } from "@/lib/supabase/config";
 
 type DiagnosticSnapshot = {
   authUserId: string | null;
   friendCode: string | null;
+  latestInviteId: string | null;
+  latestInviteTargetUrl: string | null;
+  latestInviteType: string | null;
   pendingInvitesCount: number | null;
   profileId: string | null;
   sessionPlayersCount: number | null;
@@ -37,6 +41,9 @@ export function MultiplayerDiagnosticsPanel() {
   const [snapshot, setSnapshot] = useState<DiagnosticSnapshot>({
     authUserId: null,
     friendCode: null,
+    latestInviteId: null,
+    latestInviteTargetUrl: null,
+    latestInviteType: null,
     pendingInvitesCount: null,
     profileId: null,
     sessionPlayersCount: null,
@@ -60,8 +67,27 @@ export function MultiplayerDiagnosticsPanel() {
     const onRpc = (event: Event) => {
       setLastRpc((event as CustomEvent<MultiplayerRpcDiagnostic>).detail);
     };
+    const onInvites = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        count?: number;
+        latestInviteId?: string | null;
+        latestInviteType?: string | null;
+        latestTargetUrl?: string | null;
+      }>).detail;
+      setSnapshot((current) => ({
+        ...current,
+        latestInviteId: detail?.latestInviteId ?? null,
+        latestInviteTargetUrl: detail?.latestTargetUrl ?? null,
+        latestInviteType: detail?.latestInviteType ?? null,
+        pendingInvitesCount: typeof detail?.count === "number" ? detail.count : current.pendingInvitesCount,
+      }));
+    };
     window.addEventListener(MULTIPLAYER_DIAGNOSTIC_EVENT, onRpc);
-    return () => window.removeEventListener(MULTIPLAYER_DIAGNOSTIC_EVENT, onRpc);
+    window.addEventListener(PLACE_INVITES_REFRESHED_EVENT, onInvites);
+    return () => {
+      window.removeEventListener(MULTIPLAYER_DIAGNOSTIC_EVENT, onRpc);
+      window.removeEventListener(PLACE_INVITES_REFRESHED_EVENT, onInvites);
+    };
   }, [enabled]);
 
   useEffect(() => {
@@ -99,15 +125,18 @@ export function MultiplayerDiagnosticsPanel() {
       }
 
       if (!cancelled) {
-        setSnapshot({
+        setSnapshot((current) => ({
           authUserId: user?.id ?? null,
           friendCode: profile?.friend_code ?? null,
+          latestInviteId: current.latestInviteId,
+          latestInviteTargetUrl: current.latestInviteTargetUrl,
+          latestInviteType: current.latestInviteType,
           pendingInvitesCount,
           profileId: profile?.id ?? null,
           sessionPlayersCount,
           supabaseHost: supabaseHostFromUrl(getSupabaseConfig().url),
           username: profile?.username ?? null,
-        });
+        }));
       }
     }
 
@@ -135,6 +164,9 @@ export function MultiplayerDiagnosticsPanel() {
         <dt>Session</dt><dd className="truncate font-mono">{routeValues.sessionId ?? "none"}</dd>
         <dt>Zone</dt><dd className="truncate">{routeValues.zone ?? "none"}</dd>
         <dt>Pending invites</dt><dd>{snapshot.pendingInvitesCount ?? "unknown"}</dd>
+        <dt>Latest invite</dt><dd className="truncate font-mono">{snapshot.latestInviteId ?? "none"}</dd>
+        <dt>Invite type</dt><dd className="truncate">{snapshot.latestInviteType ?? "none"}</dd>
+        <dt>Invite target</dt><dd className="truncate font-mono">{snapshot.latestInviteTargetUrl ?? "none"}</dd>
         <dt>Session players</dt><dd>{snapshot.sessionPlayersCount ?? "unknown"}</dd>
         <dt>Last RPC</dt><dd className="truncate">{lastRpc ? `${lastRpc.name} ${lastRpc.ok ? "ok" : "failed"}` : "none"}</dd>
         <dt>Last error</dt><dd className="truncate text-blush-700">{lastRpc?.error ?? "none"}</dd>

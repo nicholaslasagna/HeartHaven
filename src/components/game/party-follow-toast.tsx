@@ -9,6 +9,7 @@ import {
   syncFollowerChannelsWithFriends,
   type PartyRelocateEvent,
 } from "@/lib/game/party-bridge";
+import { recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
 
 /**
  * Floating toast that listens for `hearthaven:party-follow-prompt` events
@@ -70,6 +71,11 @@ export function PartyFollowToast() {
   }, [prompts]);
 
   function follow(prompt: PartyRelocateEvent) {
+    if (!prompt.path) {
+      recordMultiplayerRpc("party_follow.navigate", "Follow target is missing.");
+      return;
+    }
+    recordMultiplayerRpc("party_follow.navigate");
     setPrompts((current) => current.filter((entry) => entry !== prompt));
     router.push(prompt.path, { scroll: false });
   }

@@ -79,6 +79,7 @@ selected_target as (
   select
     selected_pair.host_profile_id,
     selected_pair.recipient_profile_id,
+    host_profile.friend_code as host_friend_code,
     recipient_profile.friend_code as recipient_friend_code,
     (
       select other_profile.id
@@ -89,9 +90,12 @@ selected_target as (
     ) as other_profile_id,
     (
       '/app/area?zone=garden&verification=' ||
-      replace(extensions.gen_random_uuid()::text, '-', '')
+      replace(extensions.gen_random_uuid()::text, '-', '') ||
+      '&visit=HH-STALE-000'
     ) as target_url
   from selected_pair
+  join public.profiles as host_profile
+    on host_profile.id = selected_pair.host_profile_id
   join public.profiles as recipient_profile
     on recipient_profile.id = selected_pair.recipient_profile_id
 ),
@@ -130,6 +134,7 @@ second_invite as (
 select
   selected_target.host_profile_id,
   selected_target.recipient_profile_id,
+  selected_target.host_friend_code,
   selected_target.other_profile_id,
   selected_target.target_url,
   first_invite.invite_id as first_invite_id,
@@ -170,6 +175,14 @@ left join public.current_place_invites as current_place_invite
  and current_place_invite.status = 'pending';
 
 select
+  'target_url_uses_server_host_friend_code' as check_name,
+  bool_and(current_place_invite.target_url like ('%visit=' || test.host_friend_code || '%')) as passed,
+  array_agg(current_place_invite.target_url) as observed
+from hh_place_invite_test as test
+join public.current_place_invites as current_place_invite
+  on current_place_invite.id = test.first_invite_id;
+
+select
   'sender_does_not_receive_own_invite' as check_name,
   count(current_place_invite.id) = 0 as passed,
   count(current_place_invite.id) as observed
@@ -202,5 +215,37 @@ select
 from hh_place_invite_test as test
 left join public.get_my_pending_place_invites() as pending_invite
   on pending_invite.id = test.first_invite_id;
+
+create temporary table hh_place_invite_accept_test on commit drop as
+select
+  test.first_invite_id,
+  response.ok,
+  response.status,
+  response.target_url,
+  response.message
+from hh_place_invite_test as test
+cross join lateral public.respond_to_place_invite(test.first_invite_id, 'accepted') as response;
+
+select
+  'accept_marks_invite_accepted' as check_name,
+  bool_and(response.ok and response.status = 'accepted') as passed,
+  array_agg(response.message) as observed
+from hh_place_invite_accept_test as response;
+
+select
+  'accept_returns_navigable_host_target_url' as check_name,
+  bool_and(response.target_url like ('/app/%visit=' || test.host_friend_code || '%')) as passed,
+  array_agg(response.target_url) as observed
+from hh_place_invite_accept_test as response
+join hh_place_invite_test as test
+  on test.first_invite_id = response.first_invite_id;
+
+select
+  'accepted_invite_no_longer_pending' as check_name,
+  bool_and(current_place_invite.status = 'accepted' and current_place_invite.accepted_at is not null) as passed,
+  array_agg(current_place_invite.status) as observed
+from hh_place_invite_test as test
+join public.current_place_invites as current_place_invite
+  on current_place_invite.id = test.first_invite_id;
 
 rollback;

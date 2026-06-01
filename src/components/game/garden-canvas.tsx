@@ -1529,6 +1529,7 @@ export function GardenCanvas({
               this.rightHoldFired = false;
               return;
             }
+            this.clearSelectedDecor();
             // Left click — click-to-move for whichever sprite is being
             // driven right now.
             if (pointer.y < 112) return;
@@ -3118,7 +3119,7 @@ export function GardenCanvas({
           this.createDecoration(decoration);
           this.persistDecorations();
           playCozyCue("place");
-          setStatus(`${item.label} placed. Drag it around the garden or press R while selected to face left/right.`);
+          setStatus(`${item.label} placed. Drag it around the garden or press R while selected to flip it.`);
         }
 
         private createDecoration(decoration: GardenDecorPlacement) {
@@ -3449,8 +3450,8 @@ export function GardenCanvas({
             })
             .setOrigin(0.5);
 
-          const leftButton = this.add
-            .text(-74, 13, "Face L", {
+          const flipButton = this.add
+            .text(-48, 13, "Flip", {
               color: "#8E70BD",
               fontFamily: "Nunito, sans-serif",
               fontSize: "11px",
@@ -3460,29 +3461,13 @@ export function GardenCanvas({
             })
             .setOrigin(0.5)
             .setInteractive({ useHandCursor: true });
-          leftButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          flipButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             pointer.event.stopPropagation();
-            this.setSelectedDecorFacing("left");
-          });
-
-          const rightButton = this.add
-            .text(0, 13, "Face R", {
-              color: "#8E70BD",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "11px",
-              fontStyle: "900",
-              backgroundColor: "#EFE6F7",
-              padding: { x: 8, y: 4 },
-            })
-            .setOrigin(0.5)
-            .setInteractive({ useHandCursor: true });
-          rightButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            pointer.event.stopPropagation();
-            this.setSelectedDecorFacing("right");
+            this.toggleSelectedDecorFacing();
           });
 
           const removeButton = this.add
-            .text(76, 13, "Remove", {
+            .text(58, 13, "Remove", {
               color: "#9A453E",
               fontFamily: "Nunito, sans-serif",
               fontSize: "11px",
@@ -3497,8 +3482,20 @@ export function GardenCanvas({
             this.removeSelectedDecor();
           });
 
-          bubble.add([bg, label, leftButton, rightButton, removeButton]);
+          bubble.add([bg, label, flipButton, removeButton]);
           this.decorBubble = bubble;
+        }
+
+        private clearSelectedDecor() {
+          if (!this.selectedDecor) return;
+          const selectedId = this.selectedDecor.id;
+          this.decorObjects.forEach((container, containerId) => {
+            const glow = container.getData("glow") as Phaser.GameObjects.Graphics | undefined;
+            if (containerId === selectedId) glow?.setVisible(false);
+          });
+          this.selectedDecor = undefined;
+          this.decorBubble?.destroy(true);
+          this.decorBubble = undefined;
         }
 
         private moveDecorBubble() {

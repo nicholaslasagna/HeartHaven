@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { DoorOpen, Gamepad2, Leaf, Map as MapIcon } from "lucide-react";
@@ -45,9 +45,10 @@ function normalizeZone(value: string | null): AreaZone {
  * inside their own world.
  */
 export function AreaClient({ games, plots }: AreaClientProps) {
+  const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const initialZone = normalizeZone(searchParams.get("zone"));
-  const [activeZone, setActiveZone] = useState<AreaZone>(initialZone);
+  const activeZone = normalizeZone(searchParams.get("zone"));
   const [username, setUsername] = useState(getCachedPublicUsername);
 
   useEffect(() => {
@@ -59,15 +60,11 @@ export function AreaClient({ games, plots }: AreaClientProps) {
     return () => window.removeEventListener("hearthaven:public-username-changed", sync);
   }, []);
 
-  useEffect(() => {
-    // Keep the URL in sync as the host switches modes so a link to this view
-    // restores the same mode on reload.
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    if (url.searchParams.get("zone") === activeZone) return;
-    url.searchParams.set("zone", activeZone);
-    window.history.replaceState({}, "", url.toString());
-  }, [activeZone]);
+  function navigateZone(zone: AreaZone) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("zone", zone);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
 
   return (
     <div className="grid gap-5">
@@ -119,7 +116,7 @@ export function AreaClient({ games, plots }: AreaClientProps) {
                     : "border-cream-300 bg-cream-50 text-ink-700 hover:border-lavender-300 hover:bg-lavender-100/60"
                 }`}
                 key={tab.zone}
-                onClick={() => setActiveZone(tab.zone)}
+                onClick={() => navigateZone(tab.zone)}
                 role="tab"
                 type="button"
               >

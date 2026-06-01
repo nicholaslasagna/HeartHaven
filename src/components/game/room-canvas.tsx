@@ -441,7 +441,7 @@ export function RoomCanvas({
             })
             .setDepth(5000);
 
-          setStatus(activeEvent?.roomMessage ?? "Click the floor to move. Hover, drag, click, and face furniture left/right.");
+          setStatus(activeEvent?.roomMessage ?? "Click the floor to move. Hover, drag, click, and flip furniture.");
         }
 
         update(_time: number, delta: number) {
@@ -1101,6 +1101,7 @@ export function RoomCanvas({
               this.rightHoldFired = false;
               return;
             }
+            this.clearSelectedFurniture();
             // The top-band cutoff (originally 198 for a 600-tall world)
             // keeps clicks on the wall art from teleporting the keeper.
             // Scales with the world so big rooms don't accidentally
@@ -2404,8 +2405,8 @@ export function RoomCanvas({
           const options = getFurnitureInteractionOptions(furniture.placement.kind);
           setStatus(
             options.length > 0
-              ? `${furniture.placement.label}: choose an action, drag to move, or face it left/right.`
-              : `${furniture.placement.label}: drag to place, press R to face left/right, Q/E to adjust depth.`,
+              ? `${furniture.placement.label}: choose an action, drag to move, or flip it.`
+              : `${furniture.placement.label}: drag to place, press R to flip it, Q/E to adjust depth.`,
           );
 
           if (["lantern", "table", "plant"].includes(furniture.placement.kind)) {
@@ -2438,8 +2439,9 @@ export function RoomCanvas({
             })
             .setOrigin(0.5);
 
-          const leftButton = this.add
-            .text(-48, bubbleHeight / 2 - 22, "Face L", {
+          const flipX = canEditRoom ? -40 : 0;
+          const flipButton = this.add
+            .text(flipX, bubbleHeight / 2 - 22, "Flip", {
               color: "#8E70BD",
               fontFamily: "Nunito, sans-serif",
               fontSize: "12px",
@@ -2449,25 +2451,9 @@ export function RoomCanvas({
             })
             .setOrigin(0.5)
             .setInteractive({ useHandCursor: true });
-          leftButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          flipButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             pointer.event.stopPropagation();
-            this.setSelectedFurnitureFacing("left");
-          });
-
-          const rightButton = this.add
-            .text(48, bubbleHeight / 2 - 22, "Face R", {
-              color: "#8E70BD",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "12px",
-              fontStyle: "900",
-              backgroundColor: "#EFE6F7",
-              padding: { x: 9, y: 5 },
-            })
-            .setOrigin(0.5)
-            .setInteractive({ useHandCursor: true });
-          rightButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            pointer.event.stopPropagation();
-            this.setSelectedFurnitureFacing("right");
+            this.toggleSelectedFurnitureFacing();
           });
 
           const downButton = this.add
@@ -2502,10 +2488,10 @@ export function RoomCanvas({
             this.changeSelectedLayer(1);
           });
 
-          const children: Phaser.GameObjects.GameObject[] = [bg, label, downButton, leftButton, rightButton, upButton];
+          const children: Phaser.GameObjects.GameObject[] = [bg, label, downButton, flipButton, upButton];
           if (canEditRoom) {
             const removeButton = this.add
-              .text(0, bubbleHeight / 2 - 22, "Remove", {
+              .text(44, bubbleHeight / 2 - 22, "Remove", {
                 color: "#9F4D5D",
                 fontFamily: "Nunito, sans-serif",
                 fontSize: "12px",
@@ -2544,6 +2530,15 @@ export function RoomCanvas({
 
           bubble.add(children);
           this.interactionBubble = bubble;
+        }
+
+        private clearSelectedFurniture() {
+          if (!this.selectedFurniture) return;
+          this.selectedFurniture.glow.setVisible(false);
+          this.selectedFurniture = undefined;
+          this.interactionBubble?.destroy(true);
+          this.interactionBubble = undefined;
+          setSelected("No item selected");
         }
 
         private activateFurnitureInteraction(furniture: FurnitureObject, actor: FurnitureActor, action: FurnitureAction) {

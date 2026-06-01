@@ -51,6 +51,25 @@ function channelName(hostCode: string) {
   return `party:${hostCode.toUpperCase()}`;
 }
 
+function pathWithHostVisit(path: string, hostCode: string) {
+  if (!path.startsWith("/app/")) return path;
+  try {
+    const url = new URL(path, window.location.origin);
+    const isWorldPlace =
+      url.pathname === "/app/area" ||
+      url.pathname === "/app/room" ||
+      url.pathname === "/app/garden" ||
+      url.pathname === "/app/park" ||
+      url.pathname === "/app/partner-garden";
+    if (isWorldPlace && !url.searchParams.get("visit")) {
+      url.searchParams.set("visit", hostCode);
+    }
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return path;
+  }
+}
+
 /**
  * Host action — broadcast a follow-me event to anyone subscribed to our
  * party channel. The host can opt in to being "followable" any time;
@@ -72,7 +91,7 @@ export async function broadcastPartyRelocate(input: { path: string; label?: stri
       });
     });
     const payload: PartyRelocateEvent = {
-      path: input.path,
+      path: pathWithHostVisit(input.path, social.selfCode),
       label: input.label,
       hostCode: social.selfCode,
       hostDisplayName: social.selfDisplayName || "Keeper",
