@@ -157,7 +157,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     window.addEventListener("hearthaven:friend-code-regenerated", sync);
     return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
   }, []);
-  const channelHostCode = visitTarget ?? selfFriendCode;
+  const channelHostCode = visitTarget || selfFriendCode || (typeof window === "undefined" ? "" : getSocialState().selfCode);
   const realtime = useRoomRealtime({
     hostFriendCode: channelHostCode,
     roomId: isVisitAllowed ? activeRoom.id : "friend-only-gate",

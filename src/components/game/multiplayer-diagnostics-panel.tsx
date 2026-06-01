@@ -7,6 +7,10 @@ import {
   MULTIPLAYER_DIAGNOSTIC_EVENT,
   type MultiplayerRpcDiagnostic,
 } from "@/lib/game/multiplayer-diagnostics";
+import {
+  ROOM_REALTIME_DIAGNOSTIC_EVENT,
+  type RoomRealtimeDiagnostic,
+} from "@/lib/game/room-realtime-diagnostics";
 import { PLACE_INVITES_REFRESHED_EVENT } from "@/lib/game/place-invites";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { getSupabaseConfig, isSupabaseConfigured } from "@/lib/supabase/config";
@@ -51,6 +55,7 @@ export function MultiplayerDiagnosticsPanel() {
     username: null,
   });
   const [lastRpc, setLastRpc] = useState<MultiplayerRpcDiagnostic | null>(null);
+  const [roomRealtime, setRoomRealtime] = useState<RoomRealtimeDiagnostic | null>(null);
 
   const routeValues = useMemo(() => {
     const sessionId = searchParams.get("session");
@@ -82,11 +87,17 @@ export function MultiplayerDiagnosticsPanel() {
         pendingInvitesCount: typeof detail?.count === "number" ? detail.count : current.pendingInvitesCount,
       }));
     };
+    const onRoomRealtime = (event: Event) => {
+      const detail = (event as CustomEvent<RoomRealtimeDiagnostic>).detail;
+      setRoomRealtime((current) => ({ ...current, ...detail }));
+    };
     window.addEventListener(MULTIPLAYER_DIAGNOSTIC_EVENT, onRpc);
     window.addEventListener(PLACE_INVITES_REFRESHED_EVENT, onInvites);
+    window.addEventListener(ROOM_REALTIME_DIAGNOSTIC_EVENT, onRoomRealtime);
     return () => {
       window.removeEventListener(MULTIPLAYER_DIAGNOSTIC_EVENT, onRpc);
       window.removeEventListener(PLACE_INVITES_REFRESHED_EVENT, onInvites);
+      window.removeEventListener(ROOM_REALTIME_DIAGNOSTIC_EVENT, onRoomRealtime);
     };
   }, [enabled]);
 
@@ -168,6 +179,17 @@ export function MultiplayerDiagnosticsPanel() {
         <dt>Invite type</dt><dd className="truncate">{snapshot.latestInviteType ?? "none"}</dd>
         <dt>Invite target</dt><dd className="truncate font-mono">{snapshot.latestInviteTargetUrl ?? "none"}</dd>
         <dt>Session players</dt><dd>{snapshot.sessionPlayersCount ?? "unknown"}</dd>
+        <dt>Room channel</dt><dd className="truncate font-mono">{roomRealtime?.roomChannelName ?? "none"}</dd>
+        <dt>Room host code</dt><dd className="truncate font-mono">{roomRealtime?.resolvedRoomHostCode ?? "none"}</dd>
+        <dt>Room status</dt><dd className="truncate">{roomRealtime?.roomConnectionState ?? "unknown"}</dd>
+        <dt>Presence count</dt><dd>{roomRealtime?.presenceCount ?? "unknown"}</dd>
+        <dt>Remote players</dt><dd>{roomRealtime?.remotePlayerCount ?? "unknown"}</dd>
+        <dt>Remote pets</dt><dd>{roomRealtime?.remoteCompanionCount ?? "unknown"}</dd>
+        <dt>Room version</dt><dd>{roomRealtime?.roomPlacementVersion ?? "unknown"}</dd>
+        <dt>Placement recv</dt><dd className="truncate font-mono">{roomRealtime?.lastPlacementBroadcastAt ?? "none"}</dd>
+        <dt>Placement poll</dt><dd className="truncate font-mono">{roomRealtime?.lastPlacementPollAt ?? "none"}</dd>
+        <dt>Placement canvas</dt><dd className="truncate font-mono">{roomRealtime?.lastPlacementAppliedAt ?? "none"}</dd>
+        <dt>Room error</dt><dd className="truncate text-blush-700">{roomRealtime?.lastRealtimeError ?? "none"}</dd>
         <dt>Last RPC</dt><dd className="truncate">{lastRpc ? `${lastRpc.name} ${lastRpc.ok ? "ok" : "failed"}` : "none"}</dd>
         <dt>Last error</dt><dd className="truncate text-blush-700">{lastRpc?.error ?? "none"}</dd>
       </dl>

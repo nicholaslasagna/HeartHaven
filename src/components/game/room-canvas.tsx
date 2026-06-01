@@ -44,6 +44,7 @@ import {
   type PetBehavior,
   type PetMood as CompanionMood,
 } from "@/lib/game/pet-state";
+import { recordRoomRealtimeDiagnostic } from "@/lib/game/room-realtime-diagnostics";
 import { defaultRoomSurfaceSelection, type RoomSurfaceSelection } from "@/lib/game/room-surfaces";
 import type { FacingDirection, RealtimeRoomPlayer, RoomBlueprint, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
@@ -950,6 +951,7 @@ export function RoomCanvas({
 
           this.sortDepths();
           this.moveBubbleToSelection();
+          recordRoomRealtimeDiagnostic({ lastPlacementAppliedAt: new Date().toISOString() });
         }
 
         private updatePendingPlacements(ids: string[]) {

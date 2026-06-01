@@ -17,6 +17,7 @@ import {
   PET_CUSTOMIZATION_EVENT,
   readPresenceCustomization,
 } from "@/lib/game/avatar-customization";
+import { recordRoomRealtimeDiagnostic } from "@/lib/game/room-realtime-diagnostics";
 import { getSocialState, recordPlayedWith } from "@/lib/game/social";
 import { isBlocked, isLocallyQuarantined, readSafetyState, submitReport } from "@/lib/game/safety";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
@@ -46,6 +47,17 @@ function normalizeRoomId(roomId: string) {
 
 function normalizeFriendCode(code: string) {
   return code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
+}
+
+function parsePlacementHydrationRow(row: unknown) {
+  if (!row || typeof row !== "object") return null;
+  const r = row as { placements?: unknown; version?: unknown; updated_at?: unknown };
+  const versionNumber = Number(r.version);
+  return {
+    placements: hardenRoomPlacements(r.placements),
+    updatedAt: typeof r.updated_at === "string" ? r.updated_at : undefined,
+    version: Number.isFinite(versionNumber) ? versionNumber : 1,
+  };
 }
 
 export type SavePlacementsResult =
@@ -108,7 +120,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     normalizedRoomIdRef.current = normalizedRoomId;
   }, [normalizedRoomId]);
   const normalizedHostCode = useMemo(
-    () => normalizeFriendCode(hostFriendCode ?? (localFriendCode || getSocialState().selfCode)),
+    () => normalizeFriendCode(hostFriendCode || localFriendCode || getSocialState().selfCode),
     [hostFriendCode, localFriendCode],
   );
   const channelKey = useMemo(() => normalizedHostCode || normalizedRoomId, [normalizedHostCode, normalizedRoomId]);
@@ -156,10 +168,19 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     let cancelled = false;
     let customizationCleanup: (() => void) | null = null;
     let customizationPoll: number | null = null;
+    let heartbeatTimer: number | null = null;
+    let placementPollTimer: number | null = null;
 
     async function connect() {
       setConnectionState("connecting");
       setStatus(`Joining ${roomName} multiplayer`);
+      recordRoomRealtimeDiagnostic({
+        resolvedRoomHostCode: channelKey,
+        roomChannelName: `room:${channelKey}`,
+        roomConnectionState: "connecting",
+        roomId: normalizedRoomId,
+        roomPlacementVersion: placementsVersionRef.current,
+      });
 
       try {
         const supabase = getSupabaseBrowserClient();
@@ -170,6 +191,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         const displayName = await resolvePublicUsername(user);
         const social = getSocialState();
         setLocalFriendCode(social.selfCode);
+        latestFriendCodeRef.current = social.selfCode;
 
         // Full customization snapshot — keeper palette + outfit, pet species +
         // fur tone + accessory — so remote keepers see the real avatar/pet.
@@ -196,6 +218,57 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
 
         channelRef.current = channel;
 
+        async function publishLocalPresence() {
+          const current = localPlayerRef.current;
+          if (!current) return;
+          const next: RealtimeRoomPlayer = {
+            ...current,
+            displayName: getCachedPublicUsername(),
+            friendCode: getSocialState().selfCode,
+            roomId: normalizedRoomIdRef.current,
+            ...readPresenceCustomization(),
+            updatedAt: Date.now(),
+          };
+          localPlayerRef.current = next;
+          latestFriendCodeRef.current = next.friendCode ?? "";
+          await channel.track(next);
+          void channel.send({ type: "broadcast", event: "avatar_move", payload: next });
+        }
+
+        async function refreshRoomPlacements(source: "hydrate" | "poll") {
+          const { data, error } = await supabase.rpc("get_room_placements", {
+            p_host_friend_code: channelKey,
+            p_room_id: normalizedRoomId,
+          });
+          if (error) {
+            recordRoomRealtimeDiagnostic({
+              lastRealtimeError: error.message,
+              resolvedRoomHostCode: channelKey,
+              roomChannelName: `room:${channelKey}`,
+              roomId: normalizedRoomId,
+            });
+            return null;
+          }
+          const row = Array.isArray(data) ? data[0] : null;
+          const parsed = parsePlacementHydrationRow(row);
+          if (!parsed) return null;
+          if (!cancelled && (source === "hydrate" || parsed.version > placementsVersionRef.current)) {
+            setPlacements(parsed.placements);
+            setPlacementsVersion(parsed.version);
+            placementsVersionRef.current = parsed.version;
+          }
+          if (!cancelled) {
+            recordRoomRealtimeDiagnostic({
+              lastPlacementPollAt: source === "poll" ? new Date().toISOString() : undefined,
+              resolvedRoomHostCode: channelKey,
+              roomChannelName: `room:${channelKey}`,
+              roomId: normalizedRoomId,
+              roomPlacementVersion: placementsVersionRef.current,
+            });
+          }
+          return parsed;
+        }
+
         function syncPresence() {
           const state = channel.presenceState<RealtimeRoomPlayer>();
           // Every realtime payload is untrusted — clamp coords, scrub
@@ -219,6 +292,16 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             recordActivity("friend-time", 1, { context: roomName });
           }
           setPlayers(remotePlayers);
+          recordRoomRealtimeDiagnostic({
+            presenceCount: remotePlayers.length + 1,
+            remoteCompanionCount: remotePlayers.filter((player) => Boolean(player.petSpeciesId)).length,
+            remotePlayerCount: remotePlayers.length,
+            resolvedRoomHostCode: channelKey,
+            roomChannelName: `room:${channelKey}`,
+            roomConnectionState: "connected",
+            roomId: normalizedRoomId,
+            roomPlacementVersion: placementsVersionRef.current,
+          });
         }
 
         // --- Hydrate server-canonical room state ----------------------
@@ -229,10 +312,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         setPlacementsLoading(true);
         setSurfacesLoading(true);
         const hydration = await Promise.all([
-          supabase.rpc("get_room_placements", {
-            p_host_friend_code: channelKey,
-            p_room_id: normalizedRoomId,
-          }),
+          refreshRoomPlacements("hydrate"),
           supabase.rpc("get_room_decorators", {
             p_host_friend_code: channelKey,
             p_room_id: normalizedRoomId,
@@ -244,15 +324,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         ]);
         if (cancelled) return;
 
-        const placementsRow = Array.isArray(hydration[0].data) ? hydration[0].data[0] : null;
-        if (placementsRow) {
-          const safe = hardenRoomPlacements(placementsRow.placements);
-          setPlacements(safe);
-          const versionNumber = Number(placementsRow.version);
-          const safeVersion = Number.isFinite(versionNumber) ? versionNumber : 1;
-          setPlacementsVersion(safeVersion);
-          placementsVersionRef.current = safeVersion;
-        } else {
+        if (!hydration[0]) {
           // No row yet — the host hasn't saved anything to the server. We
           // leave `placements` as null so the caller (room-client) knows
           // to fall back to its cozy default + localStorage. Version 0
@@ -315,6 +387,13 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             placementsVersionRef.current = versionNumber;
             setPlacementsVersion(versionNumber);
             setPlacements(safe);
+            recordRoomRealtimeDiagnostic({
+              lastPlacementBroadcastAt: new Date().toISOString(),
+              resolvedRoomHostCode: channelKey,
+              roomChannelName: `room:${channelKey}`,
+              roomId: normalizedRoomId,
+              roomPlacementVersion: versionNumber,
+            });
           })
           .on("broadcast", { event: "avatar_move" }, ({ payload }) => {
             const player = hardenRealtimePlayer(payload);
@@ -324,7 +403,19 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             if (player.friendCode) {
               recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
             }
-            setPlayers((current) => upsertPlayer(current, player));
+            setPlayers((current) => {
+              const next = upsertPlayer(current, player);
+              recordRoomRealtimeDiagnostic({
+                remoteCompanionCount: next.filter((entry) => Boolean(entry.petSpeciesId)).length,
+                remotePlayerCount: next.length,
+                resolvedRoomHostCode: channelKey,
+                roomChannelName: `room:${channelKey}`,
+                roomConnectionState: "connected",
+                roomId: normalizedRoomId,
+                roomPlacementVersion: placementsVersionRef.current,
+              });
+              return next;
+            });
           })
           .on("broadcast", { event: "room_emote" }, ({ payload }) => {
             const player = hardenRealtimePlayer(payload);
@@ -334,7 +425,19 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             if (player.friendCode) {
               recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
             }
-            setPlayers((current) => upsertPlayer(current, player));
+            setPlayers((current) => {
+              const next = upsertPlayer(current, player);
+              recordRoomRealtimeDiagnostic({
+                remoteCompanionCount: next.filter((entry) => Boolean(entry.petSpeciesId)).length,
+                remotePlayerCount: next.length,
+                resolvedRoomHostCode: channelKey,
+                roomChannelName: `room:${channelKey}`,
+                roomConnectionState: "connected",
+                roomId: normalizedRoomId,
+                roomPlacementVersion: placementsVersionRef.current,
+              });
+              return next;
+            });
             window.dispatchEvent(new CustomEvent("hearthaven:remote-emote", { detail: player }));
           })
           .on("broadcast", { event: "room_chat" }, ({ payload }) => {
@@ -356,15 +459,39 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           .subscribe(async (state) => {
             if (cancelled) return;
             if (state === "SUBSCRIBED") {
-              await channel.track(localPlayer);
+              await publishLocalPresence();
+              if (heartbeatTimer) window.clearInterval(heartbeatTimer);
+              heartbeatTimer = window.setInterval(() => void publishLocalPresence(), 2000);
+              if (placementPollTimer) window.clearInterval(placementPollTimer);
+              placementPollTimer = window.setInterval(() => void refreshRoomPlacements("poll"), 1200);
               setConnectionState("connected");
               setStatus(`Live in room ${roomCode}`);
+              recordRoomRealtimeDiagnostic({
+                resolvedRoomHostCode: channelKey,
+                roomChannelName: `room:${channelKey}`,
+                roomConnectionState: "connected",
+                roomId: normalizedRoomId,
+                roomPlacementVersion: placementsVersionRef.current,
+              });
             } else if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") {
               setConnectionState("error");
               setStatus("Online room visits could not connect. The room still works.");
+              recordRoomRealtimeDiagnostic({
+                lastRealtimeError: state,
+                resolvedRoomHostCode: channelKey,
+                roomChannelName: `room:${channelKey}`,
+                roomConnectionState: "error",
+                roomId: normalizedRoomId,
+              });
             } else if (state === "CLOSED") {
               setConnectionState("offline");
               setStatus("Room visit connection closed.");
+              recordRoomRealtimeDiagnostic({
+                resolvedRoomHostCode: channelKey,
+                roomChannelName: `room:${channelKey}`,
+                roomConnectionState: "offline",
+                roomId: normalizedRoomId,
+              });
             }
           });
 
@@ -409,6 +536,13 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       } catch (error) {
         setConnectionState("error");
         setStatus(error instanceof Error ? error.message : "Online room visits could not start.");
+        recordRoomRealtimeDiagnostic({
+          lastRealtimeError: error instanceof Error ? error.message : "Online room visits could not start.",
+          resolvedRoomHostCode: channelKey,
+          roomChannelName: `room:${channelKey}`,
+          roomConnectionState: "error",
+          roomId: normalizedRoomId,
+        });
       }
     }
 
@@ -418,6 +552,10 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       cancelled = true;
       customizationCleanup?.();
       customizationCleanup = null;
+      if (heartbeatTimer) window.clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+      if (placementPollTimer) window.clearInterval(placementPollTimer);
+      placementPollTimer = null;
       const channel = channelRef.current;
       if (channel) {
         void getSupabaseBrowserClient().removeChannel(channel);
