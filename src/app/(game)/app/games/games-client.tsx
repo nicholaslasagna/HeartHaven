@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ClipboardCheck,
@@ -84,6 +83,7 @@ export function GamesClient() {
   const social = useSocial();
   const lobby = party.lobby;
   const [copied, setCopied] = useState<string | null>(null);
+  const [invitingFriendCode, setInvitingFriendCode] = useState<string | null>(null);
   const [joinInput, setJoinInput] = useState("");
   const [notice, setNotice] = useState<{ kind: "idle" | "ok" | "error"; message: string }>({
     kind: "idle",
@@ -186,12 +186,14 @@ export function GamesClient() {
       return;
     }
 
+    setInvitingFriendCode(friend.code);
     const result = await sendPlaceInviteToFriend({
       friendCode: friend.code,
       inviteType: "party",
       targetSessionId: lobby.session_id,
       targetUrl: `/app/games?join=${encodeURIComponent(code)}`,
     });
+    setInvitingFriendCode(null);
     if (!result.ok) {
       setNotice({ kind: "error", message: actionErrorCopy(result.reason) });
       return;
@@ -200,6 +202,49 @@ export function GamesClient() {
     window.setTimeout(() => setCopied((current) => (current === `friend-${friend.code}` ? null : current)), 1800);
     setNotice({ kind: "ok", message: `${friend.displayName} was invited to this lobby.` });
   }
+
+  const friendInvitePanel = lobby && party.isHost ? (
+    <div className="mt-3 rounded-lg border border-blush-300/45 bg-blush-100/50 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-blush-600">
+          <UserPlus className="size-3.5" /> Invite friends
+        </p>
+        <Badge variant="outline">{social.friends.length}</Badge>
+      </div>
+      {social.friends.length === 0 ? (
+        <p className="text-xs font-bold leading-5 text-ink-600">
+          Add friends first, then they&apos;ll appear here for one-tap lobby invites.
+        </p>
+      ) : (
+        <div className="grid max-h-48 gap-2 overflow-y-auto pr-1">
+          {social.friends.map((friend) => {
+            const isInvited = copied === `friend-${friend.code}`;
+            const isSending = invitingFriendCode === friend.code;
+            return (
+              <div
+                className="flex items-center justify-between gap-2 rounded-md border border-white/70 bg-white/78 px-2.5 py-2"
+                key={friend.code}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-extrabold text-ink-900">{friend.displayName}</p>
+                  <p className="font-mono text-[11px] font-bold text-ink-500">{friend.code}</p>
+                </div>
+                <CozyButton
+                  onClick={() => void inviteFriend(friend)}
+                  size="sm"
+                  variant={isInvited ? "warm" : "secondary"}
+                  disabled={isSending}
+                >
+                  {isInvited ? <ClipboardCheck /> : <UserPlus />}
+                  {isSending ? "Sending..." : isInvited ? "Invited" : "Invite"}
+                </CozyButton>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  ) : null;
 
   async function requestToJoin() {
     const code = extractLobbyCode(joinInput);
@@ -321,47 +366,9 @@ export function GamesClient() {
                 {copied === "party-link" ? <ClipboardCheck /> : <Copy />}
                 {copied === "party-link" ? "Copied" : "Copy lobby invite"}
               </Button>
-              <CozyButton asChild variant="warm">
-                <Link href="/app/friends" scroll={false}>
-                  <UserPlus /> Invite from Friends
-                </Link>
-              </CozyButton>
               <p className="rounded-md border border-cream-300 bg-white/65 px-3 py-2 text-xs font-extrabold text-ink-600">
                 Lobby code: <span className="font-mono">{lobby.invite_code || lobby.host_friend_code}</span>
               </p>
-              <div className="rounded-lg border border-blush-300/40 bg-blush-100/45 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-extrabold uppercase tracking-normal text-blush-600">Invite friends</p>
-                  <Badge variant="outline">{social.friends.length}</Badge>
-                </div>
-                {social.friends.length === 0 ? (
-                  <p className="mt-2 text-xs font-bold leading-5 text-ink-600">
-                    Add friends first, then they&apos;ll appear here for one-tap lobby invites.
-                  </p>
-                ) : (
-                  <div className="mt-2 grid max-h-48 gap-2 overflow-y-auto pr-1">
-                    {social.friends.map((friend) => (
-                      <div
-                        className="flex items-center justify-between gap-2 rounded-md border border-white/70 bg-white/78 px-2.5 py-2"
-                        key={friend.code}
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-extrabold text-ink-900">{friend.displayName}</p>
-                          <p className="font-mono text-[11px] font-bold text-ink-500">{friend.code}</p>
-                        </div>
-                        <Button
-                          onClick={() => void inviteFriend(friend)}
-                          size="sm"
-                          variant={copied === `friend-${friend.code}` ? "warm" : "secondary"}
-                        >
-                          {copied === `friend-${friend.code}` ? <ClipboardCheck /> : <UserPlus />}
-                          {copied === `friend-${friend.code}` ? "Invited" : "Invite"}
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -393,6 +400,7 @@ export function GamesClient() {
               {notice.message}
             </p>
           )}
+          {friendInvitePanel}
         </CozyCard>
       </section>
 

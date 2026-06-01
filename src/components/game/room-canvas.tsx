@@ -882,8 +882,14 @@ export function RoomCanvas({
             }
           });
 
-          container.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          container.on("pointerdown", (
+            pointer: Phaser.Input.Pointer,
+            _localX: number,
+            _localY: number,
+            event: Phaser.Types.Input.EventData,
+          ) => {
             if (pointer.rightButtonDown()) return;
+            event.stopPropagation();
             pointer.event.stopPropagation();
             this.dragStarted = false;
             playCozyCue("place");
@@ -2487,7 +2493,13 @@ export function RoomCanvas({
               })
               .setOrigin(0.5)
               .setInteractive({ useHandCursor: true });
-            flipButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            flipButton.on("pointerdown", (
+              pointer: Phaser.Input.Pointer,
+              _localX: number,
+              _localY: number,
+              event: Phaser.Types.Input.EventData,
+            ) => {
+              event.stopPropagation();
               pointer.event.stopPropagation();
               this.toggleSelectedFurnitureFacing();
             });
@@ -2502,7 +2514,13 @@ export function RoomCanvas({
               })
               .setOrigin(0.5)
               .setInteractive({ useHandCursor: true });
-            removeButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            removeButton.on("pointerdown", (
+              pointer: Phaser.Input.Pointer,
+              _localX: number,
+              _localY: number,
+              event: Phaser.Types.Input.EventData,
+            ) => {
+              event.stopPropagation();
               pointer.event.stopPropagation();
               this.removeSelectedFurniture();
             });
@@ -2522,7 +2540,13 @@ export function RoomCanvas({
               })
               .setOrigin(0.5)
               .setInteractive({ useHandCursor: true });
-            actionButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+            actionButton.on("pointerdown", (
+              pointer: Phaser.Input.Pointer,
+              _localX: number,
+              _localY: number,
+              event: Phaser.Types.Input.EventData,
+            ) => {
+              event.stopPropagation();
               pointer.event.stopPropagation();
               this.activateFurnitureInteraction(furniture, action.actor, action.action);
             });

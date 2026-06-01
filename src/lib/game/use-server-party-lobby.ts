@@ -6,6 +6,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
+import { getCachedPublicUsername } from "@/lib/game/public-identity";
 import { getSocialState } from "@/lib/game/social";
 
 /**
@@ -360,14 +361,44 @@ export function useServerPartyLobby(initialSize = 4) {
     if (!isSupabaseConfigured()) return { ok: false, reason: "offline" };
     try {
       const supabase = getSupabaseBrowserClient();
-      const { error: rpcError } = await supabase.rpc("create_party_lobby", { p_max_players: maxPlayers });
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const { data, error: rpcError } = await supabase.rpc("create_party_lobby", { p_max_players: maxPlayers });
       if (rpcError) {
         recordMultiplayerRpc("create_party_lobby", rpcError);
         return { ok: false, reason: friendlyPartyError(rpcError.message) };
       }
       recordMultiplayerRpc("create_party_lobby");
+      const row = Array.isArray(data) ? data[0] : null;
+      let createdLobby: LobbyState | null = null;
+      if (row?.session_id && user?.id) {
+        const social = getSocialState();
+        createdLobby = {
+          session_id: row.session_id,
+          host_profile_id: user.id,
+          host_friend_code: String(row.host_friend_code ?? social.selfCode),
+          invite_code: String(row.invite_code ?? row.host_friend_code ?? social.selfCode),
+          status: "waiting",
+          max_players: maxPlayers,
+          selected_game_key: null,
+          selected_game_href: null,
+          selected_game_label: null,
+          seats: [
+            {
+              profile_id: user.id,
+              display_name: getCachedPublicUsername(),
+              seat_index: 0,
+              team_key: "host",
+              ready: true,
+            },
+          ],
+        };
+        setLobby(createdLobby);
+        setJoinRequests([]);
+      }
       await hydrate();
-      return { ok: true } as Result<LobbyState>;
+      return createdLobby ? ({ ok: true, value: createdLobby } as Result<LobbyState>) : ({ ok: true } as Result<LobbyState>);
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : "Could not create lobby" };
     }

@@ -901,14 +901,6 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     }
 
     const channel = channelRef.current;
-    if (isSupabaseConfigured() && (!channel || !realtimeReadyRef.current)) {
-      return {
-        ok: false,
-        severity: "soft-block",
-        reason: "Room chat is reconnecting. Try again in a moment.",
-      };
-    }
-
     const localPlayer = localPlayerRef.current;
     const social = getSocialState();
     let message: GardenChatMessage = {
