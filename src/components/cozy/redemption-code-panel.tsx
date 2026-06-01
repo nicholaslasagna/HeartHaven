@@ -75,7 +75,17 @@ export function RedemptionCodePanel() {
     try {
       const supabase = getSupabaseBrowserClient();
       const { data, error } = await supabase.rpc("redeem_code", { p_code: normalized });
-      if (error) throw error;
+      if (error) {
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[HeartHaven] redeem_code RPC failed", {
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+            message: error.message,
+          });
+        }
+        throw error;
+      }
 
       const row = resultRow(data);
       if (!row) {
@@ -98,7 +108,10 @@ export function RedemptionCodePanel() {
         kind: "ok",
         message: row.message ?? `${row.reward_pet_name ?? "A new companion"} joined your roster.`,
       });
-    } catch {
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.error("[HeartHaven] redemption failed", error);
+      }
       setNotice({ kind: "error", message: "That code could not be redeemed right now. Try again in a moment." });
     } finally {
       setPending(false);

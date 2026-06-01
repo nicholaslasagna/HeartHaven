@@ -34,14 +34,45 @@ select count(*) as non_sha256_hash_rows
  where code_hash !~ '^[0-9a-f]{64}$';
 -- Expected: 0.
 
--- 3) Confirm users cannot write redemption tables directly.
+-- 3) Confirm ownership FKs point at profiles, matching public.pets.owner_id.
+select
+  constraint_name,
+  table_name,
+  column_name,
+  foreign_table_name,
+  foreign_column_name
+from (
+  select
+    tc.constraint_name,
+    tc.table_name,
+    kcu.column_name,
+    ccu.table_name as foreign_table_name,
+    ccu.column_name as foreign_column_name
+  from information_schema.table_constraints tc
+  join information_schema.key_column_usage kcu
+    on kcu.constraint_name = tc.constraint_name
+   and kcu.constraint_schema = tc.constraint_schema
+  join information_schema.constraint_column_usage ccu
+    on ccu.constraint_name = tc.constraint_name
+   and ccu.constraint_schema = tc.constraint_schema
+  where tc.constraint_schema = 'public'
+    and tc.constraint_type = 'FOREIGN KEY'
+) fk
+where (table_name = 'pets' and column_name = 'owner_id')
+   or (table_name = 'redemption_code_redemptions' and column_name = 'user_id')
+order by table_name, column_name;
+-- Expected:
+-- pets.owner_id -> profiles.id
+-- redemption_code_redemptions.user_id -> profiles.id
+
+-- 4) Confirm users cannot write redemption tables directly.
 select has_table_privilege('anon', 'public.redemption_codes', 'insert') as anon_can_insert_codes,
        has_table_privilege('authenticated', 'public.redemption_codes', 'insert') as authenticated_can_insert_codes,
        has_table_privilege('anon', 'public.redemption_code_redemptions', 'insert') as anon_can_insert_redemptions,
        has_table_privilege('authenticated', 'public.redemption_code_redemptions', 'insert') as authenticated_can_insert_redemptions;
 -- Expected: all false.
 
--- 4) Admin-only seed example. Replace HH-DEV-EXAMPLE-CASPER locally with a
+-- 5) Admin-only seed example. Replace HH-DEV-EXAMPLE-CASPER locally with a
 -- private throwaway code before running. Never commit real production codes.
 -- Service role / SQL editor only:
 /*
@@ -79,17 +110,48 @@ on conflict (code_hash) do update
       disabled_at = null;
 */
 
--- 5) Authenticated redemption test. Run as a signed-in user via /app/pet or
+-- 6) Authenticated redemption test. Run as a signed-in user via /app/pet or
 -- the Supabase SQL editor impersonation tools:
 -- select * from public.redeem_code('HH-DEV-EXAMPLE-CASPER');
 -- Expected: ok=true; public.pets gets one active row with the seeded species,
 -- name, tone, and accessory. The client cannot provide these reward fields.
 
--- 6) Same user redeeming again:
+-- Confirm the pet was inserted for the caller's profile owner, not an
+-- arbitrary client-supplied owner. Run this from the same impersonated
+-- authenticated user after the successful redemption above.
+/*
+with private_code as (
+  select encode(
+    digest(regexp_replace(upper('HH-DEV-EXAMPLE-CASPER'), '[^A-Z0-9]', '', 'g'), 'sha256'
+  ), 'hex') as code_hash
+),
+redeemed as (
+  select r.*
+  from public.redemption_code_redemptions r
+  join public.redemption_codes c on c.id = r.code_id
+  join private_code pc on pc.code_hash = c.code_hash
+  where r.user_id = auth.uid()
+  order by r.redeemed_at desc
+  limit 1
+)
+select
+  auth.uid() as current_auth_uid,
+  redeemed.user_id as redemption_profile_id,
+  pets.owner_id as pet_owner_profile_id,
+  pets.species,
+  pets.name,
+  pets.tone,
+  pets.accessory
+from redeemed
+join public.pets on pets.id = redeemed.pet_id;
+*/
+-- Expected: current_auth_uid = redemption_profile_id = pet_owner_profile_id.
+
+-- 7) Same user redeeming again:
 -- select * from public.redeem_code('HH-DEV-EXAMPLE-CASPER');
 -- Expected: ok=false, message='You already redeemed this code.'
 
--- 7) Confirm no duplicate redemption row was created for that user/code.
+-- 8) Confirm no duplicate redemption row was created for that user/code.
 -- select count(*)
 --   from public.redemption_code_redemptions
 --  where user_id = auth.uid()
@@ -100,7 +162,7 @@ on conflict (code_hash) do update
 --    );
 -- Expected: 1.
 
--- 8) Expired code should fail and not insert a pet.
+-- 9) Expired code should fail and not insert a pet.
 /*
 with private_code as (
   select regexp_replace(upper('HH-DEV-EXPIRED-CASPER'), '[^A-Z0-9]', '', 'g') as normalized
@@ -118,7 +180,7 @@ on conflict (code_hash) do update set expires_at = excluded.expires_at, disabled
 -- Expected: ok=false, message='That code has expired.'
 */
 
--- 9) Disabled code should fail and not insert a pet.
+-- 10) Disabled code should fail and not insert a pet.
 /*
 with private_code as (
   select regexp_replace(upper('HH-DEV-DISABLED-CASPER'), '[^A-Z0-9]', '', 'g') as normalized
@@ -136,14 +198,15 @@ on conflict (code_hash) do update set disabled_at = excluded.disabled_at;
 -- Expected: ok=false, message='That code is no longer active.'
 */
 
--- 10) Max global redemption test.
+-- 11) Max global redemption test.
 -- Seed HH-DEV-EXAMPLE-CASPER with max_global_redemptions=1, redeem from user A,
 -- then redeem from user B. User B should receive:
 -- ok=false, message='That code has already been fully claimed.'
 
--- 11) Admin-only Super Snails example. Replace HH-DEV-SUPER-SNAILS with a
+-- 12) Admin-only Super Snails example. Replace HH-DEV-SUPER-SNAILS with a
 -- private throwaway code before running. This is intentionally not a real
--- production code.
+-- production code. To test a real live Super Snails code, paste it only in
+-- the Supabase SQL editor or /app/pet UI; do not save it in this repo.
 /*
 with private_code as (
   select regexp_replace(upper('HH-DEV-SUPER-SNAILS'), '[^A-Z0-9]', '', 'g') as normalized
@@ -183,3 +246,12 @@ on conflict (code_hash) do update
 -- select * from public.redeem_code('HH-DEV-SUPER-SNAILS');
 -- Expected: ok=true, reward_pet_species='super-snails', reward_pet_name='Super Snails';
 -- the app shows the unlock celebration and Super Snails appears in the companion roster.
+
+-- Confirm Super Snails ownership after redeeming the private test/live code:
+-- select owner_id, species, name, tone, accessory, active
+--   from public.pets
+--  where owner_id = auth.uid()
+--    and species = 'super-snails'
+--  order by created_at desc
+--  limit 1;
+-- Expected: owner_id = auth.uid(), species='super-snails', active=true.

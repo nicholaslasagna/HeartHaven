@@ -36,6 +36,13 @@ type PlaceInviteRow = {
   created_at?: string;
 };
 
+type SendPlaceInviteRow = {
+  id?: string;
+  invite_id?: string;
+  status?: string;
+  expires_at?: string;
+};
+
 export type SendPlaceInviteInput = {
   friendCode: string;
   inviteType: PlaceInviteType;
@@ -104,7 +111,13 @@ export async function sendPlaceInviteToFriend(input: SendPlaceInviteInput): Prom
 
     if (error) return { ok: false, reason: error.message };
     const row = Array.isArray(data) ? data[0] : null;
-    const inviteId = typeof row?.id === "string" ? row.id : "";
+    const inviteRow = row as SendPlaceInviteRow | null;
+    const inviteId =
+      typeof inviteRow?.invite_id === "string"
+        ? inviteRow.invite_id
+        : typeof inviteRow?.id === "string"
+          ? inviteRow.id
+          : "";
     if (!inviteId) return { ok: false, reason: "Invite was not created." };
     return { ok: true, inviteId };
   } catch (error) {
