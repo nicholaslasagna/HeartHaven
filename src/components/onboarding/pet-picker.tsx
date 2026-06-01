@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, PawPrint } from "lucide-react";
 import Image from "next/image";
 import { adoptPetAction } from "@/app/onboarding/actions";
 import { Button } from "@/components/ui/button";
@@ -6,19 +6,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { petSpecies } from "@/lib/catalog";
 
+const DEFAULT_STARTER_PET_SPECIES = "kitten";
+
 export function PetPicker() {
   return (
     <Card className="bg-white/78">
       <CardHeader>
         <CardTitle>Adopt your first companion</CardTitle>
-        <CardDescription>Pick a starter friend. The adoption record becomes a persistent pet in Phase 2.</CardDescription>
+        <CardDescription>
+          Pick any starter companion below. If you skip this choice, Casper Cat joins your haven by default.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form className="grid gap-5" action={adoptPetAction}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {petSpecies.map((pet, index) => (
-              <label key={pet.id} className="cursor-pointer rounded-lg border border-cream-300 bg-cream-50/80 p-4 transition hover:border-blush-300 hover:bg-blush-100/40">
-                <input className="sr-only" type="radio" name="species" value={pet.id} defaultChecked={pet.id === "kitten"} />
+          <div className="grid max-h-[620px] gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+            {petSpecies.map((pet) => (
+              <label
+                key={pet.id}
+                className="group relative cursor-pointer rounded-lg border border-cream-300 bg-cream-50/80 p-4 transition hover:-translate-y-0.5 hover:border-blush-300 hover:bg-blush-100/40 has-[:checked]:border-blush-300 has-[:checked]:bg-blush-100/65 has-[:checked]:shadow-[0_16px_34px_-24px_rgba(120,75,82,0.6)]"
+              >
+                <input
+                  className="peer sr-only"
+                  type="radio"
+                  name="species"
+                  value={pet.id}
+                  defaultChecked={pet.id === DEFAULT_STARTER_PET_SPECIES}
+                />
+                <span className="absolute right-3 top-3 hidden items-center gap-1 rounded-full bg-white/90 px-2 py-1 text-[10px] font-black uppercase tracking-normal text-blush-600 shadow-sm peer-checked:inline-flex">
+                  <PawPrint className="size-3" /> chosen
+                </span>
                 <div className="grid grid-cols-[96px_1fr] items-center gap-3">
                   <div className="relative grid h-24 place-items-center rounded-lg bg-white/70">
                     <div className="absolute bottom-3 h-4 w-16 rounded-full bg-ink-900/15 blur-[1px]" />
@@ -34,6 +50,11 @@ export function PetPicker() {
                     <div className="font-display text-xl">{pet.name}</div>
                     <div className="text-sm font-bold text-ink-700">{pet.temperament}</div>
                     <div className="mt-1 text-xs font-bold text-muted-foreground">{pet.favoriteTreat}</div>
+                    {pet.id === DEFAULT_STARTER_PET_SPECIES && (
+                      <div className="mt-2 inline-flex rounded-full bg-honey-100 px-2 py-1 text-[10px] font-black uppercase tracking-normal text-honey-700">
+                        default friend
+                      </div>
+                    )}
                   </div>
                 </div>
               </label>

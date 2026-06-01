@@ -11,7 +11,8 @@ export default function AdoptPetPage() {
             <p className="text-sm font-extrabold uppercase tracking-normal text-blush-500">Step 2</p>
             <h1 className="mt-3 font-display text-5xl leading-tight text-ink-900">Adopt your first companion.</h1>
             <p className="mt-4 text-base font-semibold leading-7 text-ink-700">
-              Pets start as simple persistent records, then become animated sprites in the Phaser room renderer.
+              Choose the companion who will walk into your first room with you. Casper Cat is ready by default, and
+              new companions unlock later through adoption and progression.
             </p>
           </section>
           <PetPicker />

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { starterCatalog, starterPlacements } from "@/lib/catalog";
+import { petSpecies, starterCatalog, starterPlacements } from "@/lib/catalog";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { isUsernameAppropriate } from "@/lib/game/username-blacklist";
@@ -26,6 +26,13 @@ function toSlug(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "")
     .slice(0, 42) || "main";
+}
+
+const DEFAULT_STARTER_PET_SPECIES = "kitten";
+
+function cleanStarterPetSpecies(value: FormDataEntryValue | null) {
+  const raw = String(value ?? "").trim();
+  return petSpecies.some((species) => species.id === raw) ? raw : DEFAULT_STARTER_PET_SPECIES;
 }
 
 async function requireUser() {
@@ -185,8 +192,9 @@ export async function adoptPetAction(formData: FormData) {
   }
 
   const { supabase, user } = await requireUser();
-  const species = cleanText(formData.get("species"), "kitten");
-  const name = cleanText(formData.get("petName"), "Casper");
+  const species = cleanStarterPetSpecies(formData.get("species"));
+  const speciesLabel = petSpecies.find((pet) => pet.id === species)?.name ?? "Casper Cat";
+  const name = cleanText(formData.get("petName"), species === DEFAULT_STARTER_PET_SPECIES ? "Casper" : speciesLabel);
 
   const { data: existingPet } = await supabase
     .from("pets")
