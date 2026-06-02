@@ -453,11 +453,21 @@ export function GamesClient() {
           </div>
           <div className="mt-4 rounded-lg border border-honey-500/30 bg-honey-100/65 p-3 text-sm font-bold text-ink-700">
             <span className="block text-xs font-extrabold uppercase tracking-normal text-honey-700">Selected game</span>
-            {selectedGame?.title ?? lobby?.selected_game_label ?? "Pick a game first."}
+            {/* Role-aware fallback: the host is told to pick; a guest can't
+                pick, so they're told the host hasn't chosen yet. */}
+            {selectedGame?.title
+              ?? lobby?.selected_game_label
+              ?? (party.isHost ? "Pick a game first." : "The host hasn't chosen a game yet.")}
             <span className="mt-2 block text-xs font-extrabold text-ink-600">
-              {party.startStatus.ok
-                ? "Seated players are ready. Host can start."
-                : startErrorCopy(party.startStatus.reason, totalSeats, occupiedCount, readyCount)}
+              {party.isHost
+                ? party.startStatus.ok
+                  ? "Everyone's ready — tap Start!"
+                  : startErrorCopy(party.startStatus.reason, totalSeats, occupiedCount, readyCount)
+                : !lobby?.selected_game_href
+                  ? "Waiting for the host to choose a game."
+                  : party.selfSeat?.ready
+                    ? "You're ready. Waiting for the host to start."
+                    : "Ready up — the host starts when everyone's set."}
             </span>
           </div>
 
@@ -468,23 +478,32 @@ export function GamesClient() {
               Material touch-target guideline. The `[&>*]:w-full
               sm:[&>*]:w-auto` selector forces children to fill the
               grid cell on mobile then return to natural width above. */}
+          {/* Role-scoped controls. A guest only ever sees Ready/Unready +
+              Leave — never a greyed Start or New-lobby, which made the
+              guest's panel look broken. The host sees Start + Close +
+              New lobby. The host has no Ready toggle: pressing Start IS
+              the host's readiness (see startStatus + migration 0060). */}
           <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap [&>*]:w-full sm:[&>*]:w-auto [&>*]:min-h-11">
-            {party.selfSeat && (
-              // Label = action, not status. See earlier comment for the
-              // "Ready"-as-status-indicator bug that caused hosts to be
-              // unable to start.
+            {/* Guest: ready toggle. */}
+            {party.selfSeat && !party.isHost && (
               <Button
                 onClick={() => void toggleReady()}
                 variant={party.selfSeat.ready ? "secondary" : "default"}
-                title={party.selfSeat.ready ? "You're ready — click to unready." : "Mark yourself as ready to play."}
+                title={party.selfSeat.ready ? "You're ready — tap to unready." : "Mark yourself as ready to play."}
               >
                 {party.selfSeat.ready ? <UserMinus /> : <UserCheck />}
                 {party.selfSeat.ready ? "Unready" : "Ready up"}
               </Button>
             )}
-            <Button disabled={!party.startStatus.ok} onClick={() => void startGame()}>
-              <Play /> Start
-            </Button>
+
+            {/* Host: Start (only the host ever sees this). */}
+            {party.isHost && (
+              <Button disabled={!party.startStatus.ok} onClick={() => void startGame()}>
+                <Play /> Start
+              </Button>
+            )}
+
+            {/* Host: close lobby (cancels for everyone). */}
             {party.isHost && lobby && (
               <Button
                 onClick={async () => {
@@ -501,14 +520,22 @@ export function GamesClient() {
                 <DoorOpen /> Close lobby
               </Button>
             )}
+
+            {/* Guest: leave lobby. */}
             {!party.isHost && party.selfSeated && (
               <Button onClick={() => void party.leave()} variant="secondary">
                 <DoorOpen /> Leave lobby
               </Button>
             )}
-            <Button onClick={() => void party.createLobby(selectedSize)} variant="secondary">
-              <RefreshCw /> New lobby
-            </Button>
+
+            {/* New lobby: only the host (start over) or someone not in any
+                lobby. A seated guest doesn't get it — they'd abandon the
+                host's lobby by accident. */}
+            {(party.isHost || !party.selfSeated) && (
+              <Button onClick={() => void party.createLobby(selectedSize)} variant="secondary">
+                <RefreshCw /> New lobby
+              </Button>
+            )}
           </div>
 
           {party.joinRequests.length > 0 && party.isHost && (
