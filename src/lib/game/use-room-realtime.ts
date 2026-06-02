@@ -529,6 +529,23 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
               void refreshRoomChat();
               if (heartbeatTimer) window.clearInterval(heartbeatTimer);
               heartbeatTimer = window.setInterval(() => void publishLocalPresence(), 2000);
+              // Belt-and-braces: Supabase Realtime occasionally fires the
+              // initial 'sync' event BEFORE the just-tracked local
+              // presence lands in the server's state map, which produces
+              // the visible bug "host sees guest joining but guest never
+              // sees host". Explicitly re-running publishLocalPresence
+              // + syncPresence ~400ms after subscribe forces a second
+              // round of presence resolution, by which point both sides
+              // are reliably visible in each other's snapshots.
+              window.setTimeout(() => {
+                if (cancelled || !realtimeReadyRef.current) return;
+                void publishLocalPresence();
+                try {
+                  syncPresence();
+                } catch {
+                  /* defensive — first sync handler covers this too */
+                }
+              }, 400);
               startFallbackPollers();
               setConnectionState("connected");
               setStatus(`Live in room ${roomCode}`);

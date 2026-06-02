@@ -432,6 +432,20 @@ export function useGardenRealtime({
               realtimeReadyRef.current = true;
               await channel.track(localPlayer);
               void refreshGardenChat();
+              // Belt-and-braces: Supabase Realtime sometimes fires the
+              // initial 'sync' before the just-tracked local presence
+              // is fully registered. Re-track + re-sync ~400ms later so
+              // both sides reliably see each other. See
+              // use-room-realtime.ts for the full explanation.
+              window.setTimeout(() => {
+                if (cancelled || !realtimeReadyRef.current) return;
+                void channel.track(localPlayerRef.current ?? localPlayer);
+                try {
+                  syncPresence();
+                } catch {
+                  /* defensive */
+                }
+              }, 400);
               startFallbackPollers();
               setConnectionState("connected");
               setStatus(`Live in garden ${gardenCode}`);

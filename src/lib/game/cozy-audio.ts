@@ -85,8 +85,11 @@ const SUPER_SNAILS_HEROIC_MELODY = [
 const VOLUME_STORAGE_KEY = "hearthaven:audio-volume";
 const MUSIC_VOLUME_STORAGE_KEY = "hearthaven:music-volume";
 const SFX_VOLUME_STORAGE_KEY = "hearthaven:sfx-volume";
-const MUSIC_GAIN_SCALE = 0.16;
-const SFX_GAIN_SCALE = 0.38;
+// Doubled from the original 0.16 / 0.38 because the cozy bed was set
+// so quiet you had to crank the OS slider to hear anything. With these
+// values "max" actually sounds like a comfortable home volume.
+const MUSIC_GAIN_SCALE = 0.32;
+const SFX_GAIN_SCALE = 0.76;
 
 function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));

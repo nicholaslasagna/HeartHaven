@@ -201,7 +201,15 @@ export function useSocial() {
       sendInvite,
       buildLink,
       redeemToken,
-      redeemCode: acceptInviteFromCode,
+      // NOTE: we intentionally do NOT re-export `acceptInviteFromCode`
+      // as a raw `redeemCode` here. That function fabricates an invite
+      // FROM a friend code INTO the caller's own inbox — fine when
+      // called from invite-bridge.ts (Supabase delivered a server-proven
+      // row) or from `redeemToken` (the JWT is the proof), but
+      // dangerous if a UI exposes it on a raw input, because anyone
+      // could type any code and accept the forged invite to force a
+      // friendship. The Friends page now routes raw-code input through
+      // `sendInvite` (which goes into the OTHER keeper's inbox).
       cancelInvite,
       acceptInvite,
       declineInvite,
