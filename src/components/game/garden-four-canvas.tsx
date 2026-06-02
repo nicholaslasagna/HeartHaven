@@ -151,7 +151,17 @@ export function GardenFourCanvas({
           } else if (this.gameOver) {
             setStatus("Garden Four — game over.");
           } else {
-            setStatus(`${players[this.currentPlayer - 1].name}'s turn.`);
+            const mine = this.myPlayerNumber();
+            const turnName = players[this.currentPlayer - 1].name;
+            if (mine !== null) {
+              setStatus(
+                mine === this.currentPlayer
+                  ? "Your turn — drop a keepsake into a column."
+                  : `Waiting for ${turnName} to play…`,
+              );
+            } else {
+              setStatus(`${turnName}'s turn.`);
+            }
           }
         }
 
@@ -532,8 +542,28 @@ export function GardenFourCanvas({
           setStatus(`${players[0].name} starts. Pick a column.`);
         }
 
+        /** My player number (1 or 2) in an online session, or null for
+         *  local pass-and-play. seat 0 → player 1, seat 1 → player 2. */
+        private myPlayerNumber(): 1 | 2 | null {
+          const seat = mySeatIndexRef.current;
+          if (seat === null || seat === undefined || !sessionIdRef.current) return null;
+          return (((seat % 2) + 1) as 1 | 2);
+        }
+
         private updateHud() {
-          this.turnText?.setText(`Turn: ${players[this.currentPlayer - 1].name}`);
+          const turnName = players[this.currentPlayer - 1].name;
+          const mine = this.myPlayerNumber();
+          if (mine !== null) {
+            // Online: make it unmistakable whose turn it is from this
+            // player's perspective, and which team they are.
+            const yourTeam = players[mine - 1].name;
+            const isMyTurn = mine === this.currentPlayer;
+            this.turnText?.setText(
+              isMyTurn ? `Your turn (${yourTeam})` : `${turnName}'s turn — you are ${yourTeam}`,
+            );
+          } else {
+            this.turnText?.setText(`Turn: ${turnName}`);
+          }
           this.movesText?.setText(`Moves ${this.moves}`);
         }
       }

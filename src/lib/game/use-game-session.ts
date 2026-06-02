@@ -252,10 +252,23 @@ export function useGameSession(
       )
       .subscribe();
 
+    // Polling fallback. Realtime postgres_changes on game_sessions /
+    // game_moves are RLS-gated and occasionally dropped (browser sleep,
+    // socket churn, replica lag) — and when the opponent's move event is
+    // the one that's dropped, the board never advances and the match
+    // softlocks. Re-hydrating the full session state every 2s guarantees
+    // both players' boards converge within a couple seconds regardless of
+    // realtime health. The two RPCs are cheap for a 2-player turn game.
+    const pollTimer = window.setInterval(() => {
+      const active = sessionIdRef.current;
+      if (active) void hydrate(active);
+    }, 2000);
+
     return () => {
+      window.clearInterval(pollTimer);
       void supabase.removeChannel(channel);
     };
-  }, [sessionId]);
+  }, [sessionId, hydrate]);
 
   const mySeat = useMemo(
     () => seats.find((seat) => seat.profile_id === myProfileId) ?? null,
