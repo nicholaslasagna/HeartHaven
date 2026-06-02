@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ClipboardCheck,
   Copy,
+  DoorOpen,
   Gamepad2,
   HeartHandshake,
   PartyPopper,
@@ -11,6 +12,7 @@ import {
   RefreshCw,
   Trophy,
   UserCheck,
+  UserMinus,
   UserPlus,
   UsersRound,
   X,
@@ -275,25 +277,31 @@ export function GamesClient() {
   }
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-5">
-      <section className="rounded-lg border border-blush-300/45 bg-blush-100/55 p-5 shadow-sm">
+    // Mobile-friendly outer wrapper: tighter gap + horizontal breathing
+    // room on phones, restored to the desktop layout at sm+. Every
+    // section below uses `p-4 sm:p-5` so the inner padding doesn't
+    // squeeze the content on narrow viewports.
+    <div className="mx-auto grid max-w-6xl gap-4 px-1 sm:gap-5 sm:px-0">
+      <section className="rounded-lg border border-blush-300/45 bg-blush-100/55 p-4 shadow-sm sm:p-5">
         <Badge variant="blush">
           <PartyPopper className="size-3.5" />
           Games
         </Badge>
-        <h1 className="mt-3 font-display text-4xl leading-tight text-ink-900">Pick a game. Invite friends. Ready up.</h1>
+        <h1 className="mt-3 font-display text-2xl leading-tight text-ink-900 sm:text-4xl">
+          Pick a game. Invite friends. Ready up.
+        </h1>
         <p className="mt-2 max-w-3xl text-sm font-bold leading-6 text-ink-700">
           One simple lobby lives here. Friends can request to join with your HeartHaven friend code, and the host approves
           them before the game starts.
         </p>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <CozyCard className="p-5">
+      <section className="grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <CozyCard className="p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Gamepad2 className="size-5 text-lavender-500" />
-              <h2 className="font-display text-2xl text-ink-900">1. Choose a game</h2>
+              <h2 className="font-display text-xl text-ink-900 sm:text-2xl">1. Choose a game</h2>
             </div>
             <Badge variant={party.isHost ? "garden" : "outline"}>{party.isHost ? "Hosting" : "Joined"}</Badge>
           </div>
@@ -303,7 +311,7 @@ export function GamesClient() {
               return (
                 <button
                   className={cn(
-                    "rounded-lg border p-4 text-left shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60",
+                    "rounded-lg border p-3 text-left shadow-sm transition active:translate-y-0 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:p-4",
                     selected
                       ? "border-blush-300 bg-blush-100"
                       : "border-cream-300 bg-white/72 hover:border-lavender-300 hover:bg-lavender-100/55",
@@ -313,8 +321,8 @@ export function GamesClient() {
                   onClick={() => void chooseGame(game)}
                   type="button"
                 >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="font-display text-xl text-ink-900">{game.title}</span>
+                  <span className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-display text-lg text-ink-900 sm:text-xl">{game.title}</span>
                     <Badge variant={selected ? "blush" : "outline"}>{selected ? "Picked" : game.mode}</Badge>
                   </span>
                   <span className="mt-2 block text-sm font-bold leading-5 text-ink-700">{game.description}</span>
@@ -329,10 +337,10 @@ export function GamesClient() {
           )}
         </CozyCard>
 
-        <CozyCard className="p-5">
+        <CozyCard className="p-4 sm:p-5">
           <div className="flex items-center gap-2">
             <HeartHandshake className="size-5 text-blush-500" />
-            <h2 className="font-display text-2xl text-ink-900">2. Invite or join</h2>
+            <h2 className="font-display text-xl text-ink-900 sm:text-2xl">2. Invite or join</h2>
           </div>
           {!lobby && (
             <div className="mt-4 rounded-lg border border-honey-500/35 bg-honey-100/60 p-3">
@@ -367,7 +375,9 @@ export function GamesClient() {
                 {copied === "party-link" ? "Copied" : "Copy lobby invite"}
               </Button>
               <p className="rounded-md border border-cream-300 bg-white/65 px-3 py-2 text-xs font-extrabold text-ink-600">
-                Lobby code: <span className="font-mono">{lobby.invite_code || lobby.host_friend_code}</span>
+                {/* break-all keeps long codes from blowing out the card on narrow screens */}
+                Lobby code:{" "}
+                <span className="break-all font-mono">{lobby.invite_code || lobby.host_friend_code}</span>
               </p>
             </div>
           )}
@@ -404,11 +414,11 @@ export function GamesClient() {
         </CozyCard>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <CozyCard className="p-5">
+      <section className="grid gap-4 sm:gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <CozyCard className="p-4 sm:p-5">
           <div className="flex items-center gap-2">
             <Trophy className="size-5 text-honey-700" />
-            <h2 className="font-display text-2xl text-ink-900">3. Ready up</h2>
+            <h2 className="font-display text-xl text-ink-900 sm:text-2xl">3. Ready up</h2>
           </div>
           <div className="mt-4 rounded-lg border border-honey-500/30 bg-honey-100/65 p-3 text-sm font-bold text-ink-700">
             <span className="block text-xs font-extrabold uppercase tracking-normal text-honey-700">Selected game</span>
@@ -420,15 +430,51 @@ export function GamesClient() {
             </span>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          {/* Mobile-friendly action row: 2-up grid on phones so every
+              button is full-width and easy to tap, restored to the
+              flex-wrap layout on sm+ where space is no longer scarce.
+              All buttons also get min-h-11 (44px) to meet the iOS/
+              Material touch-target guideline. The `[&>*]:w-full
+              sm:[&>*]:w-auto` selector forces children to fill the
+              grid cell on mobile then return to natural width above. */}
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap [&>*]:w-full sm:[&>*]:w-auto [&>*]:min-h-11">
             {party.selfSeat && (
-              <Button onClick={() => void party.toggleReady()} variant={party.selfSeat.ready ? "warm" : "default"}>
-                <UserCheck /> {party.selfSeat.ready ? "Ready" : "I'm ready"}
+              // Label = action, not status. See earlier comment for the
+              // "Ready"-as-status-indicator bug that caused hosts to be
+              // unable to start.
+              <Button
+                onClick={() => void party.toggleReady()}
+                variant={party.selfSeat.ready ? "secondary" : "default"}
+                title={party.selfSeat.ready ? "You're ready — click to unready." : "Mark yourself as ready to play."}
+              >
+                {party.selfSeat.ready ? <UserMinus /> : <UserCheck />}
+                {party.selfSeat.ready ? "Unready" : "Ready up"}
               </Button>
             )}
             <Button disabled={!party.startStatus.ok} onClick={() => void startGame()}>
               <Play /> Start
             </Button>
+            {party.isHost && lobby && (
+              <Button
+                onClick={async () => {
+                  if (typeof window !== "undefined") {
+                    const ok = window.confirm("Close this lobby? Everyone seated will be kicked back.");
+                    if (!ok) return;
+                  }
+                  const result = await party.leave();
+                  if (result.ok) setNotice({ kind: "ok", message: "Lobby closed." });
+                  else setNotice({ kind: "error", message: actionErrorCopy(result.reason) });
+                }}
+                variant="secondary"
+              >
+                <DoorOpen /> Close lobby
+              </Button>
+            )}
+            {!party.isHost && party.selfSeated && (
+              <Button onClick={() => void party.leave()} variant="secondary">
+                <DoorOpen /> Leave lobby
+              </Button>
+            )}
             <Button onClick={() => void party.createLobby(selectedSize)} variant="secondary">
               <RefreshCw /> New lobby
             </Button>
@@ -439,10 +485,13 @@ export function GamesClient() {
               <p className="text-xs font-extrabold uppercase tracking-normal text-garden-700">Join requests</p>
               <div className="mt-2 grid gap-2">
                 {party.joinRequests.map((request) => (
-                  <div className="rounded-md border border-white/70 bg-white/75 p-2" key={request.id}>
+                  <div className="rounded-md border border-white/70 bg-white/75 p-3" key={request.id}>
                     <p className="font-extrabold text-ink-900">{request.requester_display_name}</p>
-                    <p className="font-mono text-xs font-bold text-ink-500">{request.requester_friend_code}</p>
-                    <div className="mt-2 flex gap-2">
+                    <p className="font-mono text-xs font-bold text-ink-500 break-all">{request.requester_friend_code}</p>
+                    {/* 2-up grid on mobile so each button is full-width
+                        + at the 44px tap target; restored to inline flex
+                        on sm+ where the card has more room. */}
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:gap-2 [&>*]:min-h-10">
                       <Button size="sm" onClick={() => void party.approveRequest(request.id)}>
                         Approve
                       </Button>
@@ -457,16 +506,19 @@ export function GamesClient() {
           )}
         </CozyCard>
 
-        <CozyCard className="p-5">
+        <CozyCard className="p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <UsersRound className="size-5 text-lavender-500" />
-              <h2 className="font-display text-2xl text-ink-900">Lobby</h2>
+              <h2 className="font-display text-xl text-ink-900 sm:text-2xl">Lobby</h2>
             </div>
             <Badge variant="garden">
               {readyCount}/{Math.max(occupiedCount, 1)} ready
             </Badge>
           </div>
+          {/* Seat grid is already responsive (1/2/4 columns at base/sm/xl).
+              No mobile-only tweak needed — the existing breakpoints flow
+              naturally from phone to desktop. */}
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {seatSlots.map(({ index, seat }) => (
               <div

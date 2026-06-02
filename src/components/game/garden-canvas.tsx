@@ -3567,16 +3567,30 @@ export function GardenCanvas({
 
         private showDecorBubble(decoration: GardenDecorPlacement) {
           this.decorBubble?.destroy(true);
-          if (!canEditGarden) return;
+          // The popup is for ANY clicked decor — hosts get Flip/Remove,
+          // guests get the kind-specific interaction (sit on swing,
+          // water plant, etc.). The old early-return on !canEditGarden
+          // hid the popup from guests entirely, which made the world
+          // feel "view-only" even for things every keeper should be
+          // allowed to do.
           const container = this.decorObjects.get(decoration.id);
           if (!container) return;
           const spriteConfig = worldObjectSprites[decoration.kind];
-          const bubble = this.add.container(container.x, container.y - spriteConfig.height - 24).setDepth(10000);
+
+          // Kind-specific guest-allowed interaction. Returns a label +
+          // handler, or null if this kind has no shared action.
+          const interaction = this.getDecorInteraction(decoration);
+          const buttonCount =
+            (interaction ? 1 : 0) + (canEditGarden ? 2 : 0);
+          const bubbleWidth = buttonCount >= 3 ? 320 : 252;
+          const bubble = this.add
+            .container(container.x, container.y - spriteConfig.height - 24)
+            .setDepth(10000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.96);
-          bg.fillRoundedRect(-126, -36, 252, 72, 16);
+          bg.fillRoundedRect(-bubbleWidth / 2, -36, bubbleWidth, 72, 16);
           bg.lineStyle(2, 0xc0a8dc, 0.9);
-          bg.strokeRoundedRect(-126, -36, 252, 72, 16);
+          bg.strokeRoundedRect(-bubbleWidth / 2, -36, bubbleWidth, 72, 16);
 
           const label = this.add
             .text(0, -20, decoration.label, {
@@ -3587,40 +3601,169 @@ export function GardenCanvas({
             })
             .setOrigin(0.5);
 
-          const flipButton = this.add
-            .text(-48, 13, "Flip", {
-              color: "#8E70BD",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "11px",
-              fontStyle: "900",
-              backgroundColor: "#EFE6F7",
-              padding: { x: 8, y: 4 },
-            })
-            .setOrigin(0.5)
-            .setInteractive({ useHandCursor: true });
-          flipButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            pointer.event.stopPropagation();
-            this.toggleSelectedDecorFacing();
-          });
+          const children: Phaser.GameObjects.GameObject[] = [bg, label];
 
-          const removeButton = this.add
-            .text(58, 13, "Remove", {
-              color: "#9A453E",
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "11px",
-              fontStyle: "900",
-              backgroundColor: "#FBE0DA",
-              padding: { x: 8, y: 4 },
-            })
-            .setOrigin(0.5)
-            .setInteractive({ useHandCursor: true });
-          removeButton.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            pointer.event.stopPropagation();
-            this.removeSelectedDecor();
-          });
+          // Layout: distribute up to 3 buttons across the bubble width.
+          // We compute x-offsets in a single pass so any combination
+          // (guest-only interaction, decorator-only flip+remove, or all
+          // three) reads as one centered row.
+          const slots: Array<{ label: string; bg: string; fg: string; handler: () => void }> = [];
+          if (interaction) {
+            slots.push({
+              label: interaction.label,
+              bg: "#E4F1DD",
+              fg: "#447A3A",
+              handler: () => interaction.run(),
+            });
+          }
+          if (canEditGarden) {
+            slots.push({
+              label: "Flip",
+              bg: "#EFE6F7",
+              fg: "#8E70BD",
+              handler: () => this.toggleSelectedDecorFacing(),
+            });
+            slots.push({
+              label: "Remove",
+              bg: "#FBE0DA",
+              fg: "#9A453E",
+              handler: () => this.removeSelectedDecor(),
+            });
+          }
 
-          bubble.add([bg, label, flipButton, removeButton]);
+          if (slots.length === 0) {
+            // Pure "info-only" bubble (no allowed actions for this
+            // keeper × kind combo). The flavor text below the label
+            // serves as the action.
+            const hint = this.add
+              .text(0, 14, decorInteractionCopy[decoration.kind] ?? "Nothing to do here right now.", {
+                color: "#7c5a5a",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "10px",
+                fontStyle: "700",
+                wordWrap: { width: bubbleWidth - 28 },
+                align: "center",
+              })
+              .setOrigin(0.5);
+            children.push(hint);
+          } else {
+            const step = bubbleWidth / (slots.length + 1);
+            slots.forEach((slot, index) => {
+              const x = -bubbleWidth / 2 + step * (index + 1);
+              const btn = this.add
+                .text(x, 13, slot.label, {
+                  color: slot.fg,
+                  fontFamily: "Nunito, sans-serif",
+                  fontSize: "11px",
+                  fontStyle: "900",
+                  backgroundColor: slot.bg,
+                  padding: { x: 8, y: 4 },
+                })
+                .setOrigin(0.5)
+                .setInteractive({ useHandCursor: true });
+              btn.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+                pointer.event.stopPropagation();
+                slot.handler();
+              });
+              children.push(btn);
+            });
+          }
+
+          bubble.add(children);
           this.decorBubble = bubble;
+        }
+
+        /**
+         * Kind-specific guest-allowed interaction for a decor piece. Returns
+         * a label + handler when the keeper should be able to do something
+         * here regardless of decorator permissions (sit on a swing, water a
+         * plant, etc.). Decorator-only verbs (Flip / Remove) are added by
+         * `showDecorBubble` separately.
+         */
+        private getDecorInteraction(decoration: GardenDecorPlacement):
+          | { label: string; run: () => void }
+          | null {
+          const container = this.decorObjects.get(decoration.id);
+          if (!container) return null;
+
+          switch (decoration.kind) {
+            case "swing":
+              return {
+                label: "Sit on swing",
+                run: () => this.sitOnSwing(decoration),
+              };
+            case "memoryTree":
+            case "flowerStand":
+              return {
+                label: "Water",
+                run: () => this.waterDecor(decoration),
+              };
+            case "fountain":
+              return {
+                label: "Make a wish",
+                run: () => this.waterDecor(decoration),
+              };
+            case "picnic":
+              return {
+                label: "Sit",
+                run: () => this.sitOnSwing(decoration),
+              };
+            default:
+              return null;
+          }
+        }
+
+        /**
+         * Walk the keeper to the decor + play the sit pose for a few
+         * seconds. Re-uses the keeper's existing "sit" pose so we don't
+         * need new sprite frames for every keeper × swing combo.
+         */
+        private sitOnSwing(decoration: GardenDecorPlacement) {
+          const container = this.decorObjects.get(decoration.id);
+          if (!container || !this.avatar) return;
+          playCozyCue("petChirp");
+          const target = this.constrainAvatarToWalkable(container.x, container.y + 18);
+          this.tweens.killTweensOf(this.avatar);
+          this.tweens.add({
+            targets: this.avatar,
+            x: target.x,
+            y: target.y,
+            duration: 360,
+            ease: "Sine.inOut",
+            onComplete: () => {
+              this.setAvatarPose("sit");
+              // Add a slight oscillation to suggest swinging.
+              this.tweens.killTweensOf(this.avatar);
+              this.tweens.add({
+                targets: this.avatar,
+                x: target.x + 10,
+                duration: 720,
+                ease: "Sine.inOut",
+                yoyo: true,
+                repeat: 4,
+                onComplete: () => {
+                  this.setAvatarPose("idle");
+                },
+              });
+            },
+          });
+          setStatus(`${decoration.label}: settling in for a swing.`);
+        }
+
+        /**
+         * Play the water cue + sparkle burst at the decor's position. No
+         * server write — the plant doesn't have growth state yet, so this
+         * is a cosmetic "I cared for the world" gesture that's always
+         * available to guests.
+         */
+        private waterDecor(decoration: GardenDecorPlacement) {
+          const container = this.decorObjects.get(decoration.id);
+          if (!container) return;
+          playCozyCue("water");
+          this.spawnSparkleBurst(container.x, container.y - 24, 0x5e94b0, 14);
+          if (this.pet) this.spawnSparkleBurst(this.pet.x, this.pet.y - 56, 0xc0a8dc, 8);
+          recordActivity("garden-watered");
+          setStatus(`${decoration.label}: a fresh drink. ${decorInteractionCopy[decoration.kind] ?? ""}`);
         }
 
         private clearSelectedDecor() {
