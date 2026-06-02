@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { GameReward } from "@/lib/game/rewards";
+import type { BowlingRoll } from "@/lib/game/bowling-scoring";
 
 const BowlingCanvas = dynamic(
   () => import("@/components/game/bowling-canvas").then((module) => module.BowlingCanvas),
@@ -16,9 +16,14 @@ const BowlingCanvas = dynamic(
 );
 
 type BowlingCanvasLoaderProps = {
-  onReward?: (reward: GameReward) => void;
+  rolls: BowlingRoll[];
+  mySeatIndex: number | null;
+  seatCount: number;
+  seatNames: string[];
+  onRoll: (pins: number) => Promise<{ ok: boolean; reason?: string }>;
+  sessionId?: string | null;
 };
 
-export function BowlingCanvasLoader({ onReward }: BowlingCanvasLoaderProps) {
-  return <BowlingCanvas onReward={onReward} />;
+export function BowlingCanvasLoader(props: BowlingCanvasLoaderProps) {
+  return <BowlingCanvas {...props} />;
 }

@@ -2,31 +2,26 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
-import type { GameReward } from "@/lib/game/rewards";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import { computeBowlingState, type BowlingRoll } from "@/lib/game/bowling-scoring";
 
 type BowlingCanvasProps = {
-  onReward?: (reward: GameReward) => void;
-};
-
-type BowlingPin = {
-  node: Phaser.GameObjects.Container;
-  standing: boolean;
-};
-
-type BowlingFrame = {
-  rolls: number[];
+  /** Ordered roll log (oldest first), derived from the game move log. */
+  rolls: BowlingRoll[];
+  /** My seat (0/1) when online; null for local solo play. */
+  mySeatIndex: number | null;
+  seatCount: number;
+  /** Player display names by seat index. */
+  seatNames: string[];
+  /** Submit one roll. Returns ok/reason; the canvas waits for the roll
+   *  to reflect back through `rolls` before clearing its busy state. */
+  onRoll: (pins: number) => Promise<{ ok: boolean; reason?: string }>;
+  sessionId?: string | null;
 };
 
 const GAME_WIDTH = 920;
 const GAME_HEIGHT = 600;
-const MAX_FRAMES = 5;
-const PIN_COUNT = 10;
 const BALL_START = { x: 460, y: 502 };
-const BOWLING_PLAYERS = [
-  { name: "Blush Lane", shortName: "Blush", color: "#D87E8C" },
-  { name: "Lavender Lane", shortName: "Lavender", color: "#8E70BD" },
-];
 const PIN_POSITIONS = [
   [460, 128],
   [430, 162],
@@ -40,13 +35,47 @@ const PIN_POSITIONS = [
   [550, 230],
 ] as const;
 
-function createBowlingMatchFrames() {
-  return BOWLING_PLAYERS.map(() => Array.from({ length: MAX_FRAMES }, () => ({ rolls: [] as number[] })));
+const SEAT_COLORS = ["#D87E8C", "#8E70BD"];
+
+/** Map a locked power value (0–1) to pins knocked, capped at standing. */
+function pinsFromPower(power: number, standing: number): number {
+  // Sweet spot near the top of the meter scores big. A little jitter so
+  // identical taps aren't perfectly deterministic (keeps it lively) — the
+  // RESULT is what's logged + replayed, so both clients still agree.
+  const accuracy = 1 - Math.abs(power - 0.92) / 0.92; // 1.0 at power≈0.92
+  const base = Math.round(standing * Math.max(0, accuracy));
+  const jitter = Math.random() < 0.25 ? -1 : 0;
+  return Math.max(0, Math.min(standing, base + jitter));
 }
 
-export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
+export function BowlingCanvas({
+  rolls,
+  mySeatIndex,
+  seatCount,
+  seatNames,
+  onRoll,
+  sessionId,
+}: BowlingCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const [status, setStatus] = useState("Drag from the ball to aim, then release to roll.");
+  const rollsRef = useRef(rolls);
+  const mySeatRef = useRef(mySeatIndex);
+  const seatCountRef = useRef(seatCount);
+  const seatNamesRef = useRef(seatNames);
+  const onRollRef = useRef(onRoll);
+  const sessionIdRef = useRef(sessionId);
+  const [status, setStatus] = useState("Tap to start the power meter, tap again to roll.");
+
+  useEffect(() => {
+    rollsRef.current = rolls;
+    mySeatRef.current = mySeatIndex;
+    seatCountRef.current = seatCount;
+    seatNamesRef.current = seatNames;
+    onRollRef.current = onRoll;
+    sessionIdRef.current = sessionId;
+    // Tell the live scene that the roll log changed so it can re-render
+    // pins / turn / animate the newest roll.
+    window.dispatchEvent(new CustomEvent("hearthaven:bowling-sync"));
+  }, [rolls, mySeatIndex, seatCount, seatNames, onRoll, sessionId]);
 
   useEffect(() => {
     let destroyed = false;
@@ -57,48 +86,18 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
       if (!mountRef.current || destroyed) return;
 
       class BowlingScene extends PhaserModule.Scene {
+        private pins: Phaser.GameObjects.Container[] = [];
         private ball!: Phaser.GameObjects.Container;
         private ballShadow!: Phaser.GameObjects.Ellipse;
-        private aimLine!: Phaser.GameObjects.Graphics;
-        private pins: BowlingPin[] = [];
-        private playerFrames: BowlingFrame[][] = createBowlingMatchFrames();
-        private playerFrameIndexes = [0, 0];
-        private playerComplete = [false, false];
-        private currentPlayerIndex = 0;
-        private rolling = false;
-        private aiming = false;
-        private gutter = false;
-        private gameOver = false;
-        private vx = 0;
-        private vy = 0;
-        private knockedThisRoll = 0;
-        private frameText!: Phaser.GameObjects.Text;
-        private scoreText!: Phaser.GameObjects.Text;
-        private pinsText!: Phaser.GameObjects.Text;
-        private rollsText!: Phaser.GameObjects.Text;
-        private activePlayerText!: Phaser.GameObjects.Text;
-        private powerText!: Phaser.GameObjects.Text;
-        private rewardLayer?: Phaser.GameObjects.Container;
-
-        constructor() {
-          super("MoonberryBowling");
-        }
-
-        private get frames() {
-          return this.playerFrames[this.currentPlayerIndex];
-        }
-
-        private set frames(value: BowlingFrame[]) {
-          this.playerFrames[this.currentPlayerIndex] = value;
-        }
-
-        private get frameIndex() {
-          return this.playerFrameIndexes[this.currentPlayerIndex];
-        }
-
-        private set frameIndex(value: number) {
-          this.playerFrameIndexes[this.currentPlayerIndex] = value;
-        }
+        private powerBar!: Phaser.GameObjects.Graphics;
+        private powerFill!: Phaser.GameObjects.Graphics;
+        private bannerText!: Phaser.GameObjects.Text;
+        private aimPhase: "idle" | "power" | "rolling" = "idle";
+        private power = 0;
+        private powerDir = 1;
+        private renderedRollCount = 0;
+        private busy = false;
+        private syncHandler?: () => void;
 
         preload() {
           this.load.image("moonberry-bowling-bg", "/game-assets/generated/moonberry-bowling-bg.png");
@@ -110,557 +109,238 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
         }
 
         create() {
-          this.drawBackdrop();
-          this.createMascot();
-          this.createHud();
-          this.createPins();
-          this.createBall();
-          this.aimLine = this.add.graphics().setDepth(6000);
-
-          this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            if (this.gameOver || this.rolling) return;
-            const distance = PhaserModule.Math.Distance.Between(pointer.x, pointer.y, this.ball.x, this.ball.y);
-            if (distance < 110) {
-              this.aiming = true;
-              this.drawAim(pointer);
-              playCozyCue("ui");
-              setStatus("Aim up the lane. Longer drag means more power; the gutters are real.");
-            }
-          });
-
-          this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-            if (this.aiming) this.drawAim(pointer);
-          });
-
-          this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
-            if (!this.aiming) return;
-            this.aiming = false;
-            this.roll(pointer);
-          });
-
-          setStatus("Frame 1, roll 1. Drag from the moonberry ball to aim down the lane.");
-        }
-
-        update(_time: number, delta: number) {
-          if (!this.rolling) return;
-
-          const dt = delta / 1000;
-          this.ball.x += this.vx * dt;
-          this.ball.y += this.vy * dt;
-          this.vx *= this.gutter ? 0.982 : 0.992;
-          this.vy *= this.gutter ? 0.988 : 0.996;
-          this.ball.rotation += Math.hypot(this.vx, this.vy) * dt * 0.032;
-
-          const bounds = this.laneBoundsAt(this.ball.y);
-          if (!this.gutter && (this.ball.x < bounds.left + 8 || this.ball.x > bounds.right - 8)) {
-            this.gutter = true;
-            this.ball.setAlpha(0.72);
-            playCozyCue("gutter");
-            setStatus("Gutter. Casper still believes in the next roll.");
-          }
-
-          if (!this.gutter) {
-            this.checkPinHits();
-          }
-
-          this.ballShadow.setPosition(this.ball.x, this.ball.y + 24);
-          this.ballShadow.setDepth(this.ball.y - 1);
-          this.ball.setDepth(this.ball.y);
-
-          if (this.ball.y < 76 || (Math.abs(this.vy) < 52 && this.ball.y < 300)) {
-            this.finishRoll();
-          }
-        }
-
-        private drawBackdrop() {
-          this.cameras.main.setBackgroundColor("#fbf3e2");
-          this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "moonberry-bowling-bg").setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-20);
+          this.add
+            .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "moonberry-bowling-bg")
+            .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
+            .setDepth(-20);
           this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfffcf3, 0.06).setDepth(-19);
 
-          const bg = this.add.graphics();
-          bg.fillGradientStyle(0xfdf8ee, 0xfbe3e3, 0xefe6f7, 0xe4efd7, 0.08);
-          bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-          bg.fillStyle(0xffffff, 0.38);
-          bg.fillRoundedRect(70, 78, 780, 468, 28);
-          bg.lineStyle(3, 0xf6cfd2, 0.45);
-          bg.strokeRoundedRect(70, 78, 780, 468, 28);
+          // Casper mascot.
+          const mascot = this.add.container(GAME_WIDTH - 96, GAME_HEIGHT - 120).setDepth(6000);
+          mascot.add(this.add.image(0, 0, "casper-sprite").setDisplaySize(118, 118));
+          this.tweens.add({ targets: mascot, y: mascot.y - 10, duration: 1400, yoyo: true, repeat: -1, ease: "Sine.inOut" });
 
-          const lane = this.add.graphics();
-          lane.fillGradientStyle(0xf5e9d0, 0xfdf8ee, 0xead9b5, 0xf8d9bf, 0.96);
-          lane.fillPoints(
-            [
-              new PhaserModule.Geom.Point(318, 112),
-              new PhaserModule.Geom.Point(602, 112),
-              new PhaserModule.Geom.Point(752, 536),
-              new PhaserModule.Geom.Point(168, 536),
-            ],
-            true,
-          );
-          lane.lineStyle(4, 0x9c6f1f, 0.32);
-          lane.strokePoints(
-            [
-              new PhaserModule.Geom.Point(318, 112),
-              new PhaserModule.Geom.Point(602, 112),
-              new PhaserModule.Geom.Point(752, 536),
-              new PhaserModule.Geom.Point(168, 536),
-            ],
-            true,
-          );
+          this.createPins();
+          this.createBall();
 
-          lane.fillStyle(0x8e70bd, 0.12);
-          lane.fillPoints(
-            [
-              new PhaserModule.Geom.Point(118, 536),
-              new PhaserModule.Geom.Point(168, 536),
-              new PhaserModule.Geom.Point(318, 112),
-              new PhaserModule.Geom.Point(286, 112),
-            ],
-            true,
-          );
-          lane.fillPoints(
-            [
-              new PhaserModule.Geom.Point(752, 536),
-              new PhaserModule.Geom.Point(802, 536),
-              new PhaserModule.Geom.Point(634, 112),
-              new PhaserModule.Geom.Point(602, 112),
-            ],
-            true,
-          );
+          this.bannerText = this.add
+            .text(GAME_WIDTH / 2, 40, "", {
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "22px",
+              fontStyle: "900",
+              color: "#5b3f3f",
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setDepth(7000);
 
-          for (let index = 0; index < 8; index += 1) {
-            const x = 250 + index * 60;
-            lane.lineStyle(2, 0xffffff, 0.2);
-            lane.lineBetween(x, 530, PhaserModule.Math.Linear(374, 546, index / 7), 124);
-          }
+          // Power meter (bottom).
+          this.powerBar = this.add.graphics().setDepth(6900);
+          this.powerFill = this.add.graphics().setDepth(6901);
+          this.drawPowerMeter();
 
-          for (let index = 0; index < 18; index += 1) {
-            const sparkle = this.add.star(
-              PhaserModule.Math.Between(100, 820),
-              PhaserModule.Math.Between(82, 520),
-              4,
-              2,
-              PhaserModule.Math.Between(4, 8),
-              index % 2 === 0 ? 0xffffff : 0xfaebc2,
-              PhaserModule.Math.FloatBetween(0.12, 0.36),
-            );
-            this.tweens.add({
-              targets: sparkle,
-              alpha: PhaserModule.Math.FloatBetween(0.22, 0.64),
-              scale: 1.2,
-              duration: PhaserModule.Math.Between(1100, 2200),
-              yoyo: true,
-              repeat: -1,
-              ease: "Sine.inOut",
-            });
-          }
+          this.input.on("pointerdown", () => this.handleTap());
+
+          this.syncHandler = () => this.renderFromLog(true);
+          window.addEventListener("hearthaven:bowling-sync", this.syncHandler);
+
+          this.renderFromLog(false);
         }
 
-        private createMascot() {
-          const mascot = this.add.container(108, 472).setDepth(472);
-          mascot.add(this.add.ellipse(0, 42, 88, 22, 0x3a2a2a, 0.16));
-          mascot.add(this.add.image(0, -18, "casper-sprite").setDisplaySize(112, 112));
-          this.tweens.add({
-            targets: mascot,
-            y: mascot.y - 5,
-            duration: 980,
-            yoyo: true,
-            repeat: -1,
-            ease: "Sine.inOut",
+        shutdown() {
+          if (this.syncHandler) window.removeEventListener("hearthaven:bowling-sync", this.syncHandler);
+        }
+
+        private createPins() {
+          PIN_POSITIONS.forEach(([x, y]) => {
+            const pin = this.add.container(x, y).setDepth(y);
+            pin.add(this.add.ellipse(0, 31, 34, 10, 0x3a2a2a, 0.14));
+            pin.add(this.add.image(0, -10, "minigame-props", 1).setDisplaySize(86, 136));
+            this.pins.push(pin);
           });
-        }
-
-        private createHud() {
-          const style = {
-            color: "#3A2A2A",
-            fontFamily: "Nunito, sans-serif",
-            fontSize: "16px",
-            fontStyle: "900",
-          };
-          this.add.text(28, 24, "Moonberry Bowling", {
-            color: "#3A2A2A",
-            fontFamily: "Caprasimo, Georgia, serif",
-            fontSize: "25px",
-          }).setDepth(7000);
-          this.frameText = this.add.text(30, 58, "", style).setDepth(7000);
-          this.scoreText = this.add.text(190, 58, "", { ...style, color: "#8E70BD" }).setDepth(7000);
-          this.rollsText = this.add.text(350, 58, "", { ...style, fontSize: "13px" }).setDepth(7000);
-          this.pinsText = this.add.text(GAME_WIDTH - 170, 58, "", style).setDepth(7000);
-          this.powerText = this.add.text(30, 86, "", { ...style, color: "#9C6F1F", fontSize: "13px" }).setDepth(7000);
-          this.activePlayerText = this.add.text(GAME_WIDTH - 226, 86, "", { ...style, color: "#D87E8C", fontSize: "13px" }).setDepth(7000);
-          this.updateHud();
         }
 
         private createBall() {
           this.ballShadow = this.add.ellipse(BALL_START.x, BALL_START.y + 30, 84, 24, 0x3a2a2a, 0.16).setDepth(500);
           this.ball = this.add.container(BALL_START.x, BALL_START.y).setDepth(BALL_START.y);
-          this.ball.add(this.add.image(0, 0, "minigame-props", 0).setDisplaySize(112, 150));
-          this.ball.setSize(76, 76);
-          this.ball.setInteractive({ useHandCursor: true });
+          this.ball.add(this.add.image(0, 0, "minigame-props", 0).setDisplaySize(104, 138));
         }
 
-        private createPins(reset = true) {
-          if (reset) {
-            this.pins.forEach((pin) => pin.node.destroy());
-            this.pins = [];
-          }
-
-          if (this.pins.length > 0) return;
-
-          PIN_POSITIONS.forEach(([x, y], index) => {
-            const pin = this.add.container(x, y).setDepth(y);
-            pin.add(this.add.ellipse(0, 31, 34, 10, 0x3a2a2a, 0.14));
-            pin.add(this.add.image(0, -10, "minigame-props", 1).setDisplaySize(86, 136));
-            this.pins.push({ node: pin, standing: true });
-            if (index === 0) {
-              this.tweens.add({
-                targets: pin,
-                y: y - 2,
-                duration: 1200,
-                yoyo: true,
-                repeat: -1,
-                ease: "Sine.inOut",
-              });
-            }
+        /** Show `standing` pins upright (toppling the rest). */
+        private setStandingPins(standing: number) {
+          this.pins.forEach((pin, index) => {
+            const upright = index < standing;
+            pin.setAlpha(upright ? 1 : 0.18);
+            pin.setRotation(upright ? 0 : (index % 2 === 0 ? -1 : 1) * 0.9);
+            pin.setY(PIN_POSITIONS[index][1] + (upright ? 0 : 8));
           });
         }
 
-        private drawAim(pointer: Phaser.Input.Pointer) {
-          const target = this.clampAim(pointer.x, pointer.y);
-          const distance = PhaserModule.Math.Clamp(
-            PhaserModule.Math.Distance.Between(this.ball.x, this.ball.y, target.x, target.y),
-            70,
-            360,
-          );
-          const powerPercent = Math.round(((distance - 70) / 290) * 100);
-          this.aimLine.clear();
-          this.aimLine.lineStyle(9, 0xd87e8c, 0.28);
-          this.aimLine.lineBetween(this.ball.x, this.ball.y, target.x, target.y);
-          this.aimLine.lineStyle(3, 0xffffff, 0.82);
-          this.aimLine.lineBetween(this.ball.x, this.ball.y, target.x, target.y);
-          this.aimLine.fillStyle(0xd87e8c, 0.9);
-          this.aimLine.fillCircle(target.x, target.y, 8);
-          this.powerText.setText(`Power ${powerPercent}%`);
+        private isMyTurn(state: ReturnType<typeof computeBowlingState>) {
+          const seat = mySeatRef.current;
+          if (seat === null || seat === undefined) return !state.gameOver; // local solo
+          return !state.gameOver && state.currentSeat === seat;
         }
 
-        private roll(pointer: Phaser.Input.Pointer) {
-          this.aimLine.clear();
-          const target = this.clampAim(pointer.x, pointer.y);
-          const angle = PhaserModule.Math.Angle.Between(this.ball.x, this.ball.y, target.x, target.y);
-          const distance = PhaserModule.Math.Clamp(PhaserModule.Math.Distance.Between(this.ball.x, this.ball.y, target.x, target.y), 70, 360);
-          const power = PhaserModule.Math.Linear(520, 760, (distance - 70) / 290);
-          this.vx = Math.cos(angle) * power;
-          this.vy = Math.sin(angle) * power;
-          this.knockedThisRoll = 0;
-          this.gutter = false;
-          this.rolling = true;
-          this.ball.setAlpha(1);
-          this.powerText.setText("");
-          playCozyCue("roll");
-          setStatus(`${BOWLING_PLAYERS[this.currentPlayerIndex].name} rolling...`);
-        }
+        private renderFromLog(animateNewest: boolean) {
+          const state = computeBowlingState(rollsRef.current, seatCountRef.current);
+          const names = seatNamesRef.current;
 
-        private clampAim(x: number, y: number) {
-          const clampedY = PhaserModule.Math.Clamp(y, 96, this.ball.y - 54);
-          const bounds = this.laneBoundsAt(clampedY);
-          return {
-            x: PhaserModule.Math.Clamp(x, bounds.left + 24, bounds.right - 24),
-            y: clampedY,
-          };
-        }
+          // Animate the newest roll (someone bowled) by rolling the ball
+          // and toppling pins to the new standing count — but ONLY when it
+          // was the OPPONENT's roll. My own rolls are already animated
+          // optimistically in commitRoll, so re-animating on the echoed
+          // log would double-roll the ball.
+          const total = rollsRef.current.length;
+          const grew = total > this.renderedRollCount;
+          this.renderedRollCount = total;
+          const newestSeat = total > 0 ? rollsRef.current[total - 1].seat : -1;
+          const mine = mySeatRef.current;
+          const newestIsMine = mine !== null && mine !== undefined && newestSeat === mine;
 
-        private laneBoundsAt(y: number) {
-          const t = PhaserModule.Math.Clamp((536 - y) / (536 - 112), 0, 1);
-          return {
-            left: PhaserModule.Math.Linear(168, 318, t),
-            right: PhaserModule.Math.Linear(752, 602, t),
-          };
-        }
-
-        private checkPinHits() {
-          this.pins.forEach((pin) => {
-            if (!pin.standing) return;
-            const distance = PhaserModule.Math.Distance.Between(this.ball.x, this.ball.y, pin.node.x, pin.node.y);
-            if (distance < 52) {
-              const direction = pin.node.x >= this.ball.x ? 1 : -1;
-              this.knockPin(pin, direction);
-              this.vx *= 0.86;
-              this.vy *= 0.93;
-              this.carryPins(pin, direction);
-            }
-          });
-        }
-
-        private carryPins(source: BowlingPin, direction: number) {
-          this.pins.forEach((nearby) => {
-            if (!nearby.standing) return;
-            const pinDistance = PhaserModule.Math.Distance.Between(source.node.x, source.node.y, nearby.node.x, nearby.node.y);
-            const inCarryLine = Math.sign(nearby.node.x - source.node.x || direction) === direction || pinDistance < 62;
-            if (pinDistance < 86 && inCarryLine && PhaserModule.Math.FloatBetween(0, 1) > 0.24) {
-              this.knockPin(nearby, nearby.node.x > source.node.x ? 1 : -1);
-            }
-          });
-        }
-
-        private knockPin(pin: BowlingPin, direction: number) {
-          if (!pin.standing) return;
-          pin.standing = false;
-          this.knockedThisRoll += 1;
-          playCozyCue("pin");
-          this.tweens.add({
-            targets: pin.node,
-            x: pin.node.x + direction * PhaserModule.Math.Between(36, 78),
-            y: pin.node.y + PhaserModule.Math.Between(10, 34),
-            rotation: direction * PhaserModule.Math.FloatBetween(0.9, 1.7),
-            alpha: 0.42,
-            duration: 420,
-            ease: "Back.out",
-          });
-          this.spawnSpark(pin.node.x, pin.node.y);
-          this.updateHud();
-        }
-
-        private spawnSpark(x: number, y: number) {
-          for (let index = 0; index < 5; index += 1) {
-            const spark = this.add.star(x, y, 5, 3, 9, index % 2 === 0 ? 0xfaebc2 : 0xf6cfd2, 0.92).setDepth(6500);
-            this.tweens.add({
-              targets: spark,
-              x: x + PhaserModule.Math.Between(-42, 42),
-              y: y - PhaserModule.Math.Between(12, 58),
-              alpha: 0,
-              scale: 0.2,
-              duration: 560,
-              ease: "Sine.out",
-              onComplete: () => spark.destroy(),
-            });
-          }
-        }
-
-        private finishRoll() {
-          if (!this.rolling) return;
-          this.rolling = false;
-          this.aimLine.clear();
-          this.ball.setAlpha(1);
-          const frame = this.frames[this.frameIndex];
-          frame.rolls.push(this.knockedThisRoll);
-          this.updateHud();
-
-          const framePins = frame.rolls.reduce((sum, roll) => sum + roll, 0);
-          const finalFrame = this.frameIndex === MAX_FRAMES - 1;
-          const strike = this.knockedThisRoll === PIN_COUNT && frame.rolls.length === 1;
-          const spare = frame.rolls.length === 2 && framePins === PIN_COUNT && frame.rolls[0] !== PIN_COUNT;
-
-          if (strike) {
-            playCozyCue("strike");
-            setStatus("Strike! Casper did a victory hop.");
-          } else if (spare) {
-            playCozyCue("spare");
-            setStatus("Spare! Every pin found its way home.");
-          } else if (this.knockedThisRoll === 0) {
-            playCozyCue(this.gutter ? "gutter" : "miss");
-            setStatus(this.gutter ? "Gutter roll. Line up the next one." : "No pins this roll. Adjust the angle.");
+          if (grew && animateNewest && !newestIsMine) {
+            this.busy = false;
+            this.animateRoll(state.standingPins);
           } else {
-            setStatus(`${this.knockedThisRoll} pin${this.knockedThisRoll === 1 ? "" : "s"} down.`);
+            this.setStandingPins(state.standingPins);
           }
 
-          if (this.shouldEndGame()) {
-            this.playerComplete[this.currentPlayerIndex] = true;
-            if (this.playerComplete.every(Boolean)) {
-              this.time.delayedCall(820, () => this.showRewards());
-            } else {
-              this.time.delayedCall(880, () => this.switchPlayer());
-            }
+          // Banner.
+          if (state.gameOver) {
+            const winners = state.winnerSeats.map((s) => names[s] ?? `Player ${s + 1}`);
+            this.bannerText.setText(
+              state.winnerSeats.length > 1 ? "It's a tie! 🎀" : `${winners[0]} wins! 🎳`,
+            );
+            this.aimPhase = "idle";
+            this.drawPowerMeter();
+            setStatus(state.winnerSeats.length > 1 ? "A friendly tie." : `${winners[0]} takes the lane.`);
             return;
           }
 
-          if (this.shouldAdvanceFrame()) {
-            this.time.delayedCall(880, () => this.nextFrame());
-            return;
+          const turnName = names[state.currentSeat] ?? `Player ${state.currentSeat + 1}`;
+          const frameLabel = `Frame ${state.currentFrame + 1}/10`;
+          if (this.isMyTurn(state)) {
+            this.bannerText.setText(`Your roll — ${frameLabel}, ball ${state.ballInFrame + 1}`);
+            if (!this.busy) setStatus("Tap to start the power meter, tap again to roll.");
+          } else {
+            this.bannerText.setText(`${turnName} is bowling — ${frameLabel}`);
+            setStatus(`Waiting for ${turnName}…`);
           }
-
-          const resetPins = finalFrame && (strike || spare || frame.rolls[frame.rolls.length - 1] === PIN_COUNT);
-          this.time.delayedCall(720, () => this.nextRoll(resetPins));
         }
 
-        private shouldAdvanceFrame() {
-          if (this.frameIndex >= MAX_FRAMES - 1) return false;
-          const rolls = this.frames[this.frameIndex].rolls;
-          return rolls[0] === PIN_COUNT || rolls.length >= 2;
-        }
-
-        private shouldEndGame() {
-          if (this.frameIndex < MAX_FRAMES - 1) return false;
-          const rolls = this.frames[this.frameIndex].rolls;
-          if (rolls.length < 2) return false;
-          if (rolls[0] === PIN_COUNT) return rolls.length >= 3;
-          if (rolls[0] + rolls[1] === PIN_COUNT) return rolls.length >= 3;
-          return rolls.length >= 2;
-        }
-
-        private nextRoll(resetPins: boolean) {
-          this.resetBall();
-          if (resetPins) this.createPins(true);
-          this.knockedThisRoll = 0;
-          this.updateHud();
-          const rollNumber = this.frames[this.frameIndex].rolls.length + 1;
-          setStatus(`Frame ${this.frameIndex + 1}, roll ${rollNumber}. Aim for the remaining pins.`);
-        }
-
-        private nextFrame() {
-          this.frameIndex += 1;
-          this.switchPlayer();
-        }
-
-        private switchPlayer() {
-          const preferred = this.currentPlayerIndex === 0 ? 1 : 0;
-          this.currentPlayerIndex = this.playerComplete[preferred] ? this.currentPlayerIndex : preferred;
-          this.resetBall();
-          this.createPins(true);
-          this.knockedThisRoll = 0;
-          this.updateHud();
-          setStatus(`${BOWLING_PLAYERS[this.currentPlayerIndex].name}'s turn. Frame ${this.frameIndex + 1}, roll 1.`);
-        }
-
-        private resetBall() {
+        private animateRoll(finalStanding: number) {
+          this.aimPhase = "rolling";
           this.ball.setPosition(BALL_START.x, BALL_START.y);
-          this.ball.setRotation(0);
-          this.ball.setAlpha(1);
           this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30);
-          this.vx = 0;
-          this.vy = 0;
-          this.gutter = false;
-        }
-
-        private standingPins() {
-          return this.pins.filter((pin) => pin.standing).length;
-        }
-
-        private updateHud() {
-          const frame = this.frames[this.frameIndex];
-          const rollNumber = Math.min(3, frame.rolls.length + 1);
-          this.frameText?.setText(`Frame ${this.frameIndex + 1}/${MAX_FRAMES}`);
-          this.scoreText?.setText(`Blush ${this.calculatePlayerScore(0)}  |  Lavender ${this.calculatePlayerScore(1)}`);
-          this.pinsText?.setText(`Pins ${PIN_COUNT - this.standingPins()}/10`);
-          this.rollsText?.setText(`Roll ${rollNumber}${this.frameIndex === MAX_FRAMES - 1 ? " final" : ""}  |  ${this.formatFrames()}`);
-          this.activePlayerText?.setText(`Turn: ${BOWLING_PLAYERS[this.currentPlayerIndex].name}`);
-          this.activePlayerText?.setColor(BOWLING_PLAYERS[this.currentPlayerIndex].color);
-        }
-
-        private formatFrames() {
-          return this.frames
-            .map((frame, index) => {
-              if (frame.rolls.length === 0) return `${index + 1}: --`;
-              if (frame.rolls[0] === PIN_COUNT && index < MAX_FRAMES - 1) return `${index + 1}: X`;
-              const [first, second, third] = frame.rolls;
-              const firstMark = first === PIN_COUNT ? "X" : first ?? "-";
-              const secondMark =
-                first !== PIN_COUNT && first !== undefined && second !== undefined && first + second === PIN_COUNT
-                  ? "/"
-                  : second === PIN_COUNT
-                    ? "X"
-                    : second ?? "-";
-              const thirdMark = third === PIN_COUNT ? "X" : third ?? undefined;
-              return `${index + 1}: ${firstMark} ${secondMark}${thirdMark !== undefined ? ` ${thirdMark}` : ""}`;
-            })
-            .join("   ");
-        }
-
-        private calculatePlayerScore(playerIndex: number) {
-          return this.calculateScore(this.playerFrames[playerIndex]);
-        }
-
-        private calculateScore(frames = this.frames) {
-          let score = 0;
-          for (let index = 0; index < MAX_FRAMES; index += 1) {
-            const rolls = frames[index].rolls;
-            if (rolls.length === 0) break;
-
-            if (index === MAX_FRAMES - 1) {
-              score += rolls.reduce((sum, roll) => sum + roll, 0);
-              break;
-            }
-
-            const first = rolls[0] ?? 0;
-            const second = rolls[1] ?? 0;
-            if (first === PIN_COUNT) {
-              const [bonusOne = 0, bonusTwo = 0] = this.rollsAfterFrame(index, frames);
-              score += PIN_COUNT + bonusOne + bonusTwo;
-            } else if (rolls.length >= 2 && first + second === PIN_COUNT) {
-              const [bonus = 0] = this.rollsAfterFrame(index, frames);
-              score += PIN_COUNT + bonus;
-            } else {
-              score += first + second;
-            }
-          }
-          return score;
-        }
-
-        private rollsAfterFrame(frameIndex: number, frames = this.frames) {
-          return frames.slice(frameIndex + 1).flatMap((frame) => frame.rolls);
-        }
-
-        private showRewards() {
-          this.gameOver = true;
-          const playerScores = BOWLING_PLAYERS.map((_, index) => this.calculatePlayerScore(index));
-          const winningIndex = playerScores[0] >= playerScores[1] ? 0 : 1;
-          const finalScore = Math.max(...playerScores);
-          const coins = 120 + finalScore * 3;
-          const hearts = finalScore >= 120 ? 7 : finalScore >= 90 ? 5 : finalScore >= 60 ? 4 : 2;
-          const layer = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(8000);
-          const bg = this.add.graphics();
-          bg.fillStyle(0xfffcf3, 0.96);
-          bg.fillRoundedRect(-226, -150, 452, 300, 24);
-          bg.lineStyle(3, 0xf6cfd2, 0.9);
-          bg.strokeRoundedRect(-226, -150, 452, 300, 24);
-          layer.add(bg);
-          layer.add(this.add.text(0, -96, "Bowling Complete", {
-            color: "#3A2A2A",
-            fontFamily: "Caprasimo, Georgia, serif",
-            fontSize: "27px",
-          }).setOrigin(0.5));
-          layer.add(this.add.text(0, -28, `${BOWLING_PLAYERS[winningIndex].name} wins\nBlush ${playerScores[0]} | Lavender ${playerScores[1]}\nReward ${coins} coins + ${hearts} hearts\nCasper saved a moonberry sticker for the party.`, {
-            align: "center",
-            color: "#5B3F3F",
-            fontFamily: "Nunito, sans-serif",
-            fontSize: "17px",
-            fontStyle: "800",
-            lineSpacing: 8,
-            wordWrap: { width: 380 },
-          }).setOrigin(0.5));
-          const restart = this.add.text(0, 100, "Bowl again", {
-            color: "#FFFDF6",
-            fontFamily: "Nunito, sans-serif",
-            fontSize: "15px",
-            fontStyle: "900",
-            backgroundColor: "#D87E8C",
-            padding: { x: 18, y: 10 },
-          }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-          restart.on("pointerdown", () => this.restartRound());
-          layer.add(restart);
-          this.rewardLayer = layer;
-          playCozyCue("reward");
-          onReward?.({
-            gameId: "moonberry-bowling",
-            label: "Moonberry Bowling",
-            score: finalScore,
-            coins,
-            hearts,
+          playCozyCue("move");
+          this.tweens.add({
+            targets: [this.ball],
+            x: 460,
+            y: 168,
+            duration: 620,
+            ease: "Sine.in",
+            onComplete: () => {
+              playCozyCue("place");
+              this.setStandingPins(finalStanding);
+              this.tweens.add({ targets: this.ball, alpha: 0, duration: 260, onComplete: () => {
+                this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
+                this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30);
+                this.aimPhase = "idle";
+                this.renderFromLog(false);
+              } });
+            },
           });
-          setStatus(`Bowling party rewards awarded: ${coins} coins and ${hearts} hearts.`);
+          this.tweens.add({ targets: [this.ballShadow], x: 460, y: 198, duration: 620, ease: "Sine.in" });
         }
 
-        private restartRound() {
-          this.rewardLayer?.destroy(true);
-          this.rewardLayer = undefined;
-          this.playerFrames = createBowlingMatchFrames();
-          this.playerFrameIndexes = [0, 0];
-          this.playerComplete = [false, false];
-          this.currentPlayerIndex = 0;
-          this.knockedThisRoll = 0;
-          this.gameOver = false;
-          this.resetBall();
-          this.createPins(true);
-          this.updateHud();
-          setStatus("New bowling party lane started. Blush Lane begins frame 1.");
+        private handleTap() {
+          const state = computeBowlingState(rollsRef.current, seatCountRef.current);
+          if (state.gameOver || this.busy || this.aimPhase === "rolling") return;
+          if (!this.isMyTurn(state)) {
+            playCozyCue("miss");
+            return;
+          }
+          if (this.aimPhase === "idle") {
+            this.aimPhase = "power";
+            this.power = 0;
+            this.powerDir = 1;
+            return;
+          }
+          // Lock power → resolve the roll.
+          this.aimPhase = "rolling";
+          const standing = state.standingPins;
+          const pins = pinsFromPower(this.power, standing);
+          this.drawPowerMeter();
+          void this.commitRoll(pins, standing);
+        }
+
+        private async commitRoll(pins: number, standing: number) {
+          // Animate my own roll immediately for responsiveness, then submit.
+          this.busy = true;
+          setStatus("Rolling…");
+          this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
+          this.tweens.add({
+            targets: this.ball,
+            x: 460,
+            y: 168,
+            duration: 600,
+            ease: "Sine.in",
+            onComplete: () => {
+              this.setStandingPins(standing - pins);
+              playCozyCue(pins >= standing ? "score" : "place");
+            },
+          });
+
+          const result = await onRollRef.current(pins);
+          if (!result.ok) {
+            this.busy = false;
+            this.aimPhase = "idle";
+            this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
+            setStatus(result.reason ?? "Roll could not be saved — try again.");
+            this.renderFromLog(false);
+            return;
+          }
+          // Success: the updated log will arrive via the sync event and
+          // renderFromLog will reconcile the authoritative state. Clear
+          // busy after a short grace so the meter re-enables.
+          this.busy = false;
+          this.aimPhase = "idle";
+          this.ball.setAlpha(0);
+          this.time.delayedCall(200, () => {
+            this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
+            this.renderFromLog(false);
+          });
+        }
+
+        private drawPowerMeter() {
+          const x = 60;
+          const y = GAME_HEIGHT - 54;
+          const w = 360;
+          const h = 26;
+          this.powerBar.clear();
+          this.powerBar.fillStyle(0xffffff, 0.7);
+          this.powerBar.fillRoundedRect(x, y, w, h, 13);
+          this.powerBar.lineStyle(2, 0xd87e8c, 0.6);
+          this.powerBar.strokeRoundedRect(x, y, w, h, 13);
+          this.powerFill.clear();
+          if (this.aimPhase === "power") {
+            this.powerFill.fillStyle(0xd87e8c, 0.9);
+            this.powerFill.fillRoundedRect(x + 2, y + 2, Math.max(0, (w - 4) * this.power), h - 4, 11);
+          }
+        }
+
+        update(_time: number, delta: number) {
+          if (this.aimPhase === "power") {
+            this.power += this.powerDir * (delta / 900);
+            if (this.power >= 1) {
+              this.power = 1;
+              this.powerDir = -1;
+            } else if (this.power <= 0) {
+              this.power = 0;
+              this.powerDir = 1;
+            }
+            this.drawPowerMeter();
+          }
         }
       }
 
@@ -670,52 +350,27 @@ export function BowlingCanvas({ onReward }: BowlingCanvasProps) {
         width: GAME_WIDTH,
         height: GAME_HEIGHT,
         backgroundColor: "#fbf3e2",
-        scale: {
-          mode: PhaserModule.Scale.FIT,
-          autoCenter: PhaserModule.Scale.CENTER_BOTH,
-        },
+        scale: { mode: PhaserModule.Scale.FIT, autoCenter: PhaserModule.Scale.CENTER_BOTH },
         scene: BowlingScene,
       });
     }
 
-    boot().catch((error) => {
-      setStatus(error instanceof Error ? error.message : "Unable to load Moonberry Bowling");
-    });
+    void boot();
 
     return () => {
       destroyed = true;
       game?.destroy(true);
     };
-  }, [onReward]);
+  }, []);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-honey-500/30 bg-cream-100 shadow-[0_24px_70px_rgba(156,111,31,0.14)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-honey-500/20 bg-white/70 px-4 py-3">
-        <div>
-          <p className="text-xs font-extrabold uppercase tracking-normal text-honey-700">Playable mini-game</p>
-          <p className="text-sm font-black text-ink-900">Moonberry Bowling</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs font-extrabold text-ink-700">
-          <span className="rounded-md bg-honey-100 px-2.5 py-1">Aim + power</span>
-          <span className="rounded-md bg-blush-100 px-2.5 py-1">2 rolls/frame</span>
-          <span className="rounded-md bg-lavender-100 px-2.5 py-1">Strikes + spares</span>
-          <span className="rounded-md bg-garden-100 px-2.5 py-1">Gutters</span>
-        </div>
+    <div className="grid gap-3">
+      <div className="overflow-hidden rounded-2xl border border-cream-300 bg-cream-50 shadow-sm">
+        <div ref={mountRef} className="aspect-[920/600] w-full" />
       </div>
-      <div
-        ref={mountRef}
-        aria-label="Interactive Moonberry Bowling game canvas with aiming, gutters, pin collisions, frame scoring, and rewards"
-        className="mx-auto block overflow-hidden bg-cream-100"
-        role="application"
-        style={{
-          width: "min(100%, calc((100dvh - 300px) * 1.5333), 920px)",
-          aspectRatio: "920 / 600",
-        }}
-        tabIndex={0}
-      />
-      <div className="border-t border-honey-500/20 bg-white/70 px-4 py-2 text-xs font-extrabold text-ink-700">
+      <p className="rounded-lg border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-sm font-bold text-ink-700">
         {status}
-      </div>
-    </section>
+      </p>
+    </div>
   );
 }
