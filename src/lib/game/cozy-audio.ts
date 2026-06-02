@@ -85,11 +85,12 @@ const SUPER_SNAILS_HEROIC_MELODY = [
 const VOLUME_STORAGE_KEY = "hearthaven:audio-volume";
 const MUSIC_VOLUME_STORAGE_KEY = "hearthaven:music-volume";
 const SFX_VOLUME_STORAGE_KEY = "hearthaven:sfx-volume";
-// Doubled from the original 0.16 / 0.38 because the cozy bed was set
-// so quiet you had to crank the OS slider to hear anything. With these
-// values "max" actually sounds like a comfortable home volume.
-const MUSIC_GAIN_SCALE = 0.32;
-const SFX_GAIN_SCALE = 0.76;
+// The synth notes are intentionally gentle, but the whole bed was still
+// too quiet on laptops/tablets. These are roughly 2x the previous scales;
+// the user-facing sliders still clamp 0–100%, so players can pull back
+// without needing to crank their OS volume.
+const MUSIC_GAIN_SCALE = 0.64;
+const SFX_GAIN_SCALE = 1.52;
 
 function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));

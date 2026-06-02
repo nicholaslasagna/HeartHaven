@@ -19,11 +19,12 @@ import {
   readPresenceCustomization,
 } from "@/lib/game/avatar-customization";
 import { recordRoomRealtimeDiagnostic } from "@/lib/game/room-realtime-diagnostics";
-import { getSocialState, recordPlayedWith } from "@/lib/game/social";
+import { getSocialState, recordPlayedWith, SOCIAL_EVENT } from "@/lib/game/social";
 import { isBlocked, isLocallyQuarantined, readSafetyState, submitReport } from "@/lib/game/safety";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 import { recordActivity } from "@/lib/game/activity";
 import { getPlaceChatMessages, sendPlaceChatMessage } from "@/lib/game/place-chat";
+import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 
 type UseRoomRealtimeOptions = {
   roomId: string;
@@ -60,6 +61,17 @@ function parsePlacementHydrationRow(row: unknown) {
     updatedAt: typeof r.updated_at === "string" ? r.updated_at : undefined,
     version: Number.isFinite(versionNumber) ? versionNumber : 1,
   };
+}
+
+function dedupePlayersById(players: RealtimeRoomPlayer[]) {
+  const byId = new Map<string, RealtimeRoomPlayer>();
+  for (const player of players) {
+    const previous = byId.get(player.id);
+    if (!previous || player.updatedAt >= previous.updatedAt) {
+      byId.set(player.id, player);
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 export type SavePlacementsResult =
@@ -104,8 +116,9 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       // the larger `localPlayerRef`.
       latestFriendCodeRef.current = next;
     };
-    window.addEventListener("hearthaven:friend-code-regenerated", sync);
-    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+    const events = ["hearthaven:friend-code-regenerated", SOCIAL_EVENT, USER_LOCAL_SCOPE_EVENT] as const;
+    events.forEach((eventName) => window.addEventListener(eventName, sync));
+    return () => events.forEach((eventName) => window.removeEventListener(eventName, sync));
   }, []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("demo");
   const [status, setStatus] = useState("Solo room mode");
@@ -192,7 +205,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       setStatus(`Joining ${roomName} multiplayer`);
       recordRoomRealtimeDiagnostic({
         resolvedRoomHostCode: channelKey,
-        roomChannelName: `room:${channelKey}`,
+        roomChannelName: `room.${channelKey}`,
         roomConnectionState: "connecting",
         roomId: normalizedRoomId,
         roomPlacementVersion: placementsVersionRef.current,
@@ -203,12 +216,15 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         const {
           data: { user },
         } = await supabase.auth.getUser();
+        if (cancelled) return;
         const localId = user?.id ?? createGuestId();
         const displayName = await resolvePublicUsername(user);
+        if (cancelled) return;
         const social = getSocialState();
         setLocalFriendCode(social.selfCode);
         latestFriendCodeRef.current = social.selfCode;
         await loadKeeperCustomizationFromServer().catch(() => null);
+        if (cancelled) return;
 
         // Full customization snapshot — keeper palette + outfit, pet species +
         // fur tone + accessory — so remote keepers see the real avatar/pet.
@@ -226,7 +242,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
 
         localPlayerRef.current = localPlayer;
 
-        const channel = supabase.channel(`room:${channelKey}`, {
+        const channel = supabase.channel(`room.${channelKey}`, {
           config: {
             broadcast: { self: false },
             presence: { key: localId },
@@ -250,7 +266,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           }
         }
 
-        async function publishLocalPresence() {
+        async function publishLocalPresence(options: { track?: boolean } = {}) {
           const current = localPlayerRef.current;
           if (!current) return;
           const next: RealtimeRoomPlayer = {
@@ -263,7 +279,9 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           };
           localPlayerRef.current = next;
           latestFriendCodeRef.current = next.friendCode ?? "";
-          await channel.track(next);
+          if (options.track) {
+            await channel.track(next);
+          }
           void channel.send({ type: "broadcast", event: "avatar_move", payload: next });
         }
 
@@ -276,7 +294,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             recordRoomRealtimeDiagnostic({
               lastRealtimeError: error.message,
               resolvedRoomHostCode: channelKey,
-              roomChannelName: `room:${channelKey}`,
+              roomChannelName: `room.${channelKey}`,
               roomId: normalizedRoomId,
             });
             return null;
@@ -293,7 +311,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             recordRoomRealtimeDiagnostic({
               lastPlacementPollAt: source === "poll" ? new Date().toISOString() : undefined,
               resolvedRoomHostCode: channelKey,
-              roomChannelName: `room:${channelKey}`,
+              roomChannelName: `room.${channelKey}`,
               roomId: normalizedRoomId,
               roomPlacementVersion: placementsVersionRef.current,
             });
@@ -310,7 +328,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             recordRoomRealtimeDiagnostic({
               lastRealtimeError: error.message,
               resolvedRoomHostCode: channelKey,
-              roomChannelName: `room:${channelKey}`,
+              roomChannelName: `room.${channelKey}`,
               roomId: normalizedRoomId,
             });
             return null;
@@ -352,24 +370,24 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             .filter((player): player is RealtimeRoomPlayer => Boolean(player))
             .filter((player) => player.id !== localId)
             .filter((player) => !player.roomId || player.roomId === normalizedRoomId)
-            .filter((player) => !player.friendCode || !isBlocked(player.friendCode))
-            .sort((a, b) => a.displayName.localeCompare(b.displayName));
+            .filter((player) => !player.friendCode || !isBlocked(player.friendCode));
+          const dedupedRemotePlayers = dedupePlayersById(remotePlayers);
 
-          remotePlayers.forEach((player) => {
+          dedupedRemotePlayers.forEach((player) => {
             if (!player.friendCode) return;
             recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: roomName });
           });
-          if (remotePlayers.length > 0 && Date.now() - lastFriendPointAtRef.current > 5 * 60_000) {
+          if (dedupedRemotePlayers.length > 0 && Date.now() - lastFriendPointAtRef.current > 5 * 60_000) {
             lastFriendPointAtRef.current = Date.now();
             recordActivity("friend-time", 1, { context: roomName });
           }
-          setPlayers(remotePlayers);
+          setPlayers(dedupedRemotePlayers);
           recordRoomRealtimeDiagnostic({
-            presenceCount: remotePlayers.length + 1,
-            remoteCompanionCount: remotePlayers.filter((player) => Boolean(player.petSpeciesId)).length,
-            remotePlayerCount: remotePlayers.length,
+            presenceCount: dedupedRemotePlayers.length + 1,
+            remoteCompanionCount: dedupedRemotePlayers.filter((player) => Boolean(player.petSpeciesId)).length,
+            remotePlayerCount: dedupedRemotePlayers.length,
             resolvedRoomHostCode: channelKey,
-            roomChannelName: `room:${channelKey}`,
+            roomChannelName: `room.${channelKey}`,
             roomConnectionState: "connected",
             roomId: normalizedRoomId,
             roomPlacementVersion: placementsVersionRef.current,
@@ -426,7 +444,10 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
 
         channel
           .on("presence", { event: "sync" }, syncPresence)
-          .on("presence", { event: "join" }, syncPresence)
+          .on("presence", { event: "join" }, () => {
+            syncPresence();
+            void publishLocalPresence();
+          })
           .on("presence", { event: "leave" }, syncPresence)
           .on("broadcast", { event: "room_surfaces_updated" }, ({ payload }) => {
             const versionNumber = Number((payload as { version?: number })?.version);
@@ -455,7 +476,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             recordRoomRealtimeDiagnostic({
               lastPlacementBroadcastAt: new Date().toISOString(),
               resolvedRoomHostCode: channelKey,
-              roomChannelName: `room:${channelKey}`,
+              roomChannelName: `room.${channelKey}`,
               roomId: normalizedRoomId,
               roomPlacementVersion: versionNumber,
             });
@@ -474,7 +495,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
                 remoteCompanionCount: next.filter((entry) => Boolean(entry.petSpeciesId)).length,
                 remotePlayerCount: next.length,
                 resolvedRoomHostCode: channelKey,
-                roomChannelName: `room:${channelKey}`,
+                roomChannelName: `room.${channelKey}`,
                 roomConnectionState: "connected",
                 roomId: normalizedRoomId,
                 roomPlacementVersion: placementsVersionRef.current,
@@ -496,7 +517,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
                 remoteCompanionCount: next.filter((entry) => Boolean(entry.petSpeciesId)).length,
                 remotePlayerCount: next.length,
                 resolvedRoomHostCode: channelKey,
-                roomChannelName: `room:${channelKey}`,
+                roomChannelName: `room.${channelKey}`,
                 roomConnectionState: "connected",
                 roomId: normalizedRoomId,
                 roomPlacementVersion: placementsVersionRef.current,
@@ -522,10 +543,10 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             setApprovedDecoratorCodes([...new Set(approvedCodes)]);
           })
           .subscribe(async (state) => {
-            if (cancelled) return;
+            if (cancelled || channelRef.current !== channel) return;
             if (state === "SUBSCRIBED") {
               realtimeReadyRef.current = true;
-              await publishLocalPresence();
+              await publishLocalPresence({ track: true });
               void refreshRoomChat();
               if (heartbeatTimer) window.clearInterval(heartbeatTimer);
               heartbeatTimer = window.setInterval(() => void publishLocalPresence(), 2000);
@@ -551,7 +572,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
               setStatus(`Live in room ${roomCode}`);
               recordRoomRealtimeDiagnostic({
                 resolvedRoomHostCode: channelKey,
-                roomChannelName: `room:${channelKey}`,
+                roomChannelName: `room.${channelKey}`,
                 roomConnectionState: "connected",
                 roomId: normalizedRoomId,
                 roomPlacementVersion: placementsVersionRef.current,
@@ -563,7 +584,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
               recordRoomRealtimeDiagnostic({
                 lastRealtimeError: state,
                 resolvedRoomHostCode: channelKey,
-                roomChannelName: `room:${channelKey}`,
+                roomChannelName: `room.${channelKey}`,
                 roomConnectionState: "error",
                 roomId: normalizedRoomId,
               });
@@ -573,14 +594,14 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
               setStatus("Room visit connection closed.");
               recordRoomRealtimeDiagnostic({
                 resolvedRoomHostCode: channelKey,
-                roomChannelName: `room:${channelKey}`,
+                roomChannelName: `room.${channelKey}`,
                 roomConnectionState: "offline",
                 roomId: normalizedRoomId,
               });
             }
           });
 
-        // Re-broadcast presence whenever the keeper or pet customization
+        // Re-broadcast avatar state whenever the keeper or pet customization
         // changes (e.g. from the Account customizer) so anyone sharing the
         // room sees the new outfit / fur tone live, without a reload.
         let lastCustomizationSignature = JSON.stringify(readPresenceCustomization());
@@ -597,7 +618,6 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             updatedAt: Date.now(),
           };
           localPlayerRef.current = payload;
-          void channel.track(payload);
           void channel.send({ type: "broadcast", event: "avatar_move", payload });
         };
         window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, rebroadcastCustomization);
@@ -619,12 +639,13 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
           customizationPoll = null;
         };
       } catch (error) {
+        if (cancelled) return;
         setConnectionState("error");
         setStatus(error instanceof Error ? error.message : "Online room visits could not start.");
         recordRoomRealtimeDiagnostic({
           lastRealtimeError: error instanceof Error ? error.message : "Online room visits could not start.",
           resolvedRoomHostCode: channelKey,
-          roomChannelName: `room:${channelKey}`,
+          roomChannelName: `room.${channelKey}`,
           roomConnectionState: "error",
           roomId: normalizedRoomId,
         });
@@ -684,7 +705,6 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     };
 
     localPlayerRef.current = payload;
-    void channel.track(payload);
     void channel.send({ type: "broadcast", event: "avatar_move", payload });
   }, []);
 
@@ -701,7 +721,6 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
     };
 
     localPlayerRef.current = payload;
-    void channel.track(payload);
     void channel.send({ type: "broadcast", event: "room_emote", payload });
   }, []);
 
@@ -986,5 +1005,5 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
 
 function upsertPlayer(players: RealtimeRoomPlayer[], next: RealtimeRoomPlayer) {
   const withoutCurrent = players.filter((player) => player.id !== next.id);
-  return [...withoutCurrent, next].sort((a, b) => a.displayName.localeCompare(b.displayName));
+  return dedupePlayersById([...withoutCurrent, next]);
 }

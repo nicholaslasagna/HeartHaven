@@ -8,6 +8,7 @@ import {
   getPetAccessory,
   getPetTone,
   gaitPhase,
+  keeperFrame,
   keeperPlayableTextureKey,
   keeperPlayableTexturePath,
   keeperGaitPose,
@@ -1439,8 +1440,13 @@ export function GardenCanvas({
             .sprite(
               0,
               -66,
-              keeperPlayableTextureKey(this.keeperCustomization.characterId),
-              0,
+              "keeper-animation-sheet",
+              keeperFrame(
+                this.keeperCustomization.paletteId,
+                "idle",
+                this.keeperCustomization.outfitId,
+                this.keeperCustomization.bodyId,
+              ),
             )
             .setDisplaySize(98, 147);
           this.avatarHairSprite = this.add
@@ -2051,7 +2057,15 @@ export function GardenCanvas({
 
         private setAvatarPose(pose: KeeperPose) {
           this.avatarPose = pose;
-          this.avatarSprite?.setTexture(keeperPlayableTextureKey(this.keeperCustomization.characterId), 0);
+          this.avatarSprite?.setTexture(
+            "keeper-animation-sheet",
+            keeperFrame(
+              this.keeperCustomization.paletteId,
+              pose,
+              this.keeperCustomization.outfitId,
+              this.keeperCustomization.bodyId,
+            ),
+          );
           this.avatarSkinSprite?.setFrame(keeperSkinFrame(pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
           this.avatarHairSprite?.setFrame(keeperHairFrame(this.keeperCustomization.hairStyleId, pose, this.keeperCustomization.bodyId));
           this.applyKeeperLayerTints();
@@ -2193,9 +2207,10 @@ export function GardenCanvas({
           }
 
           if (this.afkAnimation === "idle") {
+            const breathe = Math.sin(this.time.now / 680);
             this.setAvatarPose("idle");
-            this.setKeeperLayerMotion(-66, 0);
-            this.avatarShadow?.setScale(1, 1);
+            this.setKeeperLayerMotion(-66 - breathe * 0.9, breathe * 0.003, 1 + breathe * 0.008, 1 - breathe * 0.006);
+            this.avatarShadow?.setScale(1 + breathe * 0.025, 1 - breathe * 0.012);
             return;
           }
 
@@ -2353,7 +2368,7 @@ export function GardenCanvas({
         }
 
         private setRemoteKeeperFrame(remote: RemoteGardenAvatarObject, pose: KeeperPose) {
-          remote.sprite.setTexture(keeperPlayableTextureKey(remote.characterId), 0);
+          remote.sprite.setTexture("keeper-animation-sheet", keeperFrame(remote.paletteId, pose, remote.outfitId, remote.bodyId));
           remote.skinSprite.setFrame(keeperSkinFrame(pose, remote.outfitId, remote.bodyId));
           remote.hairSprite.setFrame(keeperHairFrame(remote.hairStyleId, pose, remote.bodyId));
           this.applyRemoteKeeperTints(remote);
@@ -3091,7 +3106,7 @@ export function GardenCanvas({
               .setAlpha(0.94)
               .setFlipX(facingLeft);
             const sprite = this.add
-              .sprite(0, -66, keeperPlayableTextureKey(custom.characterId), 0)
+              .sprite(0, -66, "keeper-animation-sheet", keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId))
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);

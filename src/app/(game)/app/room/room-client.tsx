@@ -20,7 +20,14 @@ import { useRoomRealtime } from "@/lib/game/use-room-realtime";
 import { useInventory } from "@/lib/game/use-inventory";
 import { useGameWallet } from "@/lib/game/use-game-wallet";
 import { getCatalogItemArt, getCatalogItemArtFit } from "@/lib/game/item-art";
-import { getSocialState, isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
+import {
+  getSocialState,
+  isFriendCodeShape,
+  lookupFriendCode,
+  normalizeFriendCode,
+  recordPlayedWith,
+  SOCIAL_EVENT,
+} from "@/lib/game/social";
 import { PROGRESSION_EVENT, readPlayerProgression } from "@/lib/game/progression-store";
 import {
   defaultRoomSurfaceSelection,
@@ -33,6 +40,7 @@ import {
   type RoomSurfaceSelection,
 } from "@/lib/game/room-surfaces";
 import { isItemVisibleForSeason } from "@/lib/seasonal-events";
+import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 import {
   clearPendingRoomSave,
   queuePendingRoomSave,
@@ -149,8 +157,9 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   );
   useEffect(() => {
     const sync = () => setSelfFriendCode(getSocialState().selfCode);
-    window.addEventListener("hearthaven:friend-code-regenerated", sync);
-    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+    const events = ["hearthaven:friend-code-regenerated", SOCIAL_EVENT, USER_LOCAL_SCOPE_EVENT] as const;
+    events.forEach((eventName) => window.addEventListener(eventName, sync));
+    return () => events.forEach((eventName) => window.removeEventListener(eventName, sync));
   }, []);
   const channelHostCode = visitTarget || selfFriendCode || (typeof window === "undefined" ? "" : getSocialState().selfCode);
   const realtime = useRoomRealtime({

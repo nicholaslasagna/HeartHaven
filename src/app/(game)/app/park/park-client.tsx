@@ -17,9 +17,17 @@ import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Button } from "@/components/ui/button";
 import { getActiveCompanion } from "@/lib/game/companion-roster";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
-import { getSocialState, isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
+import {
+  getSocialState,
+  isFriendCodeShape,
+  lookupFriendCode,
+  normalizeFriendCode,
+  recordPlayedWith,
+  SOCIAL_EVENT,
+} from "@/lib/game/social";
 import { mergeGardenPlotsWithDefaults, type GardenPlotState } from "@/lib/game/garden-plots";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
+import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 import {
   clearPendingGardenSave,
   queuePendingGardenSave,
@@ -68,8 +76,9 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
 
   useEffect(() => {
     const sync = () => setSelfFriendCode(getSocialState().selfCode);
-    window.addEventListener("hearthaven:friend-code-regenerated", sync);
-    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+    const events = ["hearthaven:friend-code-regenerated", SOCIAL_EVENT, USER_LOCAL_SCOPE_EVENT] as const;
+    events.forEach((eventName) => window.addEventListener(eventName, sync));
+    return () => events.forEach((eventName) => window.removeEventListener(eventName, sync));
   }, []);
 
   useEffect(() => {

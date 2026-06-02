@@ -320,10 +320,14 @@ export async function ensureInviteRealtime(): Promise<void> {
       //   to_code = (select friend_code from public.profiles where id = auth.uid())
       // If `profiles.friend_code` is NULL, the subquery returns NULL and
       // no row ever matches — the recipient never sees any invite.
-      // Force the sync (rather than the cached-flag short-circuit) so a
-      // fresh signup or a regenerate path always lands a row before we
-      // subscribe.
-      await syncFriendCodeToProfile(true);
+      //
+      // Do not force-overwrite here: the server profile is canonical after
+      // sign-in. A fresh browser/session may have just generated a fallback
+      // local code, and forcing that into profiles.friend_code changes the
+      // keeper's public routing identity mid-session. Normal sync adopts an
+      // existing server code, and still writes one only when the profile has
+      // no code yet.
+      await syncFriendCodeToProfile(false);
       const local = getSocialState();
       const myCode = local.selfCode;
       if (!myCode) {

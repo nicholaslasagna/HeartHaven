@@ -13,11 +13,19 @@ import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
 import { recordActivity } from "@/lib/game/activity";
-import { getSocialState, isFriendCodeShape, lookupFriendCode, normalizeFriendCode, recordPlayedWith } from "@/lib/game/social";
+import {
+  getSocialState,
+  isFriendCodeShape,
+  lookupFriendCode,
+  normalizeFriendCode,
+  recordPlayedWith,
+  SOCIAL_EVENT,
+} from "@/lib/game/social";
 import { useSocial } from "@/lib/game/use-social";
 import { mergeGardenPlotsWithDefaults, type GardenPlotState } from "@/lib/game/garden-plots";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import { usePartnerLink } from "@/lib/game/use-partner-link";
+import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 import {
   clearPendingGardenSave,
   queuePendingGardenSave,
@@ -104,8 +112,9 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
   );
   useEffect(() => {
     const sync = () => setSelfFriendCode(getSocialState().selfCode);
-    window.addEventListener("hearthaven:friend-code-regenerated", sync);
-    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+    const events = ["hearthaven:friend-code-regenerated", SOCIAL_EVENT, USER_LOCAL_SCOPE_EVENT] as const;
+    events.forEach((eventName) => window.addEventListener(eventName, sync));
+    return () => events.forEach((eventName) => window.removeEventListener(eventName, sync));
   }, []);
   const channelHostCode = visitTarget ?? selfFriendCode;
   const realtime = useGardenRealtime({

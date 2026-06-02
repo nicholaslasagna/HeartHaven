@@ -18,7 +18,7 @@ import {
   PET_CUSTOMIZATION_EVENT,
   readPresenceCustomization,
 } from "@/lib/game/avatar-customization";
-import { getSocialState, recordPlayedWith } from "@/lib/game/social";
+import { getSocialState, recordPlayedWith, SOCIAL_EVENT } from "@/lib/game/social";
 import { recordActivity } from "@/lib/game/activity";
 import {
   isBlocked,
@@ -29,6 +29,7 @@ import {
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 import { hardenGardenPlots, type GardenPlotState } from "@/lib/game/garden-plots";
 import { getPlaceChatMessages, sendPlaceChatMessage, type PlaceChatType } from "@/lib/game/place-chat";
+import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 
 type UseGardenRealtimeOptions = {
   gardenId: string;
@@ -66,6 +67,17 @@ function normalizeGardenId(gardenId: string) {
 
 function normalizeFriendCode(code: string) {
   return code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
+}
+
+function dedupePlayersById(players: RealtimeRoomPlayer[]) {
+  const byId = new Map<string, RealtimeRoomPlayer>();
+  for (const player of players) {
+    const previous = byId.get(player.id);
+    if (!previous || player.updatedAt >= previous.updatedAt) {
+      byId.set(player.id, player);
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 export function useGardenRealtime({
@@ -109,8 +121,9 @@ export function useGardenRealtime({
       // back into the larger `localPlayerRef`.
       latestFriendCodeRef.current = next;
     };
-    window.addEventListener("hearthaven:friend-code-regenerated", sync);
-    return () => window.removeEventListener("hearthaven:friend-code-regenerated", sync);
+    const events = ["hearthaven:friend-code-regenerated", SOCIAL_EVENT, USER_LOCAL_SCOPE_EVENT] as const;
+    events.forEach((eventName) => window.addEventListener(eventName, sync));
+    return () => events.forEach((eventName) => window.removeEventListener(eventName, sync));
   }, []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("demo");
   const [status, setStatus] = useState("Solo garden mode");
@@ -130,13 +143,13 @@ export function useGardenRealtime({
     () => normalizeFriendCode(hostFriendCode ?? (localFriendCode || getSocialState().selfCode)),
     [hostFriendCode, localFriendCode],
   );
-  // Channel topic = `garden:<hostCode>.<gardenId>`. We deliberately use `.`
-  // as the inner separator, NOT `:`. Supabase Realtime parses multi-colon
-  // topic names as postgres_changes subscriptions (the canonical form is
+  // Channel topic = `garden.<hostCode>.<gardenId>`. We deliberately avoid
+  // extra colons in custom topics. Supabase Realtime reserves colon-shaped
+  // topics for postgres_changes subscriptions (canonical form:
   // `realtime:<schema>:<table>:<filter>`), so a topic like
   // `garden:HH-XXXXX-NNN:caspers-moonberry-beds` gets misinterpreted and
   // the subscribe call closes immediately — which is what was producing
-  // the "Garden visit connection closed" status on every load.
+  // "Garden visit connection closed" and one-way presence.
   //
   // Neither friend codes (regex `[^A-Z0-9-]` stripped) nor garden ids
   // (regex `[^a-zA-Z0-9_-]` stripped) can contain a dot, so the separator
@@ -222,11 +235,14 @@ export function useGardenRealtime({
         const {
           data: { user },
         } = await supabase.auth.getUser();
+        if (cancelled) return;
         const localId = user?.id ?? createGuestId();
         const displayName = await resolvePublicUsername(user);
+        if (cancelled) return;
         const social = getSocialState();
         setLocalFriendCode(social.selfCode);
         await loadKeeperCustomizationFromServer().catch(() => null);
+        if (cancelled) return;
         const localPlayer: RealtimeRoomPlayer = {
           id: localId,
           displayName,
@@ -240,7 +256,7 @@ export function useGardenRealtime({
 
         localPlayerRef.current = localPlayer;
 
-        const channel = supabase.channel(`garden:${channelKey}`, {
+        const channel = supabase.channel(`garden.${channelKey}`, {
           config: {
             broadcast: { self: false },
             presence: { key: localId },
@@ -250,7 +266,7 @@ export function useGardenRealtime({
         channelRef.current = channel;
         realtimeReadyRef.current = false;
 
-        async function publishLocalPresence() {
+        async function publishLocalPresence(options: { track?: boolean } = {}) {
           const current = localPlayerRef.current;
           if (!current) return;
           const next: RealtimeRoomPlayer = {
@@ -262,7 +278,9 @@ export function useGardenRealtime({
           };
           localPlayerRef.current = next;
           latestFriendCodeRef.current = next.friendCode ?? "";
-          await channel.track(next);
+          if (options.track) {
+            await channel.track(next);
+          }
           void channel.send({ type: "broadcast", event: "garden_move", payload: next });
         }
 
@@ -380,23 +398,26 @@ export function useGardenRealtime({
             .map((player) => hardenRealtimePlayer(player))
             .filter((player): player is RealtimeRoomPlayer => Boolean(player))
             .filter((player) => player.id !== localId)
-            .filter((player) => !player.friendCode || !isBlocked(player.friendCode))
-            .sort((a, b) => a.displayName.localeCompare(b.displayName));
+            .filter((player) => !player.friendCode || !isBlocked(player.friendCode));
+          const dedupedRemotePlayers = dedupePlayersById(remotePlayers);
 
-          remotePlayers.forEach((player) => {
+          dedupedRemotePlayers.forEach((player) => {
             if (!player.friendCode) return;
             recordPlayedWith({ code: player.friendCode, displayName: player.displayName, context: gardenName });
           });
-          if (remotePlayers.length > 0 && Date.now() - lastFriendPointAtRef.current > 5 * 60_000) {
+          if (dedupedRemotePlayers.length > 0 && Date.now() - lastFriendPointAtRef.current > 5 * 60_000) {
             lastFriendPointAtRef.current = Date.now();
             recordActivity("friend-time", 1, { context: gardenName });
           }
-          setPlayers(remotePlayers);
+          setPlayers(dedupedRemotePlayers);
         }
 
         channel
           .on("presence", { event: "sync" }, syncPresence)
-          .on("presence", { event: "join" }, syncPresence)
+          .on("presence", { event: "join" }, () => {
+            syncPresence();
+            void publishLocalPresence();
+          })
           .on("presence", { event: "leave" }, syncPresence)
           .on("broadcast", { event: "garden_move" }, ({ payload }) => {
             const player = hardenRealtimePlayer(payload);
@@ -444,10 +465,10 @@ export function useGardenRealtime({
             setDecor(safe);
           })
           .subscribe(async (state) => {
-            if (cancelled) return;
+            if (cancelled || channelRef.current !== channel) return;
             if (state === "SUBSCRIBED") {
               realtimeReadyRef.current = true;
-              await publishLocalPresence();
+              await publishLocalPresence({ track: true });
               void refreshGardenChat();
               if (heartbeatTimer) window.clearInterval(heartbeatTimer);
               heartbeatTimer = window.setInterval(() => void publishLocalPresence(), 2000);
@@ -479,7 +500,7 @@ export function useGardenRealtime({
             }
           });
 
-        // Live-update presence when the keeper/pet customization changes so
+        // Live-update avatar state when the keeper/pet customization changes so
         // everyone in the garden sees the new look without a reload.
         const rebroadcastCustomization = () => {
           const current = localPlayerRef.current;
@@ -492,7 +513,6 @@ export function useGardenRealtime({
             updatedAt: Date.now(),
           };
           localPlayerRef.current = payload;
-          void channel.track(payload);
           void channel.send({ type: "broadcast", event: "garden_move", payload });
         };
         window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, rebroadcastCustomization);
@@ -506,6 +526,7 @@ export function useGardenRealtime({
           window.removeEventListener("hearthaven:public-username-changed", rebroadcastCustomization);
         };
       } catch (error) {
+        if (cancelled) return;
         setConnectionState("error");
         setStatus(error instanceof Error ? error.message : "Online garden visits could not start.");
       }
@@ -565,7 +586,6 @@ export function useGardenRealtime({
     localPlayerRef.current = payload;
     const channel = channelRef.current;
     if (!channel) return;
-    void channel.track(payload);
     void channel.send({ type: "broadcast", event: "garden_move", payload });
   }, []);
 
@@ -864,5 +884,5 @@ export function useGardenRealtime({
 
 function upsertPlayer(players: RealtimeRoomPlayer[], next: RealtimeRoomPlayer) {
   const withoutCurrent = players.filter((player) => player.id !== next.id);
-  return [...withoutCurrent, next].sort((a, b) => a.displayName.localeCompare(b.displayName));
+  return dedupePlayersById([...withoutCurrent, next]);
 }
