@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ClipboardCheck,
@@ -50,6 +50,14 @@ export function RoomSocialPanel({
 }: RoomSocialPanelProps) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState("Room chat is moderated and rate-limited.");
+  // Pin the chat scroll to the newest message — the list is a
+  // fixed-height scroll box, so new messages scroll internally rather
+  // than growing the page.
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
   const [invitedFriendCode, setInvitedFriendCode] = useState<string | null>(null);
   const [sendingFriendCode, setSendingFriendCode] = useState<string | null>(null);
   const social = useSocial();
@@ -274,7 +282,12 @@ export function RoomSocialPanel({
         <p className="mt-2 text-xs font-bold text-ink-600">{notice}</p>
       </div>
 
-      <div className="mt-4 grid max-h-52 gap-2 overflow-y-auto pr-1">
+      {/* Fixed-height scroll box so the chat scrolls internally instead
+          of growing the panel/page as messages pile up. */}
+      <div
+        ref={chatScrollRef}
+        className="mt-4 grid h-64 content-start gap-2 overflow-y-auto pr-1"
+      >
         {messages.length === 0 ? (
           <div className="rounded-lg border border-cream-300 bg-white/70 p-3 text-sm font-bold text-ink-600">
             No room messages yet. Invite a friend or write the first note.

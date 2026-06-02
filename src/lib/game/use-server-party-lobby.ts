@@ -573,8 +573,15 @@ export function useServerPartyLobby(initialSize = 4) {
     if (lobby.host_profile_id !== userId) return { ok: false, reason: "not-host" };
     if (!lobby.selected_game_href) return { ok: false, reason: "no-game" };
     if (lobby.seats.length < 1) return { ok: false, reason: "empty" };
-    const ready = lobby.seats.filter((seat) => seat.ready).length;
-    if (ready < lobby.seats.length) return { ok: false, reason: "not-ready" };
+    // Standard lobby pattern: the host clicking Start IS the host's
+    // readiness signal, so we only require the NON-host seats to be
+    // ready. Previously this required EVERY seat (including the host's
+    // own flag) to be ready, which left the host unable to start if
+    // their own ready flag was false/stale — or if they'd toggled
+    // themselves to "unready". Guests still must ready up.
+    const guestSeats = lobby.seats.filter((seat) => seat.profile_id !== lobby.host_profile_id);
+    const guestsReady = guestSeats.every((seat) => seat.ready);
+    if (!guestsReady) return { ok: false, reason: "not-ready" };
     return { ok: true };
   }, [lobby, userId]);
 

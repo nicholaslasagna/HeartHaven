@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ClipboardCheck,
@@ -52,6 +52,16 @@ export function GardenSocialPanel({
 }: GardenSocialPanelProps) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState("Chat is moderated: no links, phone numbers, email addresses, or harmful messages.");
+  // Keep the chat scroll pinned to the newest message. The list is a
+  // fixed-height scroll box (see render below), so without this the
+  // newest message would land below the fold and the user would have to
+  // scroll every time. We jump to the bottom whenever the message count
+  // changes.
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
   const [invitedFriendCode, setInvitedFriendCode] = useState<string | null>(null);
   const [sendingFriendCode, setSendingFriendCode] = useState<string | null>(null);
   const social = useSocial();
@@ -286,7 +296,14 @@ export function GardenSocialPanel({
         <p className="mt-2 text-xs font-bold text-ink-600">{notice}</p>
       </div>
 
-      <div className="mt-4 grid max-h-80 gap-2 overflow-y-auto pr-1">
+      {/* Fixed-height scroll box: the chat can never push the page
+          taller than this — it scrolls internally instead. h-64 +
+          overflow-y-auto keeps the panel a stable height regardless of
+          message count. */}
+      <div
+        ref={chatScrollRef}
+        className="mt-4 grid h-64 content-start gap-2 overflow-y-auto pr-1"
+      >
         {messages.length === 0 ? (
           <div className="rounded-lg border border-cream-300 bg-white/70 p-3 text-sm font-bold text-ink-600">
             No messages yet. Invite a friend or write the first garden note.

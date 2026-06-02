@@ -255,6 +255,26 @@ export function GamesClient() {
       return;
     }
 
+    // If we're already seated in a lobby, don't fire another join request —
+    // the server would either no-op (already seated) or, if the host has
+    // already started/closed, raise "no active lobby", which surfaced as
+    // the confusing "That friend does not have an open lobby right now."
+    // even though the player is plainly in a lobby. Short-circuit with a
+    // clear message instead.
+    if (party.selfSeated) {
+      const sameLobby =
+        lobby?.host_friend_code?.toUpperCase() === code.toUpperCase() ||
+        lobby?.invite_code?.toUpperCase() === code.toUpperCase();
+      setNotice({
+        kind: "ok",
+        message: sameLobby
+          ? "You're already in this lobby."
+          : "You're already in a lobby. Leave it first to join another.",
+      });
+      if (sameLobby) setJoinInput("");
+      return;
+    }
+
     const result = await party.requestJoin(code);
     setNotice({
       kind: result.ok ? "ok" : "error",
