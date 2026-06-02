@@ -3686,28 +3686,37 @@ export function GardenCanvas({
           const container = this.decorObjects.get(decoration.id);
           if (!container) return null;
 
+          // Every decor kind should have a guest-allowed action — without
+          // one the popup shows nothing useful for visitors, which makes
+          // the world feel "view only" even though it isn't. The action
+          // verbs map intuitively to what the object looks like:
+          //   - sittable benches/seats     → "Sit"
+          //   - watering targets           → "Water"
+          //   - water decor (fountain)     → "Make a wish"
+          //   - grills + cooktops          → "Grill"
+          //   - structures + arches        → "Step inside" / "Light up"
+          // The shared `sitOnSwing` / `waterDecor` / `interactAt`
+          // animations are reused so we don't need bespoke sprites per
+          // kind. Kiosks with an `href` are intentionally NOT included
+          // here — those route to a mini-game via a separate flow.
           switch (decoration.kind) {
             case "swing":
-              return {
-                label: "Sit on swing",
-                run: () => this.sitOnSwing(decoration),
-              };
+              return { label: "Sit on swing", run: () => this.sitOnSwing(decoration) };
+            case "picnic":
+              return { label: "Sit", run: () => this.sitOnSwing(decoration) };
+            case "gazebo":
+              return { label: "Rest here", run: () => this.sitOnSwing(decoration) };
             case "memoryTree":
             case "flowerStand":
-              return {
-                label: "Water",
-                run: () => this.waterDecor(decoration),
-              };
+              return { label: "Water", run: () => this.waterDecor(decoration) };
+            case "greenhouse":
+              return { label: "Tend plants", run: () => this.waterDecor(decoration) };
             case "fountain":
-              return {
-                label: "Make a wish",
-                run: () => this.waterDecor(decoration),
-              };
-            case "picnic":
-              return {
-                label: "Sit",
-                run: () => this.sitOnSwing(decoration),
-              };
+              return { label: "Make a wish", run: () => this.waterDecor(decoration) };
+            case "bbq":
+              return { label: "Grill", run: () => this.cookAtDecor(decoration) };
+            case "lanternArch":
+              return { label: "Light up", run: () => this.lightDecor(decoration) };
             default:
               return null;
           }
@@ -3764,6 +3773,48 @@ export function GardenCanvas({
           if (this.pet) this.spawnSparkleBurst(this.pet.x, this.pet.y - 56, 0xc0a8dc, 8);
           recordActivity("garden-watered");
           setStatus(`${decoration.label}: a fresh drink. ${decorInteractionCopy[decoration.kind] ?? ""}`);
+        }
+
+        /**
+         * Cook-at-grill animation reused by the BBQ. Walks the keeper next
+         * to the decor, plays a warm sparkle burst, and emits a status
+         * line. We don't need a unique sprite — the sparkle + keeper-
+         * stands-near-decor reads as "cooking" in the same way that
+         * `waterDecor` reads as "watering".
+         */
+        private cookAtDecor(decoration: GardenDecorPlacement) {
+          const container = this.decorObjects.get(decoration.id);
+          if (!container || !this.avatar) return;
+          const target = this.constrainAvatarToWalkable(container.x - 32, container.y + 8);
+          playCozyCue("petChirp");
+          this.tweens.killTweensOf(this.avatar);
+          this.tweens.add({
+            targets: this.avatar,
+            x: target.x,
+            y: target.y,
+            duration: 320,
+            ease: "Sine.inOut",
+            onComplete: () => {
+              this.spawnSparkleBurst(container.x, container.y - 28, 0xffb86a, 18);
+              if (this.pet) this.spawnSparkleBurst(this.pet.x, this.pet.y - 56, 0xffd592, 6);
+            },
+          });
+          setStatus(`${decoration.label}: a warm grill, a little smoke, a snack for the party.`);
+        }
+
+        /**
+         * Lantern-arch + similar "light it up" interaction. Burst of warm
+         * sparkles + status line. Reused for any glowy decor where the
+         * verb is "light".
+         */
+        private lightDecor(decoration: GardenDecorPlacement) {
+          const container = this.decorObjects.get(decoration.id);
+          if (!container) return;
+          playCozyCue("score");
+          this.spawnSparkleBurst(container.x, container.y - 30, 0xf4d27a, 22);
+          this.spawnSparkleBurst(container.x - 24, container.y - 24, 0xf6cfd2, 8);
+          this.spawnSparkleBurst(container.x + 24, container.y - 24, 0xc0a8dc, 8);
+          setStatus(`${decoration.label}: lanterns wake up and the path softens.`);
         }
 
         private clearSelectedDecor() {
