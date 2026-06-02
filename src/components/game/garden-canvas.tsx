@@ -2072,10 +2072,11 @@ export function GardenCanvas({
           this.avatarHairSprite?.setFlipX(flip);
         }
 
-        private setKeeperLayerMotion(y: number, rotation: number) {
+        private setKeeperLayerMotion(y: number, rotation: number, scaleX = 1, scaleY = 1, x = 0) {
           [this.avatarSkinSprite, this.avatarSprite, this.avatarHairSprite].forEach((sprite) => {
-            sprite?.setY(y).setRotation(rotation);
+            sprite?.setPosition(x, y).setRotation(rotation);
           });
+          this.avatar.setScale(scaleX, scaleY);
         }
 
         private setPetPose(pose: PetPose) {
@@ -2243,9 +2244,12 @@ export function GardenCanvas({
 
           if (this.afkAnimation !== "idle" || this.afkIdleMs !== 0) this.resetAfkAnimation();
           const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
+          const stride = Math.abs(wave);
+          const direction = this.avatarFacing === "left" ? -1 : 1;
+          const stepX = wave * 3.4 * direction;
           this.setAvatarPose(keeperGaitPose(this.time.now));
-          this.setKeeperLayerMotion(-66 - Math.abs(wave) * 3, wave * 0.018 * (this.avatarFacing === "left" ? -1 : 1));
-          this.avatarShadow?.setScale(1 + Math.abs(wave) * 0.08, 1);
+          this.setKeeperLayerMotion(-66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, stepX);
+          this.avatarShadow?.setScale(1 + stride * 0.12, 1 - stride * 0.05);
         }
 
         private applyPetLocomotion(moving: boolean, idlePose: PetPose) {
@@ -2287,7 +2291,9 @@ export function GardenCanvas({
               if (moving) {
                 const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
                 this.setRemoteKeeperFrame(remote, keeperGaitPose(this.time.now));
-                this.setRemoteKeeperMotion(remote, -66 - Math.abs(wave) * 3, wave * 0.018 * (facingLeft ? -1 : 1));
+                const stride = Math.abs(wave);
+                const direction = facingLeft ? -1 : 1;
+                this.setRemoteKeeperMotion(remote, -66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, wave * 3.4 * direction);
                 remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
               }
               remote.petSprite
@@ -2318,8 +2324,10 @@ export function GardenCanvas({
 
             const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
             const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+            const stride = Math.abs(wave);
+            const direction = facingLeft ? -1 : 1;
             this.setRemoteKeeperFrame(remote, keeperGaitPose(this.time.now));
-            this.setRemoteKeeperMotion(remote, -66 - Math.abs(wave) * 3, wave * 0.018 * (facingLeft ? -1 : 1));
+            this.setRemoteKeeperMotion(remote, -66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, wave * 3.4 * direction);
             remote.petSprite
               .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
               .setY(-38 - Math.abs(petWave) * 2.3)
@@ -2342,10 +2350,11 @@ export function GardenCanvas({
           this.applyRemoteKeeperTints(remote);
         }
 
-        private setRemoteKeeperMotion(remote: RemoteGardenAvatarObject, y: number, rotation: number) {
+        private setRemoteKeeperMotion(remote: RemoteGardenAvatarObject, y: number, rotation: number, scaleX = 1, scaleY = 1, x = 0) {
           [remote.skinSprite, remote.sprite, remote.hairSprite].forEach((sprite) => {
-            sprite.setY(y).setRotation(rotation);
+            sprite.setPosition(x, y).setRotation(rotation);
           });
+          remote.container.setScale(scaleX, scaleY);
         }
 
         private applyRemoteKeeperTints(remote: RemoteGardenAvatarObject) {
@@ -2610,8 +2619,22 @@ export function GardenCanvas({
           // that flips `petBehavior.napping` back to false.
           if (this.playMode !== "companion" && this.petBehavior.napping) {
             this.petWasNapping = true;
-            this.pet.setVisible(false);
-            this.petShadow?.setVisible(false);
+            this.petFleeing = false;
+            this.petFleeTarget = undefined;
+            const follow = this.companionFollowTarget();
+            const next = this.constrainAvatarToWalkable(
+              PhaserModule.Math.Linear(this.pet.x, follow.x, 0.08),
+              PhaserModule.Math.Linear(this.pet.y, follow.y, 0.08),
+            );
+            this.pet.setPosition(next.x, next.y).setVisible(true);
+            this.petShadow?.setVisible(true);
+            this.petMood = "sit";
+            this.petFacing = this.avatar.x < this.pet.x ? "left" : "right";
+            this.petSprite.setFlipX(petFlipX(this.petFacing));
+            this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
+            this.applyPetLocomotion(false, "sleep");
+            this.petShadow.setPosition(this.pet.x, this.pet.y + 18);
+            this.petShadow.setDepth(this.pet.y - 1);
             // Poll the auto-resolve once per second so the nap ends
             // promptly even without external events firing.
             if (Math.floor(this.time.now / 1000) % 1 === 0) {
@@ -2628,8 +2651,6 @@ export function GardenCanvas({
             this.petWasNapping = false;
             this.petFleeing = false;
             this.petFleeTarget = undefined;
-            const follow = this.companionFollowTarget();
-            this.pet.setPosition(follow.x, follow.y);
             this.pet.setVisible(true);
             this.petShadow?.setVisible(true);
             this.petMood = "happy";
@@ -2714,10 +2735,10 @@ export function GardenCanvas({
           const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, targetX, targetY);
           let petMoving = false;
           const prevPetX = this.pet.x;
-          if (distance > 16) {
-            // Joy scales the lerp factor so a sad companion drifts in
-            // slowly — visible even when the keeper just walks normally.
-            const lerp = 0.055 * this.petBehavior.speedMultiplier;
+          if (distance > 8) {
+            // Joy still matters, but the baseline is high enough that the
+            // companion follows across both axes instead of feeling stuck.
+            const lerp = 0.105 * this.petBehavior.speedMultiplier;
             const next = this.constrainAvatarToWalkable(
               PhaserModule.Math.Linear(this.pet.x, targetX, lerp),
               PhaserModule.Math.Linear(this.pet.y, targetY, lerp),
