@@ -110,6 +110,11 @@ export function useServerPartyLobby(initialSize = 4) {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const navigatedToHrefRef = useRef<string | null>(null);
   const lobbyRef = useRef<LobbyState | null>(null);
+  // Tracks the session id we've observed in 'waiting' status during this
+  // hook's lifetime. Auto-follow-into-game only fires for a lobby we
+  // actually watched start (waiting → active), so re-opening /app/games
+  // on an already-active session doesn't bounce the player back in.
+  const sawWaitingSessionRef = useRef<string | null>(null);
   // userId lives in state, NOT a ref, because `isHost` + `selfSeated`
   // + `startStatus` all read it during render. Refs read during render
   // trip react-hooks/refs (and are genuinely a bug — they don't trigger
@@ -119,6 +124,41 @@ export function useServerPartyLobby(initialSize = 4) {
   useEffect(() => {
     lobbyRef.current = lobby;
   }, [lobby]);
+
+  // Follow the lobby into the game when it goes "active". This is the
+  // resilient path for EVERY seated member (host + guests): it fires on
+  // any lobby state change, which arrives via the realtime
+  // `game_sessions` UPDATE, the `lobby_events` 'started' broadcast, OR
+  // the 2.5s poll fallback. Previously the guest's navigation depended
+  // solely on receiving the `lobby_events` INSERT over realtime — and
+  // because that table's postgres_changes delivery is RLS-gated and
+  // occasionally dropped, a guest could be left stuck in an already-
+  // started lobby while the host was off playing. Driving navigation
+  // off hydrated state removes that single point of failure.
+  //
+  // `navigatedToHrefRef` guards against a double-push (the host's
+  // `start()` sets it to the same target first, so this is a no-op for
+  // the host).
+  useEffect(() => {
+    if (!lobby) return;
+    // Remember that we saw this lobby waiting, so a later transition to
+    // 'active' is recognized as "the host just started" rather than
+    // "we re-opened an already-running session".
+    if (lobby.status === "waiting") {
+      sawWaitingSessionRef.current = lobby.session_id;
+      return;
+    }
+    if (lobby.status !== "active") return;
+    if (!lobby.selected_game_href) return;
+    if (sawWaitingSessionRef.current !== lobby.session_id) return;
+    const seated =
+      lobby.host_profile_id === userId || lobby.seats.some((seat) => seat.profile_id === userId);
+    if (!seated) return;
+    const target = withSessionParam(lobby.selected_game_href, lobby.session_id);
+    if (!target || navigatedToHrefRef.current === target) return;
+    navigatedToHrefRef.current = target;
+    router.push(target, { scroll: false });
+  }, [lobby, userId, router]);
 
   /** Pull current lobby + seats + pending requests for this keeper. */
   const hydrate = useCallback(async () => {
