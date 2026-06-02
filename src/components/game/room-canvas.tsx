@@ -337,6 +337,8 @@ export function RoomCanvas({
         private roomEmoteHandler?: (event: Event) => void;
         private roomChatBubbleHandler?: (event: Event) => void;
         private remotePlayersHandler?: (event: Event) => void;
+        private remotePlayersRefreshTimer = 0;
+        private lastRemotePlayersSnapshot?: RealtimeRoomPlayer[];
         private remoteEmoteHandler?: (event: Event) => void;
         private roomPlacementsHandler?: (event: Event) => void;
         private pendingPlacementsHandler?: (event: Event) => void;
@@ -438,7 +440,7 @@ export function RoomCanvas({
           this.createPet();
           this.createInput();
           this.createRealtimeBridge();
-          this.syncRemotePlayers(remotePlayersRef.current);
+          this.refreshRemotePlayersFromReact(true);
           this.sortDepths();
           // Only enable camera follow when the world is bigger than the
           // viewport. Otherwise the camera stays put and the 2.5D room
@@ -491,6 +493,11 @@ export function RoomCanvas({
           this.updateAvatar(delta);
           this.updatePet(delta);
           this.updateRemoteAvatarAnimation();
+          this.remotePlayersRefreshTimer += delta;
+          if (this.remotePlayersRefreshTimer > 250) {
+            this.remotePlayersRefreshTimer = 0;
+            this.refreshRemotePlayersFromReact();
+          }
           this.updateSparkles(delta);
           this.sortDepths();
         }
@@ -1289,7 +1296,9 @@ export function RoomCanvas({
           };
           this.remotePlayersHandler = (event: Event) => {
             const players = (event as CustomEvent<{ players?: RealtimeRoomPlayer[] }>).detail?.players;
-            this.syncRemotePlayers(players ?? []);
+            const nextPlayers = players ?? [];
+            this.lastRemotePlayersSnapshot = nextPlayers;
+            this.syncRemotePlayers(nextPlayers);
           };
           this.remoteEmoteHandler = (event: Event) => {
             const player = (event as CustomEvent<RealtimeRoomPlayer>).detail;
@@ -1967,6 +1976,13 @@ export function RoomCanvas({
               movingUntil: 0,
             });
           });
+        }
+
+        private refreshRemotePlayersFromReact(force = false) {
+          const nextPlayers = remotePlayersRef.current ?? [];
+          if (!force && this.lastRemotePlayersSnapshot === nextPlayers) return;
+          this.lastRemotePlayersSnapshot = nextPlayers;
+          this.syncRemotePlayers(nextPlayers);
         }
 
         private playRoomEmote(emote: RoomEmote) {

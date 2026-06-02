@@ -208,6 +208,7 @@ export function useGardenRealtime({
 
     let cancelled = false;
     let customizationCleanup: (() => void) | null = null;
+    let heartbeatTimer: number | null = null;
     let chatPollTimer: number | null = null;
     let decorPollTimer: number | null = null;
     let plotsPollTimer: number | null = null;
@@ -248,6 +249,22 @@ export function useGardenRealtime({
 
         channelRef.current = channel;
         realtimeReadyRef.current = false;
+
+        async function publishLocalPresence() {
+          const current = localPlayerRef.current;
+          if (!current) return;
+          const next: RealtimeRoomPlayer = {
+            ...current,
+            displayName: getCachedPublicUsername(),
+            friendCode: getSocialState().selfCode,
+            ...readPresenceCustomization(),
+            updatedAt: Date.now(),
+          };
+          localPlayerRef.current = next;
+          latestFriendCodeRef.current = next.friendCode ?? "";
+          await channel.track(next);
+          void channel.send({ type: "broadcast", event: "garden_move", payload: next });
+        }
 
         async function refreshGardenChat() {
           try {
@@ -430,8 +447,10 @@ export function useGardenRealtime({
             if (cancelled) return;
             if (state === "SUBSCRIBED") {
               realtimeReadyRef.current = true;
-              await channel.track(localPlayer);
+              await publishLocalPresence();
               void refreshGardenChat();
+              if (heartbeatTimer) window.clearInterval(heartbeatTimer);
+              heartbeatTimer = window.setInterval(() => void publishLocalPresence(), 2000);
               // Belt-and-braces: Supabase Realtime sometimes fires the
               // initial 'sync' before the just-tracked local presence
               // is fully registered. Re-track + re-sync ~400ms later so
@@ -439,7 +458,7 @@ export function useGardenRealtime({
               // use-room-realtime.ts for the full explanation.
               window.setTimeout(() => {
                 if (cancelled || !realtimeReadyRef.current) return;
-                void channel.track(localPlayerRef.current ?? localPlayer);
+                void publishLocalPresence();
                 try {
                   syncPresence();
                 } catch {
@@ -498,6 +517,8 @@ export function useGardenRealtime({
       cancelled = true;
       customizationCleanup?.();
       customizationCleanup = null;
+      if (heartbeatTimer) window.clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
       if (chatPollTimer) window.clearInterval(chatPollTimer);
       chatPollTimer = null;
       if (decorPollTimer) window.clearInterval(decorPollTimer);

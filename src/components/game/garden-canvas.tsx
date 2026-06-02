@@ -629,6 +629,8 @@ export function GardenCanvas({
         private decorObjects = new Map<string, Phaser.GameObjects.Container>();
         private remoteAvatars = new Map<string, RemoteGardenAvatarObject>();
         private remotePlayersHandler?: (event: Event) => void;
+        private remotePlayersRefreshTimer = 0;
+        private lastRemotePlayersSnapshot?: RealtimeRoomPlayer[];
         private chatBubbleHandler?: (event: Event) => void;
         private addDecorHandler?: (event: Event) => void;
         private decorUpdatedHandler?: (event: Event) => void;
@@ -750,7 +752,7 @@ export function GardenCanvas({
           this.createPet();
           this.createInput();
           this.createRealtimeBridge();
-          this.syncRemotePlayers(remotePlayersRef.current);
+          this.refreshRemotePlayersFromReact(true);
           this.cameras.main.startFollow(this.avatar, true, 0.08, 0.08);
           this.cameras.main.setDeadzone(180, 120);
           this.addTitle();
@@ -763,6 +765,11 @@ export function GardenCanvas({
           this.updateAvatar(delta);
           this.updatePet(delta);
           this.updateRemoteAvatarAnimation();
+          this.remotePlayersRefreshTimer += delta;
+          if (this.remotePlayersRefreshTimer > 250) {
+            this.remotePlayersRefreshTimer = 0;
+            this.refreshRemotePlayersFromReact();
+          }
           // Broadcast keeper + companion positions to the HUD/minimap at
           // ~6 Hz — frequent enough for the markers to feel live but cheap
           // for React listeners.
@@ -1902,7 +1909,9 @@ export function GardenCanvas({
         private createRealtimeBridge() {
           this.remotePlayersHandler = (event: Event) => {
             const players = (event as CustomEvent<{ players?: RealtimeRoomPlayer[] }>).detail?.players;
-            this.syncRemotePlayers(players ?? []);
+            const nextPlayers = players ?? [];
+            this.lastRemotePlayersSnapshot = nextPlayers;
+            this.syncRemotePlayers(nextPlayers);
           };
           this.chatBubbleHandler = (event: Event) => {
             const message = (event as CustomEvent<GardenChatMessage>).detail;
@@ -3150,6 +3159,13 @@ export function GardenCanvas({
               movingUntil: 0,
             });
           });
+        }
+
+        private refreshRemotePlayersFromReact(force = false) {
+          const nextPlayers = remotePlayersRef.current ?? [];
+          if (!force && this.lastRemotePlayersSnapshot === nextPlayers) return;
+          this.lastRemotePlayersSnapshot = nextPlayers;
+          this.syncRemotePlayers(nextPlayers);
         }
 
         private showChatBubble(message: GardenChatMessage) {
