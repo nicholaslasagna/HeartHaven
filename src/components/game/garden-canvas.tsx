@@ -3269,11 +3269,12 @@ export function GardenCanvas({
           const container = this.add.container(decoration.x, decoration.y).setDepth(decoration.y);
           container.setRotation(0);
           container.setSize(spriteConfig.width, spriteConfig.height);
+          const spriteBounds = this.getDecorSpriteBounds(spriteConfig);
           const hitArea = new PhaserModule.Geom.Rectangle(
-            -spriteConfig.width / 2,
-            spriteConfig.yOffset - spriteConfig.height / 2,
-            spriteConfig.width,
-            spriteConfig.height,
+            spriteBounds.left,
+            spriteBounds.top,
+            spriteBounds.width,
+            spriteBounds.height,
           );
           container.setInteractive({
             draggable: canEditGarden,
@@ -3285,7 +3286,7 @@ export function GardenCanvas({
 
           const glow = this.add.graphics();
           glow.lineStyle(4, 0xffffff, 0.9);
-          glow.strokeRoundedRect(-spriteConfig.width / 2, -spriteConfig.height + 36, spriteConfig.width, spriteConfig.height, 18);
+          glow.strokeRoundedRect(spriteBounds.left, spriteBounds.top, spriteBounds.width, spriteBounds.height, 18);
           glow.setVisible(false);
           container.add(glow);
           container.setData("glow", glow);
@@ -3440,10 +3441,12 @@ export function GardenCanvas({
           outline?.setVisible(isPending);
           if (!isPending || !outline) return;
 
-          const width = spriteConfig.width + 22;
-          const height = spriteConfig.height + 22;
-          const left = -width / 2;
-          const top = -spriteConfig.height + 25;
+          const spriteBounds = this.getDecorSpriteBounds(spriteConfig);
+          const padding = 11;
+          const width = spriteBounds.width + padding * 2;
+          const height = spriteBounds.height + padding * 2;
+          const left = spriteBounds.left - padding;
+          const top = spriteBounds.top - padding;
           outline.lineStyle(3, 0x8e70bd, 0.9);
           outline.strokeRoundedRect(left, top, width, height, 22);
           outline.lineStyle(2, 0xffffff, 0.9);
@@ -3468,6 +3471,17 @@ export function GardenCanvas({
           container.add(sprite);
           container.setData("sprite", sprite);
           this.addPassiveDecorMotion(container, sprite, kind);
+        }
+
+        private getDecorSpriteBounds(spriteConfig: { width: number; height: number; yOffset: number }) {
+          return {
+            bottom: spriteConfig.yOffset + spriteConfig.height / 2,
+            height: spriteConfig.height,
+            left: -spriteConfig.width / 2,
+            right: spriteConfig.width / 2,
+            top: spriteConfig.yOffset - spriteConfig.height / 2,
+            width: spriteConfig.width,
+          };
         }
 
         private addPassiveDecorMotion(
@@ -3720,8 +3734,10 @@ export function GardenCanvas({
         ) {
           const container = this.decorObjects.get(decoration.id);
           const camera = this.cameras.main;
-          const desiredAboveY = (container?.y ?? decoration.y) - spriteConfig.height - 24;
-          const fallbackBelowY = (container?.y ?? decoration.y) + 84;
+          const spriteBounds = this.getDecorSpriteBounds(spriteConfig);
+          const itemY = container?.y ?? decoration.y;
+          const desiredAboveY = itemY + spriteBounds.top - 60;
+          const fallbackBelowY = itemY + spriteBounds.bottom + 60;
           const minX = camera.scrollX + bubbleWidth / 2 + 12;
           const maxX = camera.scrollX + camera.width - bubbleWidth / 2 - 12;
           const minY = camera.scrollY + 46;
