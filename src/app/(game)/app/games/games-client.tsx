@@ -461,7 +461,7 @@ export function GamesClient() {
                     const ok = window.confirm("Close this lobby? Everyone seated will be kicked back.");
                     if (!ok) return;
                   }
-                  const result = await party.leave();
+                  const result = await party.closeLobby();
                   if (result.ok) setNotice({ kind: "ok", message: "Lobby closed." });
                   else setNotice({ kind: "error", message: actionErrorCopy(result.reason) });
                 }}

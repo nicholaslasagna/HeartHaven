@@ -1543,24 +1543,36 @@ export function GardenCanvas({
           };
           this.input.keyboard?.on("keydown-BACKSPACE", this.backspaceKeyHandler);
 
-          this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            // Right click — start a swap-or-recall timer. A short tap toggles
-            // play mode (keeper ↔ companion); holding ≥500ms recalls the
-            // companion back to the keeper without changing modes.
-            if (pointer.rightButtonDown()) {
-              this.rightButtonDownAt = this.time.now;
-              this.rightHoldFired = false;
-              return;
-            }
-            this.clearSelectedDecor();
-            // Left click — click-to-move for whichever sprite is being
-            // driven right now.
-            if (pointer.y < 112) return;
-            const target = this.constrainAvatarToWalkable(pointer.worldX, pointer.worldY);
-            this.target = new PhaserModule.Math.Vector2(target.x, target.y);
-            playCozyCue("move");
-            setStatus(`Walking along the paved path to x ${Math.round(target.x)}, y ${Math.round(target.y)}.`);
-          });
+          this.input.on(
+            "pointerdown",
+            (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+              // Right click — start a swap-or-recall timer. A short tap toggles
+              // play mode (keeper ↔ companion); holding ≥500ms recalls the
+              // companion back to the keeper without changing modes.
+              if (pointer.rightButtonDown()) {
+                this.rightButtonDownAt = this.time.now;
+                this.rightHoldFired = false;
+                return;
+              }
+              // If the click landed on an interactive game object (decor,
+              // kiosk, swing, etc.), its own pointerdown handler already
+              // ran and may have opened the decor bubble. We MUST bail out
+              // here — Phaser's scene-level pointerdown fires regardless
+              // of whether a game object handler called stopPropagation,
+              // so unconditionally calling clearSelectedDecor() below
+              // would wipe the bubble the keeper just opened. This is
+              // the "popup doesn't show in garden/park" bug.
+              if (currentlyOver.length > 0) return;
+              this.clearSelectedDecor();
+              // Left click — click-to-move for whichever sprite is being
+              // driven right now.
+              if (pointer.y < 112) return;
+              const target = this.constrainAvatarToWalkable(pointer.worldX, pointer.worldY);
+              this.target = new PhaserModule.Math.Vector2(target.x, target.y);
+              playCozyCue("move");
+              setStatus(`Walking along the paved path to x ${Math.round(target.x)}, y ${Math.round(target.y)}.`);
+            },
+          );
 
           this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
             if (pointer.button !== 2) return;
@@ -3257,7 +3269,18 @@ export function GardenCanvas({
           const container = this.add.container(decoration.x, decoration.y).setDepth(decoration.y);
           container.setRotation(0);
           container.setSize(spriteConfig.width, spriteConfig.height);
-          container.setInteractive({ draggable: canEditGarden, useHandCursor: true });
+          const hitArea = new PhaserModule.Geom.Rectangle(
+            -spriteConfig.width / 2,
+            spriteConfig.yOffset - spriteConfig.height / 2,
+            spriteConfig.width,
+            spriteConfig.height,
+          );
+          container.setInteractive({
+            draggable: canEditGarden,
+            hitArea,
+            hitAreaCallback: PhaserModule.Geom.Rectangle.Contains,
+            useHandCursor: true,
+          });
           if (canEditGarden) this.input.setDraggable(container);
 
           const glow = this.add.graphics();
@@ -3277,12 +3300,27 @@ export function GardenCanvas({
           this.decorObjects.set(decoration.id, container);
           this.applyPendingDecorStyle(decoration.id);
 
-          container.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-            if (pointer.rightButtonDown()) return;
-            pointer.event.stopPropagation();
-            container.setData("wasSelectedOnPointerDown", this.selectedDecor?.id === decoration.id);
-            this.selectDecor(decoration.id);
-          });
+          container.on(
+            "pointerdown",
+            (
+              pointer: Phaser.Input.Pointer,
+              _localX: number,
+              _localY: number,
+              event: Phaser.Types.Input.EventData,
+            ) => {
+              if (pointer.rightButtonDown()) return;
+              // Both stop calls — matches room-canvas: Phaser EventData
+              // stops propagation to game objects beneath this one, and
+              // pointer.event stops the underlying DOM event. The
+              // scene-level pointerdown handler also bails out when a
+              // game object is under the pointer (see input.on pointerdown
+              // in createInput), so the bubble survives.
+              event.stopPropagation();
+              pointer.event.stopPropagation();
+              container.setData("wasSelectedOnPointerDown", this.selectedDecor?.id === decoration.id);
+              this.selectDecor(decoration.id);
+            },
+          );
           container.on("pointerover", () => {
             glow.setVisible(true);
             setStatus(
@@ -3583,9 +3621,11 @@ export function GardenCanvas({
           const buttonCount =
             (interaction ? 1 : 0) + (canEditGarden ? 2 : 0);
           const bubbleWidth = buttonCount >= 3 ? 320 : 252;
+          const bubblePosition = this.getDecorBubblePosition(decoration, spriteConfig, bubbleWidth);
           const bubble = this.add
-            .container(container.x, container.y - spriteConfig.height - 24)
+            .container(bubblePosition.x, bubblePosition.y)
             .setDepth(10000);
+          bubble.setData("bubbleWidth", bubbleWidth);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.96);
           bg.fillRoundedRect(-bubbleWidth / 2, -36, bubbleWidth, 72, 16);
@@ -3671,6 +3711,27 @@ export function GardenCanvas({
 
           bubble.add(children);
           this.decorBubble = bubble;
+        }
+
+        private getDecorBubblePosition(
+          decoration: GardenDecorPlacement,
+          spriteConfig: { width: number; height: number; yOffset: number },
+          bubbleWidth: number,
+        ) {
+          const container = this.decorObjects.get(decoration.id);
+          const camera = this.cameras.main;
+          const desiredAboveY = (container?.y ?? decoration.y) - spriteConfig.height - 24;
+          const fallbackBelowY = (container?.y ?? decoration.y) + 84;
+          const minX = camera.scrollX + bubbleWidth / 2 + 12;
+          const maxX = camera.scrollX + camera.width - bubbleWidth / 2 - 12;
+          const minY = camera.scrollY + 46;
+          const maxY = camera.scrollY + camera.height - 46;
+          const desiredY = desiredAboveY < minY ? fallbackBelowY : desiredAboveY;
+
+          return {
+            x: PhaserModule.Math.Clamp(container?.x ?? decoration.x, minX, maxX),
+            y: PhaserModule.Math.Clamp(desiredY, minY, maxY),
+          };
         }
 
         /**
@@ -3834,7 +3895,9 @@ export function GardenCanvas({
           const container = this.decorObjects.get(this.selectedDecor.id);
           if (!container) return;
           const spriteConfig = worldObjectSprites[this.selectedDecor.kind];
-          this.decorBubble.setPosition(container.x, container.y - spriteConfig.height - 24);
+          const bubbleWidth = (this.decorBubble.getData("bubbleWidth") as number | undefined) ?? 252;
+          const bubblePosition = this.getDecorBubblePosition(this.selectedDecor, spriteConfig, bubbleWidth);
+          this.decorBubble.setPosition(bubblePosition.x, bubblePosition.y);
         }
 
         private toggleSelectedDecorFacing() {

@@ -502,6 +502,30 @@ export function useServerPartyLobby(initialSize = 4) {
     }
   }, []);
 
+  const closeLobby = useCallback(async (): Promise<Result> => {
+    if (!isSupabaseConfigured()) return { ok: false, reason: "offline" };
+    const current = lobbyRef.current;
+    if (!current) return { ok: false, reason: "no-lobby" };
+    if (current.host_profile_id !== userId) return { ok: false, reason: "not-host" };
+
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error: rpcError } = await supabase.rpc("close_party_lobby", {
+        p_session_id: current.session_id,
+      });
+      if (rpcError) {
+        recordMultiplayerRpc("close_party_lobby", rpcError);
+        return { ok: false, reason: rpcError.message };
+      }
+      recordMultiplayerRpc("close_party_lobby");
+      setLobby(null);
+      setJoinRequests([]);
+      return { ok: true } as Result;
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : "Could not close lobby" };
+    }
+  }, [userId]);
+
   const kick = useCallback(async (profileId: string): Promise<Result> => {
     if (!isSupabaseConfigured()) return { ok: false, reason: "offline" };
     try {
@@ -585,6 +609,7 @@ export function useServerPartyLobby(initialSize = 4) {
       selectGame,
       start,
       leave,
+      closeLobby,
       kick,
       toggleReady,
       // Derived
@@ -608,6 +633,7 @@ export function useServerPartyLobby(initialSize = 4) {
       selectGame,
       start,
       leave,
+      closeLobby,
       kick,
       toggleReady,
       startStatus,
