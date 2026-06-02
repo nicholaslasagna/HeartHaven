@@ -29,6 +29,7 @@ export type CozyCue =
   | "lantern"
   | "heart"
   | "emote"
+  | "laser"
   /** New: short, soft chime when a chat message is sent or received. */
   | "speech";
 
@@ -40,6 +41,9 @@ type CozyAudioState = {
   musicGain: GainNode | null;
   musicStep: number;
   musicTimer: number | null;
+  heroicActive: boolean;
+  heroicStep: number;
+  heroicTimer: number | null;
 };
 
 declare global {
@@ -65,6 +69,17 @@ const COZY_MELODIES: number[][] = [
   [220, 261.63, 220, 196, 220, 261.63, 329.63, 261.63],
   // Friend visit — bright pentatonic for the moment a guest arrives.
   [523.25, 587.33, 659.25, 587.33, 523.25, 440, 523.25, 587.33],
+];
+
+const SUPER_SNAILS_HEROIC_MELODY = [
+  392,
+  493.88,
+  587.33,
+  783.99,
+  659.25,
+  587.33,
+  493.88,
+  587.33,
 ];
 
 const VOLUME_STORAGE_KEY = "hearthaven:audio-volume";
@@ -95,6 +110,9 @@ function getState(): CozyAudioState | null {
     musicGain: null,
     musicStep: 0,
     musicTimer: null,
+    heroicActive: false,
+    heroicStep: 0,
+    heroicTimer: null,
   };
 
   return window.__hearthavenAudio;
@@ -131,6 +149,7 @@ export async function startCozyAudio() {
   state.enabled = true;
   await state.context.resume();
   startMusicLoop(state);
+  if (state.heroicActive) startHeroicLoop(state);
   playCozyCue("reward");
   return true;
 }
@@ -143,6 +162,10 @@ export function stopCozyAudio() {
   if (state.musicTimer) {
     window.clearInterval(state.musicTimer);
     state.musicTimer = null;
+  }
+  if (state.heroicTimer) {
+    window.clearInterval(state.heroicTimer);
+    state.heroicTimer = null;
   }
 }
 
@@ -301,6 +324,11 @@ export function playCozyCue(cue: CozyCue) {
       playTone(state, 659.25, now, 0.07, "triangle", 0.08);
       playTone(state, 987.77, now + 0.07, 0.16, "sine", 0.07);
       break;
+    case "laser":
+      playTone(state, 880, now, 0.08, "sawtooth", 0.04);
+      playTone(state, 1318.51, now + 0.035, 0.1, "triangle", 0.055);
+      playNoise(state, now + 0.01, 0.12, 0.025, 1500);
+      break;
     case "speech":
       // Two soft pings — a "speech bubble" cue. Triangle at low volume so
       // it never grates when chat is busy.
@@ -326,6 +354,24 @@ export function playCozyCue(cue: CozyCue) {
       playTone(state, 523.25, now, 0.06, "triangle", 0.07);
       break;
   }
+}
+
+export function setHeroicCompanionTheme(active: boolean) {
+  const state = getState();
+  if (!state) return;
+
+  state.heroicActive = active;
+  if (!active) {
+    if (state.heroicTimer) {
+      window.clearInterval(state.heroicTimer);
+      state.heroicTimer = null;
+    }
+    state.heroicStep = 0;
+    return;
+  }
+
+  const graph = ensureAudioGraph();
+  if (graph?.enabled) startHeroicLoop(graph);
 }
 
 function startMusicLoop(state: CozyAudioState) {
@@ -357,6 +403,29 @@ function startMusicLoop(state: CozyAudioState) {
 
   playStep();
   state.musicTimer = window.setInterval(playStep, 720);
+}
+
+function startHeroicLoop(state: CozyAudioState) {
+  if (!state.context || !state.musicGain || state.heroicTimer || !state.heroicActive) return;
+
+  const playStep = () => {
+    if (!state.enabled || !state.context || !state.musicGain || !state.heroicActive) return;
+    const now = state.context.currentTime;
+    const note = SUPER_SNAILS_HEROIC_MELODY[state.heroicStep % SUPER_SNAILS_HEROIC_MELODY.length];
+    const fifth = note * 1.5;
+    const bass = note / 2;
+    playTone(state, note, now, 0.26, "triangle", 0.026, state.musicGain);
+    if (state.heroicStep % 2 === 0) {
+      playTone(state, fifth, now + 0.04, 0.2, "sine", 0.014, state.musicGain);
+    }
+    if (state.heroicStep % 4 === 0) {
+      playTone(state, bass, now, 0.44, "sine", 0.012, state.musicGain);
+    }
+    state.heroicStep += 1;
+  };
+
+  playStep();
+  state.heroicTimer = window.setInterval(playStep, 560);
 }
 
 function playTone(

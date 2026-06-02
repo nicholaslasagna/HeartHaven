@@ -55,6 +55,9 @@ export default async function SignInPage({
               <p className="mb-3 flex items-center gap-2 text-sm font-black text-ink-900">
                 <WandSparkles className="size-4 text-lavender-500" /> Passwordless entry
               </p>
+              <p className="mb-3 text-xs font-bold leading-5 text-ink-600">
+                Magic links are for existing accounts. New keepers should create a password first.
+              </p>
               <form action={magicLinkAction} className="grid gap-3">
                 <Input type="email" name="email" placeholder="you@example.com" required />
                 <Button variant="warm" className="w-full">

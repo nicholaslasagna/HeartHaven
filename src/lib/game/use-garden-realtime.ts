@@ -14,6 +14,7 @@ import {
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
 import {
   KEEPER_CUSTOMIZATION_EVENT,
+  loadKeeperCustomizationFromServer,
   PET_CUSTOMIZATION_EVENT,
   readPresenceCustomization,
 } from "@/lib/game/avatar-customization";
@@ -224,6 +225,7 @@ export function useGardenRealtime({
         const displayName = await resolvePublicUsername(user);
         const social = getSocialState();
         setLocalFriendCode(social.selfCode);
+        await loadKeeperCustomizationFromServer().catch(() => null);
         const localPlayer: RealtimeRoomPlayer = {
           id: localId,
           displayName,

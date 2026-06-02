@@ -8,11 +8,13 @@ import {
   getPetAccessory,
   getPetTone,
   gaitPhase,
+  keeperPlayableTextureKey,
+  keeperPlayableTexturePath,
   keeperGaitPose,
-  keeperFrame,
   keeperHairFrame,
   keeperSkinFrame,
   isFlyingPetSpecies,
+  KEEPER_CHARACTER_PRESETS,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
   petAccessoryFrame,
@@ -23,6 +25,7 @@ import {
   readPetCustomization,
   type KeeperCustomization,
   type KeeperBodyId,
+  type KeeperCharacterId,
   type KeeperHairColorId,
   type KeeperHairStyleId,
   type KeeperOutfitId,
@@ -36,7 +39,7 @@ import {
   type PetToneId,
 } from "@/lib/game/avatar-customization";
 import { recordActivity } from "@/lib/game/activity";
-import { playCozyCue } from "@/lib/game/cozy-audio";
+import { playCozyCue, setHeroicCompanionTheme } from "@/lib/game/cozy-audio";
 import {
   PET_VITALS_EVENT,
   getPetBehavior,
@@ -119,6 +122,7 @@ type RemoteGardenAvatarObject = {
   petSprite: Phaser.GameObjects.Sprite;
   petAccessorySprite: Phaser.GameObjects.Sprite;
   /** Cached customization so frames only rebuild when it actually changes. */
+  characterId: KeeperCharacterId;
   bodyId: KeeperBodyId;
   skinId: KeeperSkinId;
   hairStyleId: KeeperHairStyleId;
@@ -675,6 +679,12 @@ export function GardenCanvas({
           this.load.image("garden-bare-map", "/game-assets/generated/heartheaven-garden-bare-map.png");
           this.load.image("park-bare-map", "/game-assets/generated/heartheaven-park-bare-map.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          KEEPER_CHARACTER_PRESETS.forEach((preset) => {
+            this.load.spritesheet(keeperPlayableTextureKey(preset.id), keeperPlayableTexturePath(preset.id), {
+              frameWidth: 256,
+              frameHeight: 384,
+            });
+          });
           this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-base-sheet.png", {
             frameWidth: 256,
             frameHeight: 384,
@@ -1422,8 +1432,8 @@ export function GardenCanvas({
             .sprite(
               0,
               -66,
-              "keeper-animation-sheet",
-              keeperFrame(this.keeperCustomization.paletteId, "idle", this.keeperCustomization.outfitId, this.keeperCustomization.bodyId),
+              keeperPlayableTextureKey(this.keeperCustomization.characterId),
+              0,
             )
             .setDisplaySize(98, 147);
           this.avatarHairSprite = this.add
@@ -1657,10 +1667,19 @@ export function GardenCanvas({
             const target = nearestHidden(zone, pos, 12);
             this.petMood = "happy";
             this.petMoodTimer = 0;
-            if (this.pet) this.spawnSparkleBurst(this.pet.x, this.pet.y - 64, 0xc0a8dc, 10);
+            const targetPoint = target
+              ? { x: (target.x / 100) * GARDEN_WORLD_WIDTH, y: (target.y / 100) * GARDEN_WORLD_HEIGHT }
+              : undefined;
+            if (this.isSuperSnails()) {
+              this.playSuperSnailsSniffLasers(targetPoint);
+            } else if (this.pet) {
+              this.spawnSparkleBurst(this.pet.x, this.pet.y - 64, 0xc0a8dc, 10);
+            }
             if (!target) {
               playCozyCue("petPurr");
-              setStatus("Your companion sniffs the air — nothing nearby this time.");
+              setStatus(this.isSuperSnails()
+                ? "Super Snails fires a laser sniff — nothing nearby this time."
+                : "Your companion sniffs the air — nothing nearby this time.");
               return;
             }
             const found = markDiscoveryFound(zone, target.id);
@@ -1678,6 +1697,49 @@ export function GardenCanvas({
             console.warn("[hearthaven sniff] aborted:", error);
             setStatus("Your companion paused mid-sniff — try again in a moment.");
           }
+        }
+
+        private playSuperSnailsSniffLasers(target?: { x: number; y: number }) {
+          if (!this.pet) return;
+          const direction = this.petFacing === "left" ? -1 : 1;
+          const aim = target ?? { x: this.pet.x + direction * worldRadius(280), y: this.pet.y - worldRadius(56) };
+          const startA = { x: this.pet.x + direction * worldRadius(14), y: this.pet.y - worldRadius(68) };
+          const startB = { x: this.pet.x + direction * worldRadius(18), y: this.pet.y - worldRadius(58) };
+          const beams = this.add.graphics().setDepth(7200);
+          beams.lineStyle(10, 0xff4f6e, 0.2);
+          beams.lineBetween(startA.x, startA.y, aim.x, aim.y - worldRadius(5));
+          beams.lineBetween(startB.x, startB.y, aim.x, aim.y + worldRadius(5));
+          beams.lineStyle(5, 0xffd36e, 0.8);
+          beams.lineBetween(startA.x, startA.y, aim.x, aim.y - worldRadius(5));
+          beams.lineBetween(startB.x, startB.y, aim.x, aim.y + worldRadius(5));
+          beams.lineStyle(2, 0xfffcf3, 0.95);
+          beams.lineBetween(startA.x, startA.y, aim.x, aim.y - worldRadius(5));
+          beams.lineBetween(startB.x, startB.y, aim.x, aim.y + worldRadius(5));
+
+          const impact = this.add.container(aim.x, aim.y).setDepth(7201);
+          const halo = this.add.circle(0, 0, worldRadius(34), 0xff4f6e, 0.24);
+          const core = this.add.circle(0, 0, worldRadius(12), 0xfffcf3, 0.92);
+          impact.add([halo, core]);
+          playCozyCue("laser");
+          this.spawnSparkleBurst(aim.x, aim.y - worldRadius(10), 0xff4f6e, 12);
+          this.tweens.add({
+            targets: halo,
+            scaleX: 1.8,
+            scaleY: 1.8,
+            alpha: 0,
+            duration: 360,
+            ease: "Sine.out",
+          });
+          this.tweens.add({
+            targets: [beams, core],
+            alpha: 0,
+            duration: 420,
+            ease: "Sine.out",
+            onComplete: () => {
+              beams.destroy();
+              impact.destroy(true);
+            },
+          });
         }
 
         /**
@@ -1761,6 +1823,7 @@ export function GardenCanvas({
             this.petBobTween?.resume();
           }
           this.updatePlayModeBadge();
+          this.syncHeroicTheme();
           // Mirror the canvas-side play mode out to React so the HUD, the
           // sidebar control card, and the minimap all match what's actually
           // being driven by WASD right now.
@@ -1828,6 +1891,14 @@ export function GardenCanvas({
           if (value) value.setText(this.playMode === "companion" ? "Companion" : "Keeper");
         }
 
+        private isSuperSnails() {
+          return this.petCustomization.speciesId === "super-snails";
+        }
+
+        private syncHeroicTheme() {
+          setHeroicCompanionTheme(this.playMode === "companion" && this.isSuperSnails());
+        }
+
         private createRealtimeBridge() {
           this.remotePlayersHandler = (event: Event) => {
             const players = (event as CustomEvent<{ players?: RealtimeRoomPlayer[] }>).detail?.players;
@@ -1879,6 +1950,7 @@ export function GardenCanvas({
             this.tintPetForTone();
             this.updatePetAccessory(this.petAccessorySprite, this.petCustomization.accessory);
             this.petAccessorySprite?.setVisible(!isFlyingPetSpecies(this.petCustomization.speciesId));
+            this.syncHeroicTheme();
           };
           // Vitals-derived companion mood keeps the resting pose in sync with how
           // well-tended the pet has been — the soul of the loop, on the canvas.
@@ -1906,6 +1978,7 @@ export function GardenCanvas({
           window.addEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
           const cleanup = () => {
             this.clearAfkEffect();
+            setHeroicCompanionTheme(false);
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:garden-remote-players", this.remotePlayersHandler);
             if (this.chatBubbleHandler) window.removeEventListener("hearthaven:garden-chat-bubble", this.chatBubbleHandler);
             if (this.addDecorHandler) window.removeEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
@@ -1969,7 +2042,7 @@ export function GardenCanvas({
 
         private setAvatarPose(pose: KeeperPose) {
           this.avatarPose = pose;
-          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
+          this.avatarSprite?.setTexture(keeperPlayableTextureKey(this.keeperCustomization.characterId), 0);
           this.avatarSkinSprite?.setFrame(keeperSkinFrame(pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
           this.avatarHairSprite?.setFrame(keeperHairFrame(this.keeperCustomization.hairStyleId, pose, this.keeperCustomization.bodyId));
           this.applyKeeperLayerTints();
@@ -2263,7 +2336,7 @@ export function GardenCanvas({
         }
 
         private setRemoteKeeperFrame(remote: RemoteGardenAvatarObject, pose: KeeperPose) {
-          remote.sprite.setFrame(keeperFrame(remote.paletteId, pose, remote.outfitId, remote.bodyId));
+          remote.sprite.setTexture(keeperPlayableTextureKey(remote.characterId), 0);
           remote.skinSprite.setFrame(keeperSkinFrame(pose, remote.outfitId, remote.bodyId));
           remote.hairSprite.setFrame(keeperHairFrame(remote.hairStyleId, pose, remote.bodyId));
           this.applyRemoteKeeperTints(remote);
@@ -2923,6 +2996,7 @@ export function GardenCanvas({
               existing.petFacing = petFacingLeft ? "left" : "right";
               existing.controlMode = player.controlMode ?? "keeper";
               const changed =
+                existing.characterId !== custom.characterId ||
                 existing.bodyId !== custom.bodyId ||
                 existing.skinId !== custom.skinId ||
                 existing.hairStyleId !== custom.hairStyleId ||
@@ -2933,6 +3007,7 @@ export function GardenCanvas({
                 existing.petToneId !== custom.petToneId ||
                 existing.petAccessoryId !== custom.petAccessoryId;
               if (changed) {
+                existing.characterId = custom.characterId;
                 existing.bodyId = custom.bodyId;
                 existing.skinId = custom.skinId;
                 existing.hairStyleId = custom.hairStyleId;
@@ -2986,7 +3061,7 @@ export function GardenCanvas({
               .setAlpha(0.94)
               .setFlipX(facingLeft);
             const sprite = this.add
-              .sprite(0, -66, "keeper-animation-sheet", keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId))
+              .sprite(0, -66, keeperPlayableTextureKey(custom.characterId), 0)
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
@@ -3038,6 +3113,7 @@ export function GardenCanvas({
               petShadow,
               petSprite,
               petAccessorySprite,
+              characterId: custom.characterId,
               bodyId: custom.bodyId,
               skinId: custom.skinId,
               hairStyleId: custom.hairStyleId,

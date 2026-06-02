@@ -51,7 +51,11 @@ export default async function SignUpPage({
               </label>
               <label className="grid gap-2 text-sm font-extrabold text-ink-700">
                 Password
-                <Input type="password" name="password" minLength={8} required />
+                <Input type="password" name="password" minLength={8} autoComplete="new-password" required />
+              </label>
+              <label className="grid gap-2 text-sm font-extrabold text-ink-700">
+                Confirm password
+                <Input type="password" name="confirmPassword" minLength={8} autoComplete="new-password" required />
               </label>
               <label className="grid gap-2 text-sm font-extrabold text-ink-700">
                 Phone <span className="text-xs font-bold text-ink-500">(optional)</span>

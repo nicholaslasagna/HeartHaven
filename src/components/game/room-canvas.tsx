@@ -6,11 +6,13 @@ import {
   getPetAccessory,
   getPetTone,
   gaitPhase,
+  keeperPlayableTextureKey,
+  keeperPlayableTexturePath,
   keeperGaitPose,
-  keeperFrame,
   keeperHairFrame,
   keeperSkinFrame,
   isFlyingPetSpecies,
+  KEEPER_CHARACTER_PRESETS,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
   petAccessoryFrame,
@@ -20,6 +22,7 @@ import {
   readKeeperCustomization,
   readPetCustomization,
   type KeeperBodyId,
+  type KeeperCharacterId,
   type KeeperCustomization,
   type KeeperHairColorId,
   type KeeperHairStyleId,
@@ -33,7 +36,7 @@ import {
   type PetSpeciesId,
   type PetToneId,
 } from "@/lib/game/avatar-customization";
-import { playCozyCue } from "@/lib/game/cozy-audio";
+import { playCozyCue, setHeroicCompanionTheme } from "@/lib/game/cozy-audio";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import {
   PET_VITALS_EVENT,
@@ -154,6 +157,7 @@ type RemoteAvatarObject = {
   petSprite: Phaser.GameObjects.Sprite;
   petAccessorySprite: Phaser.GameObjects.Sprite;
   /** Last known customization, so we only rebuild frames when it changes. */
+  characterId: KeeperCharacterId;
   bodyId: KeeperBodyId;
   skinId: KeeperSkinId;
   hairStyleId: KeeperHairStyleId;
@@ -372,6 +376,12 @@ export function RoomCanvas({
           this.load.image("room-floor-surface", roomSurfaces.floor.asset);
           this.load.image("keeper-sprite", "/game-assets/generated/keeper-sprite.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          KEEPER_CHARACTER_PRESETS.forEach((preset) => {
+            this.load.spritesheet(keeperPlayableTextureKey(preset.id), keeperPlayableTexturePath(preset.id), {
+              frameWidth: 256,
+              frameHeight: 384,
+            });
+          });
           this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-base-sheet.png", {
             frameWidth: 256,
             frameHeight: 384,
@@ -1065,8 +1075,8 @@ export function RoomCanvas({
             .sprite(
               0,
               -66,
-              "keeper-animation-sheet",
-              keeperFrame(this.keeperCustomization.paletteId, "idle", this.keeperCustomization.outfitId, this.keeperCustomization.bodyId),
+              keeperPlayableTextureKey(this.keeperCustomization.characterId),
+              0,
             )
             .setDisplaySize(98, 147);
           this.avatarHairSprite = this.add
@@ -1191,6 +1201,7 @@ export function RoomCanvas({
             this.petBobTween?.resume();
           }
           this.updatePlayModeBadge();
+          this.syncHeroicTheme();
         }
 
         private companionFollowTarget() {
@@ -1245,6 +1256,14 @@ export function RoomCanvas({
           if (value) value.setText(this.playMode === "companion" ? "Companion" : "Keeper");
         }
 
+        private isSuperSnails() {
+          return this.petCustomization.speciesId === "super-snails";
+        }
+
+        private syncHeroicTheme() {
+          setHeroicCompanionTheme(this.playMode === "companion" && this.isSuperSnails());
+        }
+
         private checkRightHold() {
           if (this.rightHoldFired) return;
           if (this.rightButtonDownAt === 0) return;
@@ -1296,6 +1315,7 @@ export function RoomCanvas({
             this.tintPetForTone();
             this.updatePetAccessory(this.petAccessorySprite, this.petCustomization.accessory);
             this.petAccessorySprite?.setVisible(!isFlyingPetSpecies(this.petCustomization.speciesId));
+            this.syncHeroicTheme();
           };
           // Companion mood is the vitals-derived "blissful/happy/content/restless/lonely"
           // reading. We keep it cached so the pet's resting pose subtly reflects how
@@ -1322,6 +1342,7 @@ export function RoomCanvas({
           window.addEventListener("hearthaven:text-input-focus", this.textInputFocusHandler);
           const cleanup = () => {
             this.clearAfkEffect();
+            setHeroicCompanionTheme(false);
             if (this.roomEmoteHandler) window.removeEventListener("hearthaven:room-emote", this.roomEmoteHandler);
             if (this.roomChatBubbleHandler) window.removeEventListener("hearthaven:room-chat-bubble", this.roomChatBubbleHandler);
             if (this.remotePlayersHandler) window.removeEventListener("hearthaven:remote-players", this.remotePlayersHandler);
@@ -1351,7 +1372,7 @@ export function RoomCanvas({
 
         private setAvatarPose(pose: KeeperPose) {
           this.avatarPose = pose;
-          this.avatarSprite?.setFrame(keeperFrame(this.keeperCustomization.paletteId, pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
+          this.avatarSprite?.setTexture(keeperPlayableTextureKey(this.keeperCustomization.characterId), 0);
           this.avatarSkinSprite?.setFrame(keeperSkinFrame(pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
           this.avatarHairSprite?.setFrame(keeperHairFrame(this.keeperCustomization.hairStyleId, pose, this.keeperCustomization.bodyId));
           this.applyKeeperLayerTints();
@@ -1561,6 +1582,14 @@ export function RoomCanvas({
           if (!this.petSprite) return;
           if (isFlyingPetSpecies(this.petCustomization.speciesId)) {
             const wave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+            if (!moving && idlePose === "sleep") {
+              this.setPetPose("sleep");
+              this.petSprite
+                .setY(-40 + wave * 0.45)
+                .setRotation((this.petFacing === "left" ? -0.16 : 0.16) + wave * 0.006);
+              this.petShadow?.setScale(1.08, 0.58);
+              return;
+            }
             this.setPetPose(moving ? petGaitPose(this.time.now + 90) : "idle");
             this.petSprite
               .setY(-50 - Math.abs(wave) * (moving ? 5 : 3))
@@ -1570,6 +1599,14 @@ export function RoomCanvas({
           }
           if (!moving) {
             this.setPetPose(idlePose);
+            if (idlePose === "sleep") {
+              const sleepWave = Math.sin(this.time.now / 760);
+              this.petSprite
+                .setY(-34 + sleepWave * 0.55)
+                .setRotation((this.petFacing === "left" ? -0.14 : 0.14) + sleepWave * 0.006);
+              this.petShadow?.setScale(1.16, 0.62);
+              return;
+            }
             this.petSprite.setY(-40).setRotation(0);
             this.petShadow?.setScale(1, 1);
             return;
@@ -1644,7 +1681,7 @@ export function RoomCanvas({
         }
 
         private setRemoteKeeperFrame(remote: RemoteAvatarObject, pose: KeeperPose) {
-          remote.sprite.setFrame(keeperFrame(remote.paletteId, pose, remote.outfitId, remote.bodyId));
+          remote.sprite.setTexture(keeperPlayableTextureKey(remote.characterId), 0);
           remote.skinSprite.setFrame(keeperSkinFrame(pose, remote.outfitId, remote.bodyId));
           remote.hairSprite.setFrame(keeperHairFrame(remote.hairStyleId, pose, remote.bodyId));
           this.applyRemoteKeeperTints(remote);
@@ -1788,6 +1825,7 @@ export function RoomCanvas({
               existing.petFacing = (player.petFacing ?? player.facing) as FacingDirection;
               existing.controlMode = player.controlMode ?? "keeper";
               const changed =
+                existing.characterId !== custom.characterId ||
                 existing.bodyId !== custom.bodyId ||
                 existing.skinId !== custom.skinId ||
                 existing.hairStyleId !== custom.hairStyleId ||
@@ -1798,6 +1836,7 @@ export function RoomCanvas({
                 existing.petToneId !== custom.petToneId ||
                 existing.petAccessoryId !== custom.petAccessoryId;
               if (changed) {
+                existing.characterId = custom.characterId;
                 existing.bodyId = custom.bodyId;
                 existing.skinId = custom.skinId;
                 existing.hairStyleId = custom.hairStyleId;
@@ -1851,7 +1890,7 @@ export function RoomCanvas({
               .setAlpha(0.94)
               .setFlipX(facingLeft);
             const sprite = this.add
-              .sprite(0, -66, "keeper-animation-sheet", keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId))
+              .sprite(0, -66, keeperPlayableTextureKey(custom.characterId), 0)
               .setDisplaySize(94, 141)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
@@ -1903,6 +1942,7 @@ export function RoomCanvas({
               petShadow,
               petSprite,
               petAccessorySprite,
+              characterId: custom.characterId,
               bodyId: custom.bodyId,
               skinId: custom.skinId,
               hairStyleId: custom.hairStyleId,
@@ -2052,6 +2092,7 @@ export function RoomCanvas({
           if (this.keeperFurnitureInteraction && !moving) {
             const furniture = this.findFurnitureById(this.keeperFurnitureInteraction.placementId);
             if (furniture) {
+              const sleeping = this.keeperFurnitureInteraction.action === "sleep";
               const anchor = getFurnitureAnchor(furniture.placement, "keeper", this.keeperFurnitureInteraction.action);
               const target = this.constrainToFloor(furniture.container.x + anchor.x, furniture.container.y + anchor.y);
               this.avatar.setPosition(
@@ -2063,7 +2104,17 @@ export function RoomCanvas({
               this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
               this.avatarShadow.setDepth(this.avatar.y - 1);
               this.setAvatarPose("sit");
-              this.setKeeperLayerMotion(this.keeperFurnitureInteraction.action === "sleep" ? -52 : -54, 0);
+              if (sleeping) {
+                const sleepWave = Math.sin(this.time.now / 720);
+                this.setKeeperLayerMotion(
+                  -48 + sleepWave * 0.5,
+                  (this.avatarFacing === "left" ? -0.11 : 0.11) + sleepWave * 0.005,
+                );
+                this.avatarShadow.setScale(1.26, 0.84);
+              } else {
+                this.setKeeperLayerMotion(-54, 0);
+                this.avatarShadow.setScale(1.08, 1);
+              }
               this.checkRoomPortalTravel();
               return;
             }
@@ -2573,6 +2624,7 @@ export function RoomCanvas({
           const label = actor === "keeper" ? "keeper" : "companion";
           if (actor === "keeper") {
             this.playMode = "keeper";
+            this.syncHeroicTheme();
             this.target = undefined;
             this.keeperFurnitureInteraction = { placementId: furniture.placement.id, actor, action };
             this.avatarFacing = facing;
@@ -2595,7 +2647,38 @@ export function RoomCanvas({
             playCozyCue(action === "sleep" ? "petSleep" : "petPurr");
           }
           this.playInteractionSparkles(target.x, target.y - 34, action === "sleep" ? 0xc0a8dc : 0xfaebc2);
+          if (action === "sleep") this.playSleepZzz(target.x, target.y - (actor === "keeper" ? 116 : 82));
           setStatus(`${furniture.placement.label}: ${label} ${action === "sleep" ? "settles in for a nap" : "sits down"}.`);
+        }
+
+        private playSleepZzz(x: number, y: number) {
+          const group = this.add.container(x, y).setDepth(7200);
+          for (let index = 0; index < 3; index += 1) {
+            const z = this.add.text(index * 20 - 20, index * -8, "Z", {
+              color: index === 2 ? "#8E70BD" : "#C0A8DC",
+              fontFamily: "Caprasimo, Georgia, serif",
+              fontSize: `${18 + index * 4}px`,
+            }).setOrigin(0.5).setAlpha(0);
+            group.add(z);
+            this.tweens.add({
+              targets: z,
+              alpha: { from: 0, to: 0.92 },
+              y: z.y - 32,
+              x: z.x + (this.avatarFacing === "left" ? -12 : 12),
+              scale: 1.12,
+              duration: 1450,
+              delay: index * 180,
+              ease: "Sine.out",
+            });
+          }
+          this.tweens.add({
+            targets: group,
+            alpha: 0,
+            duration: 700,
+            delay: 1550,
+            ease: "Sine.out",
+            onComplete: () => group.destroy(true),
+          });
         }
 
         private clearFurnitureInteraction(actor?: FurnitureActor) {

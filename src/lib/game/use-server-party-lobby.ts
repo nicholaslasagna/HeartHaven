@@ -70,6 +70,20 @@ export type StartStatus =
   | { ok: true }
   | { ok: false; reason: "not-host" | "no-game" | "no-lobby" | "empty" | "not-ready" };
 
+type LobbyRpcRow = {
+  session_id: string;
+  host_profile_id: string;
+  host_friend_code: string | null;
+  invite_code: string | null;
+  status: LobbyState["status"];
+  max_players: number;
+  selected_game_key: string | null;
+  selected_game_href: string | null;
+  selected_game_label: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+};
+
 type Result<T = void> =
   | ({ ok: true } & (T extends void ? Record<string, never> : { value: T }))
   | { ok: false; reason: string };
@@ -127,50 +141,20 @@ export function useServerPartyLobby(initialSize = 4) {
         return;
       }
 
-      // Find the newest active lobby this user is in (host or seated).
-      // The old implementation grabbed the first historical seat row,
-      // which could hydrate a cancelled/stale lobby and make ready/start
-      // look broken even while a newer lobby existed.
-      const { data: hostedSessions } = await supabase
-        .from("game_sessions")
-        .select(
-          "id, host_id, host_friend_code, invite_code, status, max_players, selected_game_key, selected_game_href, selected_game_label, updated_at, created_at",
-        )
-        .eq("host_id", user.id)
-        .in("status", ["waiting", "active"])
-        .order("updated_at", { ascending: false })
-        .limit(1);
+      // Server-side lobby hydration avoids direct reads against
+      // game_sessions/game_session_players. Their RLS policies are allowed
+      // to stay strict, while the SECURITY DEFINER RPC returns only the
+      // caller's current lobby.
+      const { data: lobbyRows, error: lobbyError } = await supabase.rpc("get_my_party_lobby");
+      if (lobbyError) {
+        recordMultiplayerRpc("get_my_party_lobby", lobbyError);
+        throw new Error(friendlyPartyError(lobbyError.message));
+      }
+      recordMultiplayerRpc("get_my_party_lobby");
 
-      const { data: mySeatRows } = await supabase
-        .from("game_session_players")
-        .select("session_id, joined_at")
-        .eq("profile_id", user.id)
-        .order("joined_at", { ascending: false })
-        .limit(10);
+      const session = Array.isArray(lobbyRows) ? (lobbyRows[0] as LobbyRpcRow | undefined) : undefined;
 
-      const seatedSessionIds = Array.isArray(mySeatRows)
-        ? mySeatRows.map((row) => row.session_id).filter(Boolean)
-        : [];
-
-      const { data: seatedSessions } = seatedSessionIds.length
-        ? await supabase
-            .from("game_sessions")
-            .select(
-              "id, host_id, host_friend_code, invite_code, status, max_players, selected_game_key, selected_game_href, selected_game_label, updated_at, created_at",
-            )
-            .in("id", seatedSessionIds)
-            .in("status", ["waiting", "active"])
-            .order("updated_at", { ascending: false })
-        : { data: [] };
-
-      const candidates = [...(hostedSessions ?? []), ...(seatedSessions ?? [])].sort((a, b) => {
-        const left = Date.parse(String(a.updated_at ?? a.created_at ?? 0));
-        const right = Date.parse(String(b.updated_at ?? b.created_at ?? 0));
-        return right - left;
-      });
-      const session = candidates[0];
-
-      if (!session?.id) {
+      if (!session?.session_id) {
         setLobby(null);
         setJoinRequests([]);
         setLoading(false);
@@ -184,15 +168,18 @@ export function useServerPartyLobby(initialSize = 4) {
         return;
       }
 
-      const { data: seats } = await supabase
-        .from("game_session_players")
-        .select("profile_id, display_name, seat_index, team_key, ready")
-        .eq("session_id", session.id)
-        .order("seat_index", { ascending: true });
+      const { data: seats, error: seatsError } = await supabase.rpc("get_party_lobby_seats", {
+        p_session_id: session.session_id,
+      });
+      if (seatsError) {
+        recordMultiplayerRpc("get_party_lobby_seats", seatsError);
+        throw new Error(friendlyPartyError(seatsError.message));
+      }
+      recordMultiplayerRpc("get_party_lobby_seats");
 
       const lobbyState: LobbyState = {
-        session_id: session.id,
-        host_profile_id: session.host_id,
+        session_id: session.session_id,
+        host_profile_id: session.host_profile_id,
         host_friend_code: session.host_friend_code ?? "",
         invite_code: session.invite_code ?? session.host_friend_code ?? "",
         status: session.status as LobbyState["status"],
@@ -207,9 +194,9 @@ export function useServerPartyLobby(initialSize = 4) {
       // Only the host sees pending join requests — RLS already gates
       // this, but we skip the query when we aren't the host to save
       // bandwidth.
-      if (session.host_id === user.id) {
+      if (session.host_profile_id === user.id) {
         const { data: rpcRequests, error: rpcRequestError } = await supabase.rpc("get_my_lobby_join_requests", {
-          p_session_id: session.id,
+          p_session_id: session.session_id,
         });
         const requests = rpcRequestError
           ? (await supabase
@@ -217,7 +204,7 @@ export function useServerPartyLobby(initialSize = 4) {
               .select(
                 "id, session_id, requester_profile_id, requester_friend_code, requester_display_name, status, created_at",
               )
-              .eq("session_id", session.id)
+              .eq("session_id", session.session_id)
               .eq("status", "pending")
               .order("created_at", { ascending: true })).data
           : rpcRequests;
@@ -539,16 +526,15 @@ export function useServerPartyLobby(initialSize = 4) {
     if (!current || !me) return { ok: false, reason: "not seated" };
     try {
       const supabase = getSupabaseBrowserClient();
-      const { error: rpcError } = await supabase
-        .from("game_session_players")
-        .update({ ready: !me.ready })
-        .eq("session_id", current.session_id)
-        .eq("profile_id", me.profile_id);
+      const { error: rpcError } = await supabase.rpc("set_party_lobby_ready", {
+        p_session_id: current.session_id,
+        p_ready: !me.ready,
+      });
       if (rpcError) {
-        recordMultiplayerRpc("game_session_players.ready", rpcError);
+        recordMultiplayerRpc("set_party_lobby_ready", rpcError);
         return { ok: false, reason: rpcError.message };
       }
-      recordMultiplayerRpc("game_session_players.ready");
+      recordMultiplayerRpc("set_party_lobby_ready");
       await hydrate();
       return { ok: true } as Result;
     } catch (err) {

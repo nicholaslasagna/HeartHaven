@@ -329,6 +329,14 @@ export function petGaitPose(timeMs: number): PetPose {
 export const KEEPER_CUSTOMIZATION_EVENT = "hearthaven:avatar-customization-changed";
 export const PET_CUSTOMIZATION_EVENT = "hearthaven:pet-customization-changed";
 
+export function keeperPlayableTextureKey(characterId: KeeperCharacterId) {
+  return `keeper-preset-${characterId}`;
+}
+
+export function keeperPlayableTexturePath(characterId: KeeperCharacterId) {
+  return getKeeperCharacterPreset(characterId).image;
+}
+
 export function keeperFrame(
   _paletteId: KeeperPaletteId,
   pose: KeeperPose,

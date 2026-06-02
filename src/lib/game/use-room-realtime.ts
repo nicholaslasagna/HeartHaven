@@ -14,6 +14,7 @@ import {
 import type { FacingDirection, RealtimeRoomPlayer, RoomEmote, RoomPlacement } from "@/lib/game/types";
 import {
   KEEPER_CUSTOMIZATION_EVENT,
+  loadKeeperCustomizationFromServer,
   PET_CUSTOMIZATION_EVENT,
   readPresenceCustomization,
 } from "@/lib/game/avatar-customization";
@@ -207,6 +208,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         const social = getSocialState();
         setLocalFriendCode(social.selfCode);
         latestFriendCodeRef.current = social.selfCode;
+        await loadKeeperCustomizationFromServer().catch(() => null);
 
         // Full customization snapshot — keeper palette + outfit, pet species +
         // fur tone + accessory — so remote keepers see the real avatar/pet.

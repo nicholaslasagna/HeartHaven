@@ -72,6 +72,15 @@ export async function signUpAction(formData: FormData) {
 
   const email = normalizeEmail(formData);
   const password = String(formData.get("password") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+
+  if (password.length < 8) {
+    redirectWithMessage("/auth/sign-up", "Use at least 8 characters for your password.");
+  }
+
+  if (password !== confirmPassword) {
+    redirectWithMessage("/auth/sign-up", "The passwords did not match. Type it twice so your first login works later.");
+  }
 
   // Phone is optional. When provided it MUST normalize to E.164 — the
   // shape check on the profiles table will reject otherwise, so we fail
@@ -112,6 +121,13 @@ export async function signUpAction(formData: FormData) {
 
   if (error) {
     redirectWithMessage("/auth/sign-up", friendlyAuthMessage(error.message));
+  }
+
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    redirectWithMessage(
+      "/auth/sign-in",
+      "An account already exists for that email. Sign in, use a magic link, or reset the password if you do not remember it.",
+    );
   }
 
   // Persist the optional phone onto the new profile row. The trigger that

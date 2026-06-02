@@ -9,6 +9,7 @@ import {
   declineFriendInvite,
   getSocialState,
   normalizeFriendCode,
+  setSelfCode,
   type FriendCode,
   type FriendInvite,
 } from "@/lib/game/social";
@@ -55,11 +56,13 @@ let bootPromise: Promise<void> | null = null;
 let friendCodeRegenListener: ((event: Event) => void) | null = null;
 
 /**
- * Sync the local keeper's friend code onto `profiles.friend_code` so Postgres
- * can resolve "who is HH-XXXXX-NNN" for invite delivery. Idempotent in the
- * common case (the `codeSyncDone` flag short-circuits), but supports a
- * `force` flag for the regenerate path which needs to overwrite the cached
- * old code on the profile row.
+ * Keep the browser's friend code aligned with the server profile.
+ *
+ * The server is canonical after sign-in. A fresh browser has an empty/random
+ * local social store, and letting that store overwrite profiles.friend_code
+ * breaks every existing invite/link for the account. Only the explicit
+ * regenerate path passes `force=true`; normal boot/send adopts the server
+ * code when one exists.
  */
 async function syncFriendCodeToProfile(force = false) {
   if (codeSyncDone && !force) return;
@@ -75,7 +78,11 @@ async function syncFriendCodeToProfile(force = false) {
       .select("friend_code")
       .eq("id", user.id)
       .maybeSingle();
-    if (!force && profile?.friend_code === local.selfCode) {
+    const serverCode = normalizeFriendCode(String(profile?.friend_code ?? ""));
+    if (!force && serverCode) {
+      if (serverCode !== local.selfCode) {
+        setSelfCode(serverCode);
+      }
       codeSyncDone = true;
       return;
     }
@@ -120,8 +127,7 @@ async function syncFriendCodeToProfile(force = false) {
       // Collision — pick a fresh code locally and try again.
       const next = generateFreshFriendCode();
       candidate = next;
-      const social = await import("@/lib/game/social");
-      social.setSelfCode(next);
+      setSelfCode(next);
       attempt += 1;
     }
     console.warn("[hearthaven invite-bridge] friend_code sync gave up after 5 collisions");
@@ -161,13 +167,11 @@ async function handleFriendCodeRegenerated() {
  */
 export async function pushInviteToSupabase(invite: FriendInvite): Promise<string | null> {
   if (!isSupabaseConfigured()) return null;
-  // Force-sync on every send. The send is the moment we MOST need
-  // `profiles.friend_code` to be correct on the sender's row too — both
-  // because the RLS check_constraint on send relies on it, and because
-  // the recipient's UPDATE-event filter reads it as `from_code`. The
-  // performance cost is negligible (one upsert per send) and it removes
-  // a whole class of "sent but never landed" failures.
-  await syncFriendCodeToProfile(true);
+  // Sync on every send, but do not force-overwrite the server code. The
+  // server profile is canonical; this call adopts it into local state
+  // when the browser started with a generated fallback code.
+  await syncFriendCodeToProfile(false);
+  const senderCode = normalizeFriendCode(getSocialState().selfCode || invite.fromCode);
   // Sender-side block check — blocking someone means we never want to
   // pester them with another invite. The check is on the SENDER so the
   // server insert is skipped entirely rather than racing the recipient's
@@ -191,14 +195,14 @@ export async function pushInviteToSupabase(invite: FriendInvite): Promise<string
     const existingQuery = supabase.from("friend_invites").select("id").eq("status", "pending").limit(1);
     const { data: existing } = recipientProfile?.id
       ? await existingQuery.eq("from_profile_id", user.id).eq("to_profile_id", recipientProfile.id).maybeSingle()
-      : await existingQuery.eq("from_code", invite.fromCode).eq("to_code", invite.toCode).maybeSingle();
+      : await existingQuery.eq("from_code", senderCode).eq("to_code", invite.toCode).maybeSingle();
     if (existing?.id) return existing.id;
 
     const insertPayload = {
         sender_profile_id: user.id,
         from_profile_id: user.id,
         to_profile_id: recipientProfile?.id ?? null,
-        from_code: invite.fromCode,
+        from_code: senderCode,
         from_display_name: invite.fromDisplayName,
         to_code: invite.toCode,
         message: invite.message ?? null,
@@ -214,7 +218,7 @@ export async function pushInviteToSupabase(invite: FriendInvite): Promise<string
         .from("friend_invites")
         .insert({
           sender_profile_id: user.id,
-          from_code: invite.fromCode,
+          from_code: senderCode,
           from_display_name: invite.fromDisplayName,
           to_code: invite.toCode,
           message: invite.message ?? null,

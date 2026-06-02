@@ -248,6 +248,14 @@ export function FriendsClient() {
     }
 
     // 2. Treat the input as a raw friend code (HH-XXXXX-NNN).
+    //
+    // Previously this called `social.redeemCode(code)` which fabricated
+    // an invite FROM the typed code INTO the user's own inbox — meaning
+    // anyone could type any code and accept their own fake invite,
+    // forcing a friendship without the other person's consent. The
+    // correct behaviour is to SEND an invite to that code, which lands
+    // in the OTHER keeper's inbox where they accept or decline. Same
+    // outcome the "Send an invite" form already had.
     const code = normalizeFriendCode(trimmed);
     if (!isFriendCodeShape(code)) {
       setAcceptMessage({
@@ -256,12 +264,34 @@ export function FriendsClient() {
       });
       return;
     }
-    const result = social.redeemCode(code);
+    // Block-list + self + already-friends pre-checks so the message is
+    // useful instead of a generic "couldn't send invite" from the RPC.
+    if (safety.blocks.some((entry) => entry.code === code)) {
+      setAcceptMessage({
+        kind: "error",
+        message: "You've blocked that keeper. Unblock them first if you want to invite them.",
+      });
+      return;
+    }
+    const target = social.lookup(code);
+    if (target?.relationship === "self") {
+      setAcceptMessage({ kind: "error", message: "That's your own code." });
+      return;
+    }
+    if (target?.relationship === "friend") {
+      setAcceptMessage({ kind: "ok", message: `${target.displayName} is already a friend.` });
+      return;
+    }
+    const result = social.sendInvite(code, `${getCachedPublicUsername()} wants to be friends.`);
     if (result.ok) {
-      setAcceptMessage({ kind: "ok", message: `Invite from ${result.invite.fromCode} added to your inbox.` });
+      const displayName = target?.displayName && target.relationship !== "stranger" ? target.displayName : code;
+      setAcceptMessage({
+        kind: "ok",
+        message: `Invite sent to ${displayName}. They'll see it in their inbox right away.`,
+      });
       setAcceptInput("");
-    } else if (result.reason === "duplicate") {
-      setAcceptMessage({ kind: "ok", message: "That invite is already in your inbox." });
+    } else if (result.reason === "already-pending") {
+      setAcceptMessage({ kind: "ok", message: "You already sent that keeper an invite." });
       setAcceptInput("");
     } else if (result.reason === "already-friends") {
       setAcceptMessage({ kind: "ok", message: "You're already friends with that keeper." });
@@ -269,9 +299,6 @@ export function FriendsClient() {
     } else if (result.reason === "self") {
       setAcceptMessage({ kind: "error", message: "That's your own code." });
     } else if (result.reason === "blocked") {
-      // Surface the block separately so the user knows WHY their paste
-      // didn't work. They can unblock from this same page if they want
-      // to re-engage.
       setAcceptMessage({ kind: "error", message: "You've blocked that keeper. Unblock them first." });
     } else {
       setAcceptMessage({ kind: "error", message: "That doesn't look like a friend code." });
@@ -450,14 +477,25 @@ export function FriendsClient() {
         </CozyCard>
       </section>
 
-      {/* Incoming friend-code helper. */}
+      {/* "Got a friend code?" — alternate entry into the same send-an-
+          invite flow, kept because some users look for "I have a code"
+          rather than "send invite". The action sends an invite to that
+          code; the typed code's owner accepts/declines from THEIR
+          inbox. The old behaviour fabricated an invite into the typer's
+          own inbox, which let anyone force a friendship by typing
+          someone else's code — that was the bug.
+
+          We also accept full URL invite links here (with a signed
+          ?accept=token) — those still redeem locally because the token
+          itself proves the sender's consent. */}
       <CozyCard className="p-5">
         <div className="flex items-center gap-2">
           <LinkIcon className="size-5 text-honey-700" />
-          <h2 className="font-display text-2xl text-ink-900">Got a friend code?</h2>
+          <h2 className="font-display text-2xl text-ink-900">Got a friend code or invite link?</h2>
         </div>
         <p className="mt-1 text-xs font-bold text-ink-500">
-          If someone told you their code outside the game, add it here and then decide from your inbox.
+          Paste a friend code and we&apos;ll send them a friend request &mdash; they decide from their inbox.
+          Or paste a full invite link if a friend gave you one.
         </p>
         <div className="mt-3 flex gap-2">
           <input
@@ -466,12 +504,12 @@ export function FriendsClient() {
               setAcceptInput(event.target.value.toUpperCase());
               if (acceptMessage.kind !== "idle") setAcceptMessage({ kind: "idle", message: "" });
             }}
-            placeholder="HH-XXXXX-NNN"
-            maxLength={20}
+            placeholder="HH-XXXXX-NNN or invite link"
+            maxLength={400}
             className="w-full rounded-md border border-cream-300 bg-white p-2.5 font-mono text-sm font-extrabold text-ink-900 placeholder:font-sans placeholder:font-normal placeholder:tracking-normal focus:border-honey-500 focus:outline-none"
           />
           <CozyButton size="sm" variant="warm" onClick={redeemPastedInvite}>
-            <Inbox /> Add
+            <Inbox /> Send
           </CozyButton>
         </div>
         {acceptMessage.message && (

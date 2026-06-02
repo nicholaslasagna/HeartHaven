@@ -496,7 +496,7 @@ export function GamesClient() {
                     <X className="size-3.5" /> Remove
                   </button>
                 )}
-                {seat?.profile_id === party.selfSeat?.profile_id && (
+                {seat && seat.profile_id === party.selfSeat?.profile_id && (
                   <p className="mt-3 text-xs font-extrabold text-garden-700">This is you.</p>
                 )}
               </div>
