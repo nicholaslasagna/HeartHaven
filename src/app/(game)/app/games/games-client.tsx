@@ -276,6 +276,17 @@ export function GamesClient() {
     setNotice({ kind: "ok", message: "Starting game..." });
   }
 
+  // Surface ready-toggle failures instead of swallowing them with
+  // `void party.toggleReady()`. A silent failure here is what made the
+  // "ready_changed" constraint bug so hard to spot — the click appeared
+  // to do nothing with no error anywhere.
+  async function toggleReady() {
+    const result = await party.toggleReady();
+    if (!result.ok) {
+      setNotice({ kind: "error", message: actionErrorCopy(result.reason) });
+    }
+  }
+
   return (
     // Mobile-friendly outer wrapper: tighter gap + horizontal breathing
     // room on phones, restored to the desktop layout at sm+. Every
@@ -443,7 +454,7 @@ export function GamesClient() {
               // "Ready"-as-status-indicator bug that caused hosts to be
               // unable to start.
               <Button
-                onClick={() => void party.toggleReady()}
+                onClick={() => void toggleReady()}
                 variant={party.selfSeat.ready ? "secondary" : "default"}
                 title={party.selfSeat.ready ? "You're ready — click to unready." : "Mark yourself as ready to play."}
               >
