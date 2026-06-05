@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Copy, HandHeart, RefreshCcw, Scissors, Sparkles } from "lucide-react";
+import { ArrowLeft, HandHeart, RefreshCcw, Scissors } from "lucide-react";
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
-import { CozyButton } from "@/components/cozy/cozy-button";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Badge } from "@/components/ui/badge";
@@ -18,9 +17,10 @@ type PlayerId = "blush" | "lavender";
 
 type RoundResult = {
   round: number;
-  blush: Choice;
-  lavender: Choice;
-  winner: PlayerId | "tie";
+  blush?: Choice;
+  lavender?: Choice;
+  winner?: PlayerId | "tie";
+  complete: boolean;
 };
 
 const players: Record<PlayerId, { label: string; team: string; color: string; bg: string }> = {
@@ -34,211 +34,22 @@ const choices: Array<{ id: Choice; label: string; description: string }> = [
   { id: "scissors", label: "Ribbon Shears", description: "Beats love letter" },
 ];
 
-export function RockPaperScissorsClient() {
-  const game = useMiniGameSession("rock-paper-scissors", { maxPlayers: 2 });
-  const [turn, setTurn] = useState<PlayerId>("blush");
-  const [starter, setStarter] = useState<PlayerId>("blush");
-  const [picks, setPicks] = useState<Partial<Record<PlayerId, Choice>>>({});
-  const [scores, setScores] = useState<Record<PlayerId, number>>({ blush: 0, lavender: 0 });
-  const [history, setHistory] = useState<RoundResult[]>([]);
-  const [revealed, setRevealed] = useState(false);
-  const [matchWinner, setMatchWinner] = useState<PlayerId | null>(null);
-  const [copied, setCopied] = useState(false);
+const validChoices = new Set<Choice>(["rock", "paper", "scissors"]);
 
-  const roundNumber = history.length + 1;
-  const status = useMemo(() => {
-    if (matchWinner) return `${players[matchWinner].team} won the match. Rewards are live.`;
-    if (revealed) return "Round revealed. Start the next round when everyone is ready.";
-    return `${players[turn].team}, choose in secret. Pass the device before revealing.`;
-  }, [matchWinner, revealed, turn]);
+function seatToPlayer(seatIndex: number | null | undefined): PlayerId | null {
+  if (seatIndex === 0) return "blush";
+  if (seatIndex === 1) return "lavender";
+  return null;
+}
 
-  function choose(choice: Choice) {
-    if (revealed || matchWinner) return;
-    playCozyCue("cardFlip");
+function choiceFromPayload(value: unknown): Choice | null {
+  if (typeof value !== "string") return null;
+  return validChoices.has(value as Choice) ? (value as Choice) : null;
+}
 
-    if (turn === "blush") {
-      setPicks({ blush: choice });
-      setTurn("lavender");
-      return;
-    }
-
-    const nextPicks = { ...picks, lavender: choice };
-    if (!nextPicks.blush) return;
-
-    const winner = getWinner(nextPicks.blush, nextPicks.lavender);
-    const result: RoundResult = {
-      round: roundNumber,
-      blush: nextPicks.blush,
-      lavender: nextPicks.lavender,
-      winner,
-    };
-    const nextScores = { ...scores };
-    if (winner !== "tie") {
-      nextScores[winner] += 1;
-      playCozyCue("score");
-    } else {
-      playCozyCue("heart");
-    }
-
-    setPicks(nextPicks);
-    setScores(nextScores);
-    setHistory((value) => [result, ...value].slice(0, 6));
-    setRevealed(true);
-    void game.submitMove("round", {
-      round: roundNumber,
-      blush: nextPicks.blush,
-      lavender: nextPicks.lavender,
-      winner,
-      scores: nextScores,
-    });
-
-    const wonMatch = winner !== "tie" && nextScores[winner] >= 3;
-    if (wonMatch) {
-      setMatchWinner(winner);
-      void game.handleReward({
-        gameId: "rock-paper-scissors",
-        label: "Moonstone RPS",
-        score: 300 + nextScores[winner] * 80,
-        coins: 160,
-        hearts: 5,
-      });
-      playCozyCue("reward");
-    }
-  }
-
-  function nextRound() {
-    const nextStarter = starter === "blush" ? "lavender" : "blush";
-    setStarter(nextStarter);
-    setTurn(nextStarter);
-    setPicks({});
-    setRevealed(false);
-    playCozyCue("ui");
-  }
-
-  function restartMatch() {
-    setTurn("blush");
-    setStarter("blush");
-    setPicks({});
-    setScores({ blush: 0, lavender: 0 });
-    setHistory([]);
-    setRevealed(false);
-    setMatchWinner(null);
-    playCozyCue("ui");
-  }
-
-  function copyInvite() {
-    const link = `${window.location.origin}/app/rock-paper-scissors?party=HH-RPS-MOON`;
-    navigator.clipboard?.writeText(link).catch(() => undefined);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
-  }
-
-  return (
-    <div className="grid gap-5">
-      <section className="flex flex-col justify-between gap-4 rounded-lg border border-lavender-300/50 bg-lavender-100/55 p-5 shadow-sm md:flex-row md:items-center">
-        <div>
-          <p className="text-sm font-extrabold uppercase tracking-normal text-lavender-500">Party game</p>
-          <h1 className="mt-1 font-display text-4xl text-ink-900">Moonstone Rock Paper Scissors</h1>
-          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            A cozy best-of-five secret-pick duel for couples, friends, and party seats. Turn switching is enforced locally
-            now and ready for live game moves later.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="secondary">
-            <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-          </Button>
-          <Button onClick={copyInvite} variant="warm">
-            <Copy /> {copied ? "Copied" : "Invite"}
-          </Button>
-        </div>
-      </section>
-
-      <RewardWalletPanel />
-
-      <section className="grid gap-5 lg:grid-cols-[1.2fr_.8fr]">
-        <CozyCard className="overflow-hidden p-0">
-          <div className="border-b border-cream-300 bg-white/70 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <Badge variant="blush"><HandHeart className="size-3.5" /> Secret turns</Badge>
-                <p className="mt-2 text-sm font-black text-ink-900">{status}</p>
-              </div>
-              <div className="flex gap-2 text-sm font-black text-ink-800">
-                <span className="rounded-md bg-blush-100 px-3 py-1.5">Blush {scores.blush}</span>
-                <span className="rounded-md bg-lavender-100 px-3 py-1.5">Lavender {scores.lavender}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 p-5 md:grid-cols-3">
-            {choices.map((choice) => (
-              <button
-                className={cn(
-                  "group rounded-lg border border-cream-300 bg-cream-50 p-4 text-left shadow-sm transition hover:-translate-y-1 hover:border-blush-300 hover:bg-white",
-                  revealed || matchWinner ? "cursor-not-allowed opacity-70" : "cursor-pointer",
-                )}
-                disabled={revealed || Boolean(matchWinner)}
-                key={choice.id}
-                onClick={() => choose(choice.id)}
-                type="button"
-              >
-                <ChoiceIllustration choice={choice.id} active={picks[turn] === choice.id} color={players[turn].color} />
-                <p className="mt-3 font-display text-2xl text-ink-900">{choice.label}</p>
-                <p className="mt-1 text-xs font-bold text-ink-600">{choice.description}</p>
-              </button>
-            ))}
-          </div>
-
-          <div className="border-t border-cream-300 bg-white/72 p-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              {(["blush", "lavender"] as PlayerId[]).map((playerId) => (
-                <div className={cn("rounded-lg border border-cream-300 p-3", players[playerId].bg)} key={playerId}>
-                  <p className="text-xs font-extrabold uppercase tracking-normal text-ink-500">{players[playerId].team}</p>
-                  <p className="mt-1 text-lg font-black text-ink-900">
-                    {revealed || matchWinner ? labelChoice(picks[playerId]) : picks[playerId] ? "Locked in" : playerId === turn ? "Choosing now" : "Waiting"}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <CozyButton disabled={!revealed || Boolean(matchWinner)} onClick={nextRound} size="sm" variant="warm">
-                <Sparkles /> Next round
-              </CozyButton>
-              <CozyButton onClick={restartMatch} size="sm" variant="secondary">
-                <RefreshCcw /> Reset match
-              </CozyButton>
-            </div>
-          </div>
-        </CozyCard>
-
-        <CozyCard className="p-5">
-          <h2 className="font-display text-2xl text-ink-900">Round journal</h2>
-          <div className="mt-4 grid gap-3">
-            {history.length === 0 ? (
-              <p className="rounded-lg border border-cream-300 bg-cream-50 p-4 text-sm font-bold text-ink-700">
-                No rounds yet. First to 3 wins the match and earns wallet rewards.
-              </p>
-            ) : (
-              history.map((round) => (
-                <div className="rounded-lg border border-cream-300 bg-white/72 p-3 shadow-sm" key={round.round}>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-black text-ink-900">Round {round.round}</p>
-                    <Badge variant={round.winner === "tie" ? "outline" : "garden"}>
-                      {round.winner === "tie" ? "Tie" : `${players[round.winner].team} wins`}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-xs font-bold text-ink-600">
-                    Blush {labelChoice(round.blush)} vs Lavender {labelChoice(round.lavender)}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-        </CozyCard>
-      </section>
-    </div>
-  );
+function roundFromPayload(value: unknown) {
+  const round = Number(value);
+  return Number.isFinite(round) && round > 0 ? Math.floor(round) : 1;
 }
 
 function getWinner(blush: Choice, lavender: Choice): PlayerId | "tie" {
@@ -256,6 +67,254 @@ function getWinner(blush: Choice, lavender: Choice): PlayerId | "tie" {
 function labelChoice(choice?: Choice) {
   if (!choice) return "Waiting";
   return choices.find((item) => item.id === choice)?.label ?? choice;
+}
+
+export function RockPaperScissorsClient() {
+  const game = useMiniGameSession("rock-paper-scissors", { maxPlayers: 2 });
+  const [message, setMessage] = useState<string | null>(null);
+  const rewardedMatchRef = useRef<string | null>(null);
+
+  const myPlayerId = seatToPlayer(game.mySeat?.seat_index ?? null);
+  const seatNames = useMemo(() => {
+    const names: Record<PlayerId, string> = {
+      blush: "Blush Team",
+      lavender: "Lavender Team",
+    };
+    for (const seat of game.seats) {
+      const player = seatToPlayer(seat.seat_index);
+      if (player && seat.display_name) names[player] = seat.display_name;
+    }
+    return names;
+  }, [game.seats]);
+
+  const shared = useMemo(() => {
+    const picksByRound = new Map<number, Partial<Record<PlayerId, Choice>>>();
+
+    for (const move of game.moves) {
+      if (move.move_type !== "pick") continue;
+      const player = seatToPlayer(move.seat_index);
+      const choice = choiceFromPayload(move.payload.choice);
+      const round = roundFromPayload(move.payload.round);
+      if (!player || !choice) continue;
+
+      const picks = picksByRound.get(round) ?? {};
+      // Ignore duplicate client retries for the same round/seat. The first
+      // accepted pick is the round authority for every replaying client.
+      if (!picks[player]) picks[player] = choice;
+      picksByRound.set(round, picks);
+    }
+
+    const rounds: RoundResult[] = [];
+    const scores: Record<PlayerId, number> = { blush: 0, lavender: 0 };
+    let matchWinner: PlayerId | null = null;
+
+    for (const round of [...picksByRound.keys()].sort((a, b) => a - b)) {
+      const picks = picksByRound.get(round) ?? {};
+      const result: RoundResult = {
+        round,
+        blush: picks.blush,
+        lavender: picks.lavender,
+        complete: Boolean(picks.blush && picks.lavender),
+      };
+      if (result.complete && result.blush && result.lavender && !matchWinner) {
+        result.winner = getWinner(result.blush, result.lavender);
+        if (result.winner !== "tie") {
+          scores[result.winner] += 1;
+          if (scores[result.winner] >= 3) matchWinner = result.winner;
+        }
+      }
+      rounds.push(result);
+      if (matchWinner) break;
+    }
+
+    const last = rounds.at(-1);
+    const currentRound = !last || last.complete ? (last?.round ?? 0) + 1 : last.round;
+    const currentPicks = picksByRound.get(currentRound) ?? {};
+
+    return {
+      currentRound,
+      currentPicks,
+      rounds: rounds.toReversed(),
+      scores,
+      matchWinner,
+    };
+  }, [game.moves]);
+
+  useEffect(() => {
+    if (!shared.matchWinner || !game.sessionId) return;
+    const key = `${game.sessionId}:${shared.matchWinner}:${shared.scores[shared.matchWinner]}`;
+    if (rewardedMatchRef.current === key) return;
+    rewardedMatchRef.current = key;
+    game.handleReward({
+      gameId: "rock-paper-scissors",
+      label: "Moonstone RPS",
+      score: 300 + shared.scores[shared.matchWinner] * 80,
+      coins: 160,
+      hearts: 5,
+    });
+    playCozyCue("reward");
+  }, [game, shared.matchWinner, shared.scores]);
+
+  async function choose(choice: Choice) {
+    if (!game.sessionId) {
+      setMessage("Connecting online session...");
+      return;
+    }
+    if (!myPlayerId) {
+      setMessage("Join a two-player lobby to pick.");
+      return;
+    }
+    if (shared.matchWinner) {
+      setMessage("The match is complete. Start a fresh lobby for another duel.");
+      return;
+    }
+    if (shared.currentPicks[myPlayerId]) {
+      setMessage("Your pick is locked. Waiting for the other player.");
+      return;
+    }
+
+    playCozyCue("cardFlip");
+    const result = await game.submitMove("pick", {
+      round: shared.currentRound,
+      choice,
+    });
+    if (!result.ok) {
+      setMessage(result.reason);
+      return;
+    }
+    setMessage("Pick locked. Waiting for the reveal.");
+  }
+
+  const opponent: PlayerId = myPlayerId === "lavender" ? "blush" : "lavender";
+  const myPick = myPlayerId ? shared.currentPicks[myPlayerId] : undefined;
+  const opponentPick = shared.currentPicks[opponent];
+  const waitingForOpponent = Boolean(myPick && !opponentPick && !shared.matchWinner);
+  const needsSecondSeat = game.seats.length < 2;
+
+  const status = shared.matchWinner
+    ? `${seatNames[shared.matchWinner]} won the match.`
+    : needsSecondSeat
+      ? "Waiting for one more player from the lobby."
+      : waitingForOpponent
+        ? "Your pick is locked. Waiting for the reveal."
+        : myPlayerId
+          ? "Choose once this round. Results reveal after both players pick."
+          : "Join a lobby seat to play.";
+
+  return (
+    <div className="grid gap-5">
+      <section className="flex flex-col justify-between gap-4 rounded-lg border border-lavender-300/50 bg-lavender-100/55 p-5 shadow-sm md:flex-row md:items-center">
+        <div>
+          <p className="text-sm font-extrabold uppercase tracking-normal text-lavender-500">Party game</p>
+          <h1 className="mt-1 font-display text-4xl text-ink-900">Moonstone Rock Paper Scissors</h1>
+          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
+            Two lobby seats pick secretly. The shared move log reveals the round only after both players lock in.
+          </p>
+          <p className="mt-2 text-xs font-extrabold text-lavender-600">{game.status}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="secondary">
+            <Link href="/app/games"><ArrowLeft /> Games hub</Link>
+          </Button>
+          <Button asChild variant="warm">
+            <Link href="/app/games"><RefreshCcw /> New lobby</Link>
+          </Button>
+        </div>
+      </section>
+
+      <RewardWalletPanel />
+
+      <section className="grid gap-5 lg:grid-cols-[1.2fr_.8fr]">
+        <CozyCard className="overflow-hidden p-0">
+          <div className="border-b border-cream-300 bg-white/70 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <Badge variant="blush"><HandHeart className="size-3.5" /> Synced round {shared.currentRound}</Badge>
+                <p className="mt-2 text-sm font-black text-ink-900">{status}</p>
+                {message && <p className="mt-1 text-xs font-extrabold text-lavender-600">{message}</p>}
+              </div>
+              <div className="flex gap-2 text-sm font-black text-ink-800">
+                <span className="rounded-md bg-blush-100 px-3 py-1.5">
+                  {seatNames.blush} {shared.scores.blush}
+                </span>
+                <span className="rounded-md bg-lavender-100 px-3 py-1.5">
+                  {seatNames.lavender} {shared.scores.lavender}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 p-5 md:grid-cols-3">
+            {choices.map((choice) => {
+              const disabled = Boolean(shared.matchWinner || needsSecondSeat || !myPlayerId || myPick);
+              return (
+                <button
+                  className={cn(
+                    "group rounded-lg border border-cream-300 bg-cream-50 p-4 text-left shadow-sm transition hover:-translate-y-1 hover:border-blush-300 hover:bg-white",
+                    disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer",
+                  )}
+                  disabled={disabled}
+                  key={choice.id}
+                  onClick={() => void choose(choice.id)}
+                  type="button"
+                >
+                  <ChoiceIllustration choice={choice.id} active={myPick === choice.id} color={myPlayerId ? players[myPlayerId].color : "#D87E8C"} />
+                  <p className="mt-3 font-display text-2xl text-ink-900">{choice.label}</p>
+                  <p className="mt-1 text-xs font-bold text-ink-600">{choice.description}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="border-t border-cream-300 bg-white/72 p-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              {(["blush", "lavender"] as PlayerId[]).map((playerId) => {
+                const pick = shared.currentPicks[playerId];
+                const revealCurrent = Boolean(shared.currentPicks.blush && shared.currentPicks.lavender);
+                return (
+                  <div className={cn("rounded-lg border border-cream-300 p-3", players[playerId].bg)} key={playerId}>
+                    <p className="text-xs font-extrabold uppercase tracking-normal text-ink-500">
+                      {seatNames[playerId]} {myPlayerId === playerId ? "(you)" : ""}
+                    </p>
+                    <p className="mt-1 text-lg font-black text-ink-900">
+                      {revealCurrent ? labelChoice(pick) : pick ? "Locked in" : "Choosing"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </CozyCard>
+
+        <CozyCard className="p-5">
+          <h2 className="font-display text-2xl text-ink-900">Round journal</h2>
+          <div className="mt-4 grid gap-3">
+            {shared.rounds.length === 0 ? (
+              <p className="rounded-lg border border-cream-300 bg-cream-50 p-4 text-sm font-bold text-ink-700">
+                No shared rounds yet. First to 3 wins the match and earns wallet rewards.
+              </p>
+            ) : (
+              shared.rounds.map((round) => (
+                <div className="rounded-lg border border-cream-300 bg-white/72 p-3 shadow-sm" key={round.round}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-black text-ink-900">Round {round.round}</p>
+                    <Badge variant={!round.complete || round.winner === "tie" ? "outline" : "garden"}>
+                      {!round.complete ? "Waiting" : round.winner === "tie" ? "Tie" : `${seatNames[round.winner ?? "blush"]} wins`}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs font-bold text-ink-600">
+                    {round.complete
+                      ? `Blush ${labelChoice(round.blush)} vs Lavender ${labelChoice(round.lavender)}`
+                      : "One player has locked in. Waiting for the other pick."}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </CozyCard>
+      </section>
+    </div>
+  );
 }
 
 function ChoiceIllustration({ choice, active, color }: { choice: Choice; active: boolean; color: string }) {
