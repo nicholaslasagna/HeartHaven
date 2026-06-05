@@ -56,6 +56,9 @@ function parseInitKey(key: string): Record<string, unknown> {
 
 function sessionErrorCopy(message: string) {
   const lower = message.toLowerCase();
+  if (lower.includes("game_sessions_status_check")) {
+    return "This game needs the latest HeartHaven game-status update before it can finish. Ask the host to refresh after the update is applied.";
+  }
   if (lower.includes("game_sessions_one_active_per_host") || lower.includes("duplicate key value")) {
     return "HeartHaven found another live game for you. Refresh this page, or leave the active party lobby before starting a different game.";
   }
@@ -290,7 +293,7 @@ export function useGameSession(
             p_move_type: moveType,
             p_payload: payload,
           });
-          if (error) return { ok: false, reason: error.message };
+          if (error) return { ok: false, reason: sessionErrorCopy(error.message) };
           const row = Array.isArray(data) ? data[0] : null;
           if (!row || !row.ok) {
             const reason = String(row?.error_message ?? "Move rejected.");

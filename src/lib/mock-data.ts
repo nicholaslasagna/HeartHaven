@@ -174,23 +174,23 @@ export const partyGames = [
   {
     id: "lantern-relay",
     title: "Lantern Relay",
-    mode: "playable party game",
+    mode: "solo arcade",
     href: "/app/lantern-relay",
-    description: "Teams light lanterns along the garden path while dodging sleepy fireflies and collecting honey sparks.",
+    description: "Light lanterns along the garden path in a timed solo arcade round. Shared relay turns are still a future sync pass.",
   },
   {
     id: "heart-hunt",
     title: "Heart Hunt",
-    mode: "playable room party",
+    mode: "solo hunt",
     href: "/app/heart-hunt",
-    description: "Guests search rooms for hidden keepsakes, emote clues, and unlock a shared memory-book reward.",
+    description: "Search a cozy room for hidden keepsakes in a solo timed hunt. Room-party clue sync is still a future pass.",
   },
   {
     id: "fashion-show-party",
     title: "Fashion Show",
-    mode: "park stage party",
+    mode: "solo runway",
     href: "/app/fashion-show",
-    description: "A runway stage game with outfit choices, pet poses, judging rounds, and wallet rewards.",
+    description: "A runway stage with outfit choices, pet poses, judging rounds, and wallet rewards. Shared judging is still a future pass.",
   },
 ];
 
