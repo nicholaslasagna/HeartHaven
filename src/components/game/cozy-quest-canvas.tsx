@@ -35,7 +35,12 @@ const questCopy: Record<CozyQuestVariant, { title: string; label: string; second
 
 export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const onRewardRef = useRef(onReward);
   const [status, setStatus] = useState(questCopy[variant].label);
+
+  useEffect(() => {
+    onRewardRef.current = onReward;
+  }, [onReward]);
 
   useEffect(() => {
     let destroyed = false;
@@ -318,7 +323,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           layer.add(restart);
           this.rewardLayer = layer;
           playCozyCue("reward");
-          onReward?.({
+          onRewardRef.current?.({
             gameId: variant,
             label: questCopy[variant].title,
             score: this.score,
@@ -351,7 +356,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
       destroyed = true;
       game?.destroy(true);
     };
-  }, [onReward, variant]);
+  }, [variant]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-blush-300/50 bg-cream-100 shadow-[0_24px_70px_rgba(216,126,140,0.14)]">

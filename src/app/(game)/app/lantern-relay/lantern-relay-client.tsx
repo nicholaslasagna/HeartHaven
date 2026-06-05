@@ -1,25 +1,30 @@
 "use client";
 
-import { Flame, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Flame, Sparkles } from "lucide-react";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { CozyQuestCanvasLoader } from "@/components/game/cozy-quest-canvas-loader";
-import { GameHubButton } from "@/components/game/game-hub-button";
-import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
+import { Button } from "@/components/ui/button";
+import { useSoloGameRewards } from "@/lib/game/use-solo-game-rewards";
 
 export function LanternRelayClient() {
-  const game = useMiniGameSession("lantern-relay", { maxPlayers: 6 });
+  const game = useSoloGameRewards("lantern-relay");
 
   return (
     <div className="grid gap-5">
       <section className="flex flex-col justify-between gap-4 rounded-lg border border-honey-500/30 bg-honey-100/70 p-5 shadow-sm md:flex-row md:items-center">
         <div>
-          <p className="text-sm font-extrabold uppercase tracking-normal text-honey-700">Party mini-game</p>
+          <p className="text-sm font-extrabold uppercase tracking-normal text-honey-700">Solo mini-game</p>
           <h1 className="mt-1 font-display text-4xl text-ink-900">Lantern Relay</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
             Light the garden lanterns in order before the timer ends. It is built for local play now and co-op turns later.
           </p>
         </div>
-        <GameHubButton returnToLobby={game.returnToLobby} />
+        <Button asChild variant="secondary">
+          <Link href="/app/games">
+            <ArrowLeft /> Games hub
+          </Link>
+        </Button>
       </section>
       <RewardWalletPanel />
       <CozyQuestCanvasLoader onReward={game.handleReward} variant="lantern-relay" />

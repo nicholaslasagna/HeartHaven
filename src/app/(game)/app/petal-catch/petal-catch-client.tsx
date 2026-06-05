@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { ArrowLeft, Gift, Sparkles } from "lucide-react";
-import { GameHubButton } from "@/components/game/game-hub-button";
 import { PetalCatchCanvasLoader } from "@/components/game/petal-catch-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
-import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
+import { useSoloGameRewards } from "@/lib/game/use-solo-game-rewards";
 
 export function PetalCatchClient() {
-  const game = useMiniGameSession("petal-catch");
+  const game = useSoloGameRewards("petal-catch");
 
   return (
     <div className="grid gap-5">
@@ -22,7 +21,11 @@ export function PetalCatchClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <GameHubButton returnToLobby={game.returnToLobby} />
+          <Button asChild variant="secondary">
+            <Link href="/app/games">
+              <ArrowLeft /> Games hub
+            </Link>
+          </Button>
           <Button asChild variant="secondary">
             <Link href="/app/area?zone=garden"><ArrowLeft /> Garden</Link>
           </Button>

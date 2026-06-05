@@ -22,7 +22,12 @@ type PetalCatchCanvasProps = {
 
 export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const onRewardRef = useRef(onReward);
   const [status, setStatus] = useState("Catch petals and hearts. Avoid thorns.");
+
+  useEffect(() => {
+    onRewardRef.current = onReward;
+  }, [onReward]);
 
   useEffect(() => {
     let destroyed = false;
@@ -328,7 +333,7 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
 
           setStatus(`Round complete: ${coins} coins and ${hearts} hearts ready to award.`);
           playCozyCue("reward");
-          onReward?.({
+          onRewardRef.current?.({
             gameId: "petal-catch",
             label: "Petal Catch",
             score: this.score,
@@ -373,7 +378,7 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
       destroyed = true;
       game?.destroy(true);
     };
-  }, [onReward]);
+  }, []);
 
   return (
     <section className="overflow-hidden rounded-lg border border-blush-300/50 bg-cream-100 shadow-[0_24px_70px_rgba(216,126,140,0.16)]">

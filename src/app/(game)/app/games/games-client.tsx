@@ -31,6 +31,11 @@ import { cn } from "@/lib/utils";
 
 const partySizes = [2, 4, 6, 8] as const;
 const joinCodePattern = /^HH-[A-Z]{5,6}-[0-9]{3,4}$/;
+const soloPartyGameIds = new Set(["petal-catch-party", "lantern-relay", "heart-hunt", "fashion-show-party"]);
+
+function isSoloPartyGame(game: (typeof partyGames)[number]) {
+  return soloPartyGameIds.has(game.id);
+}
 
 function extractLobbyCode(value: string) {
   const trimmed = value.trim();
@@ -179,6 +184,11 @@ export function GamesClient() {
   }
 
   async function chooseGame(game: (typeof partyGames)[number]) {
+    if (isSoloPartyGame(game)) {
+      router.push(game.href, { scroll: false });
+      return;
+    }
+
     if (creatingLobbyRef.current) {
       pendingGameRef.current = game;
       setNotice({ kind: "ok", message: `Opening the lobby, then picking ${game.title}.` });
@@ -365,6 +375,7 @@ export function GamesClient() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {partyGames.map((game) => {
               const selected = lobby?.selected_game_href === game.href;
+              const soloGame = isSoloPartyGame(game);
               return (
                 <button
                   className={cn(
@@ -373,14 +384,16 @@ export function GamesClient() {
                       ? "border-blush-300 bg-blush-100"
                       : "border-cream-300 bg-white/72 hover:border-lavender-300 hover:bg-lavender-100/55",
                   )}
-                  disabled={Boolean(lobby && !party.isHost)}
+                  disabled={Boolean(lobby && !party.isHost && !soloGame)}
                   key={game.id}
                   onClick={() => void chooseGame(game)}
                   type="button"
                 >
                   <span className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-display text-lg text-ink-900 sm:text-xl">{game.title}</span>
-                    <Badge variant={selected ? "blush" : "outline"}>{selected ? "Picked" : game.mode}</Badge>
+                    <Badge variant={selected ? "blush" : soloGame ? "garden" : "outline"}>
+                      {selected ? "Picked" : game.mode}
+                    </Badge>
                   </span>
                   <span className="mt-2 block text-sm font-bold leading-5 text-ink-700">{game.description}</span>
                 </button>

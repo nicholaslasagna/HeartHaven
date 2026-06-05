@@ -122,7 +122,12 @@ const fashionChoices: FashionChoice[] = [
 
 export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const onRewardRef = useRef(onReward);
   const [status, setStatus] = useState("Pick a look, then walk the runway.");
+
+  useEffect(() => {
+    onRewardRef.current = onReward;
+  }, [onReward]);
 
   useEffect(() => {
     let destroyed = false;
@@ -564,7 +569,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
           this.rewardLayer = layer;
           this.feedbackText.setText("Fashion Show complete. Refresh or revisit to play again.");
           playCozyCue("reward");
-          onReward?.({
+          onRewardRef.current?.({
             gameId: "fashion-show",
             label: "Fashion Show",
             score: this.totalScore,
@@ -597,7 +602,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
       destroyed = true;
       game?.destroy(true);
     };
-  }, [onReward]);
+  }, []);
 
   return (
     <section className="overflow-hidden rounded-lg border border-blush-300/50 bg-blush-100 shadow-[0_24px_70px_rgba(216,126,140,0.16)]">
