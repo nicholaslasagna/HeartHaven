@@ -59,8 +59,8 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
   const allowedVisitTarget = visitTarget ? lookupFriendCode(visitTarget) : null;
   const isVisitAllowed = !visitTarget || Boolean(allowedVisitTarget) || isFriendCodeShape(visitTarget);
 
-  const [playerName, setPlayerName] = useState(getCachedPublicUsername);
-  const [companionName, setCompanionName] = useState(() => getActiveCompanion()?.name ?? "Casper");
+  const [playerName, setPlayerName] = useState("Keeper");
+  const [companionName, setCompanionName] = useState("Casper");
   const [selfFriendCode, setSelfFriendCode] = useState(() =>
     typeof window === "undefined" ? "" : getSocialState().selfCode,
   );

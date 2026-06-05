@@ -49,15 +49,22 @@ export function AreaClient({ games, plots }: AreaClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeZone = normalizeZone(searchParams.get("zone"));
-  const [username, setUsername] = useState(getCachedPublicUsername);
+  const [username, setUsername] = useState("Keeper");
 
   useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setUsername(getCachedPublicUsername());
+    });
     const sync = (event: Event) => {
       const next = (event as CustomEvent<{ username?: string }>).detail?.username;
       setUsername(next ?? getCachedPublicUsername());
     };
     window.addEventListener("hearthaven:public-username-changed", sync);
-    return () => window.removeEventListener("hearthaven:public-username-changed", sync);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("hearthaven:public-username-changed", sync);
+    };
   }, []);
 
   function navigateZone(zone: AreaZone) {

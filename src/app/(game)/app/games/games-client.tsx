@@ -86,12 +86,15 @@ export function GamesClient() {
   const lobby = party.lobby;
   const [copied, setCopied] = useState<string | null>(null);
   const [invitingFriendCode, setInvitingFriendCode] = useState<string | null>(null);
+  const [creatingLobby, setCreatingLobby] = useState(false);
   const [joinInput, setJoinInput] = useState("");
   const [notice, setNotice] = useState<{ kind: "idle" | "ok" | "error"; message: string }>({
     kind: "idle",
     message: "",
   });
   const handledInviteCodeRef = useRef<string | null>(null);
+  const creatingLobbyRef = useRef(false);
+  const pendingGameRef = useRef<(typeof partyGames)[number] | null>(null);
 
   const readyCount = lobby?.seats.filter((seat) => seat.ready).length ?? 0;
   const occupiedCount = lobby?.seats.length ?? 0;
@@ -145,23 +148,7 @@ export function GamesClient() {
     }
   }
 
-  async function createLobby() {
-    const result = await party.createLobby(selectedSize);
-    setNotice({
-      kind: result.ok ? "ok" : "error",
-      message: result.ok ? `Lobby opened for ${selectedSize} players.` : actionErrorCopy(result.reason),
-    });
-  }
-
-  async function chooseGame(game: (typeof partyGames)[number]) {
-    if (!lobby) {
-      const created = await party.createLobby(selectedSize);
-      if (!created.ok) {
-        setNotice({ kind: "error", message: actionErrorCopy(created.reason) });
-        return;
-      }
-    }
-
+  async function selectExistingLobbyGame(game: (typeof partyGames)[number]) {
     const result = await party.selectGame({
       key: canonicalPartyGameKey(game),
       href: game.href,
@@ -171,6 +158,45 @@ export function GamesClient() {
       kind: result.ok ? "ok" : "error",
       message: result.ok ? `${game.title} picked. Invite friends or ready up to play solo.` : actionErrorCopy(result.reason),
     });
+  }
+
+  async function createLobby() {
+    if (creatingLobbyRef.current) return;
+    creatingLobbyRef.current = true;
+    setCreatingLobby(true);
+    const result = await party.createLobby(selectedSize);
+    creatingLobbyRef.current = false;
+    setCreatingLobby(false);
+    setNotice({
+      kind: result.ok ? "ok" : "error",
+      message: result.ok ? `Lobby opened for ${selectedSize} players.` : actionErrorCopy(result.reason),
+    });
+    const queuedGame = pendingGameRef.current;
+    pendingGameRef.current = null;
+    if (result.ok && queuedGame) {
+      await selectExistingLobbyGame(queuedGame);
+    }
+  }
+
+  async function chooseGame(game: (typeof partyGames)[number]) {
+    if (creatingLobbyRef.current) {
+      pendingGameRef.current = game;
+      setNotice({ kind: "ok", message: `Opening the lobby, then picking ${game.title}.` });
+      return;
+    }
+    if (!lobby) {
+      creatingLobbyRef.current = true;
+      setCreatingLobby(true);
+      const created = await party.createLobby(selectedSize);
+      creatingLobbyRef.current = false;
+      setCreatingLobby(false);
+      if (!created.ok) {
+        setNotice({ kind: "error", message: actionErrorCopy(created.reason) });
+        return;
+      }
+    }
+
+    await selectExistingLobbyGame(game);
   }
 
   function copyLobbyLink() {
@@ -393,7 +419,7 @@ export function GamesClient() {
                   </button>
                 ))}
               </div>
-              <CozyButton className="mt-3 w-full" onClick={() => void createLobby()} variant="warm">
+              <CozyButton className="mt-3 w-full" disabled={creatingLobby} onClick={() => void createLobby()} variant="warm">
                 <PartyPopper /> Create lobby
               </CozyButton>
             </div>

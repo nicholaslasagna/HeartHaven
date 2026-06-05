@@ -92,8 +92,8 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
   const [decorSaveStatus, setDecorSaveStatus] = useState("Garden decor ready");
   const latestPersistedDecorRef = useRef<GardenDecorPlacement[]>(decor);
   const saveRealtimeDecor = realtime.saveDecor;
-  const [playerName, setPlayerName] = useState(getCachedPublicUsername);
-  const [companionName, setCompanionName] = useState(() => getActiveCompanion()?.name ?? "Casper");
+  const [playerName, setPlayerName] = useState("Keeper");
+  const [companionName, setCompanionName] = useState("Casper");
   const defaultPlots = useMemo(() => plots as GardenPlotState[], [plots]);
   const [gardenPlots, setGardenPlots] = useState<GardenPlotState[]>(defaultPlots);
   const seededPlotsRef = useRef(false);

@@ -74,8 +74,44 @@ function readSnapshot() {
   };
 }
 
+type CompanionSnapshot = ReturnType<typeof readSnapshot>;
+
+const INITIAL_VITALS: PetVitals = {
+  happiness: 86,
+  fullness: 74,
+  energy: 80,
+  cleanliness: 78,
+  updatedAt: 0,
+  lastActionAt: {
+    feed: 0,
+    play: 0,
+    pamper: 0,
+    rest: 0,
+  },
+};
+
+const INITIAL_SNAPSHOT: CompanionSnapshot = {
+  vitals: INITIAL_VITALS,
+  mood: getPetMood(INITIAL_VITALS),
+  cooldowns: {
+    feed: 0,
+    play: 0,
+    pamper: 0,
+    rest: 0,
+  },
+  companion: {
+    id: "companion-casper",
+    name: "Casper",
+    speciesId: "kitten",
+    toneId: "cream",
+    accessory: "moonberry-bow",
+    adoptedAt: "2026-01-01T00:00:00.000Z",
+    active: true,
+  },
+};
+
 export function CompanionMiniCard() {
-  const [snapshot, setSnapshot] = useState(readSnapshot);
+  const [snapshot, setSnapshot] = useState<CompanionSnapshot>(INITIAL_SNAPSHOT);
   const [status, setStatus] = useState("Care right here without leaving the world.");
 
   const refresh = useCallback(() => {

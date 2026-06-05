@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PROGRESSION_EVENT, readPlayerProgression } from "@/lib/game/progression-store";
+import { getPlayerLevelInfo, PROGRESSION_EVENT, readPlayerProgression } from "@/lib/game/progression-store";
 
 export function usePlayerProgression() {
-  const [progression, setProgression] = useState(readPlayerProgression);
+  const [progression, setProgression] = useState(() => getPlayerLevelInfo({ points: 0, updatedAt: 0 }));
 
   useEffect(() => {
     const sync = () => setProgression(readPlayerProgression());

@@ -7,10 +7,13 @@ import { Button } from "@/components/ui/button";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 
 export function KeeperAccountButton() {
-  const [username, setUsername] = useState(getCachedPublicUsername());
+  const [username, setUsername] = useState("Keeper");
 
   useEffect(() => {
     let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setUsername(getCachedPublicUsername());
+    });
     void resolvePublicUsername().then((next) => {
       if (!cancelled) setUsername(next);
     });

@@ -64,18 +64,25 @@ export function RoomSocialPanel({
   // Host's public friend code — what visitors should share to friend you.
   // `roomCode` (the scene id like "MOONLIT-LOFT") is useless for that.
   const [hostFriendCode, setHostFriendCode] = useState("HH-XXXXX-XXX");
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setMounted(true);
+    });
     const sync = () => setHostFriendCode(getSocialState().selfCode || "HH-XXXXX-XXX");
     sync();
     window.addEventListener(SOCIAL_EVENT, sync);
     window.addEventListener("storage", sync);
     return () => {
+      cancelled = true;
       window.removeEventListener(SOCIAL_EVENT, sync);
       window.removeEventListener("storage", sync);
     };
   }, []);
   const decorators = new Set(approvedDecoratorCodes);
   const approvablePlayers = players.filter((player) => Boolean(player.friendCode));
+  const displayedRoomCode = mounted ? roomCode : "HH-XXXXX-XXX";
 
   async function copyInvite() {
     try {
@@ -142,7 +149,7 @@ export function RoomSocialPanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-lavender-500">
-            <Radio className="size-3.5" /> Room {roomCode}
+            <Radio className="size-3.5" /> Room {displayedRoomCode}
           </p>
           <h2 className="mt-1 font-display text-2xl text-ink-900">Friends and chat</h2>
           <p className="mt-1 text-xs font-bold text-ink-600">{status}</p>

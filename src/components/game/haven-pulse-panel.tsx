@@ -51,9 +51,7 @@ function getTaskSummary(tasks: ReturnType<typeof useDailyLoop>["tasks"]) {
 export function HavenPulsePanel({ activeZone }: HavenPulsePanelProps) {
   const daily = useDailyLoop();
   const progression = usePlayerProgression();
-  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord>(() =>
-    getActiveCompanion(getCompanionRoster()),
-  );
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(null);
   const [giftResult, setGiftResult] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,7 +67,9 @@ export function HavenPulsePanel({ activeZone }: HavenPulsePanelProps) {
     };
   }, []);
 
-  const species = getPetSpecies(activeCompanion.speciesId);
+  const activeSpeciesId = activeCompanion?.speciesId ?? "kitten";
+  const activeCompanionName = activeCompanion?.name ?? "Casper";
+  const species = getPetSpecies(activeSpeciesId);
   const levelProgress = Math.min(100, (progression.currentLevelPoints / progression.nextLevelPoints) * 100);
   const taskSummary = useMemo(() => getTaskSummary(daily.tasks), [daily.tasks]);
   const zoneCopy = ZONE_COPY[activeZone];
@@ -160,16 +160,16 @@ export function HavenPulsePanel({ activeZone }: HavenPulsePanelProps) {
           >
             <div className="absolute bottom-6 h-6 w-28 rounded-full bg-ink-900/16 blur-[2px]" />
             <Image
-              alt={`${activeCompanion.name} the ${species.label}`}
+              alt={`${activeCompanionName} the ${species.label}`}
               className="relative h-36 w-auto object-contain drop-shadow-[0_16px_24px_rgba(91,63,63,0.25)]"
               height={288}
               priority={activeZone === "room"}
-              src={`/game-assets/generated/pet-art-preview-${activeCompanion.speciesId}.png`}
+              src={`/game-assets/generated/pet-art-preview-${activeSpeciesId}.png`}
               width={256}
             />
             <div className="relative mt-2 rounded-full border border-white/80 bg-white/78 px-3 py-1 text-center shadow-sm">
               <p className="flex items-center justify-center gap-1.5 text-sm font-black text-ink-900">
-                <PawPrint className="size-4 text-blush-500" /> {activeCompanion.name}
+                <PawPrint className="size-4 text-blush-500" /> {activeCompanionName}
               </p>
               <p className="text-xs font-bold text-ink-600">{species.label}</p>
             </div>
