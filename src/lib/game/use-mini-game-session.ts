@@ -65,7 +65,7 @@ export function useMiniGameSession(
 
   const submitMove = useCallback(
     (moveType: string, payload: Record<string, unknown> = {}) => session.submitMove(moveType, payload),
-    [session],
+    [session.submitMove],
   );
 
   return {

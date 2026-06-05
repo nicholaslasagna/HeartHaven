@@ -58,6 +58,7 @@ export function MemoryMatchCanvas({
   const metadataRef = useRef(metadata);
   const seatsRef = useRef(seats);
   const mySeatIndexRef = useRef(mySeatIndex);
+  const onRewardRef = useRef(onReward);
   const submitFlipRef = useRef(submitFlip);
   const sessionIdRef = useRef(sessionId);
   const rewardedRef = useRef(false);
@@ -67,6 +68,7 @@ export function MemoryMatchCanvas({
     metadataRef.current = metadata;
     seatsRef.current = seats;
     mySeatIndexRef.current = mySeatIndex;
+    onRewardRef.current = onReward;
     submitFlipRef.current = submitFlip;
     sessionIdRef.current = sessionId;
     if (metadata) {
@@ -448,7 +450,7 @@ export function MemoryMatchCanvas({
 
           if (!rewardedRef.current) {
             rewardedRef.current = true;
-            onReward?.({
+            onRewardRef.current?.({
               gameId: "memory-match",
               label: mode === "couples" ? "Couple Memory Match" : "Party Memory Match",
               score: finalScore,
@@ -481,7 +483,7 @@ export function MemoryMatchCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, [mode, onReward]);
+  }, [mode]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-lavender-300/50 bg-lavender-100 shadow-[0_24px_70px_rgba(142,112,189,0.16)]">

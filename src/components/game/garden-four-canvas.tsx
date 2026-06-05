@@ -38,6 +38,7 @@ export function GardenFourCanvas({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const metadataRef = useRef(metadata);
   const mySeatIndexRef = useRef(mySeatIndex);
+  const onRewardRef = useRef(onReward);
   const submitDropRef = useRef(submitDrop);
   const sessionIdRef = useRef(sessionId);
   const rewardedRef = useRef(false);
@@ -50,6 +51,7 @@ export function GardenFourCanvas({
   useEffect(() => {
     metadataRef.current = metadata;
     mySeatIndexRef.current = mySeatIndex;
+    onRewardRef.current = onReward;
     submitDropRef.current = submitDrop;
     sessionIdRef.current = sessionId;
     if (metadata) {
@@ -104,6 +106,7 @@ export function GardenFourCanvas({
             if (detail) this.syncFromServer(detail);
           };
           window.addEventListener("hearthaven:garden-four-sync", this.gardenFourSyncHandler);
+          this.syncFromServer(metadataRef.current ?? {});
         }
 
         shutdown() {
@@ -235,7 +238,7 @@ export function GardenFourCanvas({
 
           if (!rewardedRef.current && sessionIdRef.current) {
             rewardedRef.current = true;
-            onReward?.({
+            onRewardRef.current?.({
               gameId: "garden-four",
               label: "Garden Four",
               score: finalScore,
@@ -506,7 +509,7 @@ export function GardenFourCanvas({
           layer.add(restart);
           this.rewardLayer = layer;
           setStatus(tie ? "The garden called it a friendship tie." : `${winner} connected four keepsakes.`);
-          onReward?.({
+          onRewardRef.current?.({
             gameId: "garden-four",
             label: "Garden Four",
             score: tie ? 250 : 500 - this.moves,
@@ -590,7 +593,7 @@ export function GardenFourCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, [metadata, mySeatIndex, onReward, sessionId, submitDrop]);
+  }, []);
 
   return (
     <section className="overflow-hidden rounded-lg border border-garden-300/50 bg-garden-100 shadow-[0_24px_70px_rgba(76,110,54,0.14)]">

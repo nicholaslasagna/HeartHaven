@@ -77,7 +77,7 @@ export function BowlingCanvas({
   const onRollRef = useRef(onRoll);
   const rollLockedRef = useRef(rollLocked);
   const sessionIdRef = useRef(sessionId);
-  const [status, setStatus] = useState("Tap to start the power meter, tap again to roll.");
+  const [status, setStatus] = useState("When it is your turn, tap to lock direction, then tap again to roll.");
 
   useEffect(() => {
     rollsRef.current = rolls;
@@ -260,6 +260,16 @@ export function BowlingCanvas({
           return !state.gameOver && state.currentSeat === seat;
         }
 
+        private beginAiming() {
+          if (this.aimPhase !== "idle" || this.busy) return;
+          this.aimPhase = "aim";
+          this.aim = 0;
+          this.aimDir = 1;
+          this.helpText.setText("Direction sweeping. Tap to lock your line.");
+          this.drawAimGuide();
+          this.drawPowerMeter();
+        }
+
         private renderFromLog(animateNewest: boolean) {
           const state = computeBowlingState(rollsRef.current, seatCountRef.current);
           const names = seatNamesRef.current;
@@ -315,10 +325,21 @@ export function BowlingCanvas({
           if (this.isMyTurn(state)) {
             this.bannerText.setText(`Your roll — ${frameLabel}, ball ${state.ballInFrame + 1}`);
             if (!this.busy) {
-              this.helpText.setText("Tap to lock direction. Tap again to lock power.");
-              setStatus("Tap once to lock direction, then tap again to set power.");
+              this.beginAiming();
+              if (this.aimPhase === "aim") {
+                this.helpText.setText("Direction sweeping. Tap to lock your line.");
+                setStatus("Tap once to lock direction, then tap again to roll.");
+              } else if (this.aimPhase === "power") {
+                this.helpText.setText("Power meter running. Tap to roll.");
+                setStatus("Tap again to roll.");
+              }
             }
           } else {
+            if (!this.busy && this.aimPhase !== "rolling") {
+              this.aimPhase = "idle";
+              this.drawAimGuide();
+              this.drawPowerMeter();
+            }
             this.bannerText.setText(`${turnName} is bowling — ${frameLabel}`);
             this.helpText.setText("Watch the lane while your friend bowls.");
             setStatus(`Waiting for ${turnName}…`);
@@ -359,11 +380,7 @@ export function BowlingCanvas({
             return;
           }
           if (this.aimPhase === "idle") {
-            this.aimPhase = "aim";
-            this.aim = 0;
-            this.aimDir = 1;
-            this.helpText.setText("Direction sweeping. Tap to lock your line.");
-            this.drawAimGuide();
+            this.beginAiming();
             return;
           }
           if (this.aimPhase === "aim") {

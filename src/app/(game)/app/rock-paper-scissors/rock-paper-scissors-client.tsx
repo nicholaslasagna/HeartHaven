@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
 
 type Choice = "rock" | "paper" | "scissors";
@@ -72,6 +74,7 @@ function labelChoice(choice?: Choice) {
 export function RockPaperScissorsClient() {
   const game = useMiniGameSession("rock-paper-scissors", { maxPlayers: 2 });
   const [message, setMessage] = useState<string | null>(null);
+  const [pendingPick, setPendingPick] = useState(false);
   const rewardedMatchRef = useRef<string | null>(null);
 
   const myPlayerId = seatToPlayer(game.mySeat?.seat_index ?? null);
@@ -172,17 +175,47 @@ export function RockPaperScissorsClient() {
       setMessage("Your pick is locked. Waiting for the other player.");
       return;
     }
+    if (pendingPick) {
+      setMessage("Saving your pick to the shared table.");
+      return;
+    }
 
     playCozyCue("cardFlip");
-    const result = await game.submitMove("pick", {
-      round: shared.currentRound,
-      choice,
-    });
+    setPendingPick(true);
+    let result: { ok: true } | { ok: false; reason: string };
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase.rpc("submit_rps_pick", {
+        p_session_id: game.sessionId,
+        p_choice: choice,
+      });
+      if (error) {
+        if (/submit_rps_pick|schema cache/i.test(error.message)) {
+          result = {
+            ok: false,
+            reason: "Moonstone RPS needs the latest shared-game update before it can enforce secret picks.",
+          };
+        } else {
+          result = { ok: false, reason: error.message };
+        }
+      } else {
+        const row = Array.isArray(data) ? data[0] : null;
+        result = row?.ok ? { ok: true } : { ok: false, reason: String(row?.error_message ?? "Pick rejected.") };
+      }
+    } else {
+      const fallback = await game.submitMove("pick", {
+        round: shared.currentRound,
+        choice,
+      });
+      result = fallback.ok ? { ok: true } : { ok: false, reason: fallback.reason };
+    }
     if (!result.ok) {
+      setPendingPick(false);
       setMessage(result.reason);
       return;
     }
     setMessage("Pick locked. Waiting for the reveal.");
+    window.setTimeout(() => setPendingPick(false), 1200);
   }
 
   const opponent: PlayerId = myPlayerId === "lavender" ? "blush" : "lavender";
@@ -244,7 +277,7 @@ export function RockPaperScissorsClient() {
 
           <div className="grid gap-4 p-5 md:grid-cols-3">
             {choices.map((choice) => {
-              const disabled = Boolean(shared.matchWinner || needsSecondSeat || !myPlayerId || myPick);
+              const disabled = Boolean(shared.matchWinner || needsSecondSeat || !myPlayerId || myPick || pendingPick);
               return (
                 <button
                   className={cn(

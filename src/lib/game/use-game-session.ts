@@ -77,8 +77,9 @@ export function useGameSession(
   options?: { maxPlayers?: number; init?: Record<string, unknown> },
 ) {
   const router = useRouter();
-  const [sessionFromUrl] = useState(readSessionIdFromUrl);
-  const [sessionId, setSessionId] = useState<string | null>(readSessionIdFromUrl);
+  const [sessionFromUrl, setSessionFromUrl] = useState<string | null>(null);
+  const [sessionUrlReady, setSessionUrlReady] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<Record<string, unknown>>({});
   const [seats, setSeats] = useState<GameSessionSeat[]>([]);
   const [moves, setMoves] = useState<GameMoveRecord[]>([]);
@@ -86,9 +87,19 @@ export function useGameSession(
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("Connecting game session...");
   const lastMoveIndexRef = useRef(-1);
-  const sessionIdRef = useRef<string | null>(sessionFromUrl);
+  const sessionIdRef = useRef<string | null>(null);
   const maxPlayers = options?.maxPlayers ?? 2;
   const initKey = stableInitKey(options?.init);
+
+  useEffect(() => {
+    const urlSessionId = readSessionIdFromUrl();
+    sessionIdRef.current = urlSessionId;
+    queueMicrotask(() => {
+      setSessionFromUrl(urlSessionId);
+      setSessionId(urlSessionId);
+      setSessionUrlReady(true);
+    });
+  }, []);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -181,6 +192,8 @@ export function useGameSession(
   }, [gameKey, router, sessionFromUrl]);
 
   useEffect(() => {
+    if (!sessionUrlReady) return;
+
     if (!isSupabaseConfigured()) {
       queueMicrotask(() => {
         setLoading(false);
@@ -224,7 +237,7 @@ export function useGameSession(
     return () => {
       cancelled = true;
     };
-  }, [gameKey, hydrate, initKey, maxPlayers, sessionFromUrl]);
+  }, [gameKey, hydrate, initKey, maxPlayers, sessionFromUrl, sessionUrlReady]);
 
   useEffect(() => {
     const target = sessionIdRef.current;
