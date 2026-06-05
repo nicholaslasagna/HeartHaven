@@ -117,6 +117,7 @@ export function BowlingCanvas({
         private powerDir = 1;
         private renderedRollCount = 0;
         private busy = false;
+        private awaitingRollCount: number | null = null;
         private syncHandler?: () => void;
 
         preload() {
@@ -245,10 +246,17 @@ export function BowlingCanvas({
           });
         }
 
+        private resetBallVisual() {
+          this.tweens.killTweensOf(this.ball);
+          this.tweens.killTweensOf(this.ballShadow);
+          this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
+          this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30).setAlpha(1);
+        }
+
         private isMyTurn(state: ReturnType<typeof computeBowlingState>) {
-          if (rollLockedRef.current) return false;
+          if (rollLockedRef.current || this.awaitingRollCount !== null) return false;
           const seat = mySeatRef.current;
-          if (seat === null || seat === undefined) return !state.gameOver; // local solo
+          if (seat === null || seat === undefined) return !sessionIdRef.current && !state.gameOver; // local solo only
           return !state.gameOver && state.currentSeat === seat;
         }
 
@@ -269,8 +277,16 @@ export function BowlingCanvas({
           const mine = mySeatRef.current;
           const newestIsMine = mine !== null && mine !== undefined && newestSeat === mine;
 
-          if (grew && animateNewest && !newestIsMine) {
+          if (this.awaitingRollCount !== null && total >= this.awaitingRollCount) {
+            this.awaitingRollCount = null;
             this.busy = false;
+            this.aimPhase = "idle";
+            this.resetBallVisual();
+            this.drawAimGuide();
+            this.drawPowerMeter();
+          }
+
+          if (grew && animateNewest && !newestIsMine) {
             this.animateRoll(state.standingPins, newestRoll?.aim ?? 0);
           } else {
             this.setStandingPins(state.standingPins);
@@ -371,9 +387,11 @@ export function BowlingCanvas({
 
         private async commitRoll(pins: number, standing: number, aim: number, power: number) {
           // Animate my own roll immediately for responsiveness, then submit.
+          const expectedRollCount = rollsRef.current.length + 1;
           this.busy = true;
+          this.awaitingRollCount = expectedRollCount;
           setStatus("Rolling…");
-          this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
+          this.resetBallVisual();
           const endX = clamp(460 + aim * 170, 260, 660);
           this.tweens.add({
             targets: this.ball,
@@ -384,31 +402,36 @@ export function BowlingCanvas({
             onComplete: () => {
               this.setStandingPins(standing - pins);
               playCozyCue(pins >= standing ? "score" : "place");
+              this.time.delayedCall(220, () => {
+                this.resetBallVisual();
+              });
             },
           });
           this.tweens.add({ targets: [this.ballShadow], x: endX, y: 198, duration: 600, ease: "Sine.in" });
 
           const result = await onRollRef.current(pins, { aim, power });
           if (!result.ok) {
+            this.awaitingRollCount = null;
             this.busy = false;
             this.aimPhase = "idle";
-            this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
-            this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30);
+            this.resetBallVisual();
             setStatus(result.reason ?? "Roll could not be saved — try again.");
             this.renderFromLog(false);
             return;
           }
-          // Success: the updated log will arrive via the sync event and
-          // renderFromLog will reconcile the authoritative state. Clear
-          // busy after a short grace so the meter re-enables.
-          this.busy = false;
-          this.aimPhase = "idle";
-          this.ball.setAlpha(0);
-          this.time.delayedCall(200, () => {
-            this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
-            this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30);
+          // Success: the updated log must arrive before the player can
+          // roll again. This prevents a fast client from taking a second
+          // turn off stale local state while the server has already moved
+          // the lane to the next bowler.
+          if (rollsRef.current.length >= expectedRollCount) {
+            this.awaitingRollCount = null;
+            this.busy = false;
+            this.aimPhase = "idle";
+            this.resetBallVisual();
             this.renderFromLog(false);
-          });
+          } else {
+            setStatus("Roll saved. Waiting for the shared lane to sync.");
+          }
         }
 
         private drawAimGuide() {

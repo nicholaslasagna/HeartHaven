@@ -35,7 +35,7 @@ export function BowlingClient() {
   // Solo play seats one player; party play seats two. Drive the reducer's
   // turn order off however many are actually seated so solo doesn't wait
   // forever on a phantom seat 1.
-  const seatCount = Math.max(1, game.seats.length || 1);
+  const seatCount = Math.max(1, game.seats.length || (game.sessionId ? 2 : 1));
   const state = useMemo(() => computeBowlingState(rolls, seatCount), [rolls, seatCount]);
 
   const mySeatIndex = game.mySeat?.seat_index ?? null;
@@ -44,8 +44,8 @@ export function BowlingClient() {
   const pendingRollCountRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const pendingAt = pendingRollCountRef.current;
-    if (pendingAt === null || rolls.length <= pendingAt) return;
+    const expectedRollCount = pendingRollCountRef.current;
+    if (expectedRollCount === null || rolls.length < expectedRollCount) return;
     pendingRollCountRef.current = null;
     setPendingRoll(false);
     setSubmitStatus("Roll confirmed on the shared lane.");
@@ -83,6 +83,9 @@ export function BowlingClient() {
   const onRoll = async (pins: number, details: { aim: number; power: number }) => {
     if (pendingRoll) return { ok: false, reason: "Waiting for the shared lane to confirm your last roll." };
     if (state.gameOver) return { ok: false, reason: "This match is already over." };
+    if (game.sessionId && mySeatIndex === null) {
+      return { ok: false, reason: "Waiting for your lane seat to sync." };
+    }
     if (mySeatIndex !== null && state.currentSeat !== mySeatIndex) {
       return { ok: false, reason: "Wait for your turn before bowling." };
     }
@@ -90,6 +93,8 @@ export function BowlingClient() {
       return { ok: false, reason: "That roll does not match the standing pins." };
     }
     setSubmitStatus("Saving roll...");
+    const expectedRollCount = rolls.length + 1;
+    pendingRollCountRef.current = expectedRollCount;
     setPendingRoll(true);
     const payload = {
       pins,
@@ -132,7 +137,6 @@ export function BowlingClient() {
       setSubmitStatus(result.reason);
       return { ok: false, reason: result.reason };
     }
-    pendingRollCountRef.current = rolls.length;
     setSubmitStatus("Roll saved. Waiting for the lane to sync.");
     return { ok: true };
   };
