@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Shirt, Sparkles } from "lucide-react";
+import { Shirt, Sparkles } from "lucide-react";
 import { FashionShowCanvasLoader } from "@/components/game/fashion-show-canvas-loader";
+import { GameHubButton } from "@/components/game/game-hub-button";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
@@ -22,9 +23,7 @@ export function FashionShowClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button asChild variant="secondary">
-            <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-          </Button>
+          <GameHubButton returnToLobby={game.returnToLobby} />
           <Button asChild variant="warm">
             <Link href="/app/area?zone=park"><Shirt /> Park stage</Link>
           </Button>

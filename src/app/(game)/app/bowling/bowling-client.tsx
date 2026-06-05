@@ -1,13 +1,15 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Heart, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CircleDot, Heart, Sparkles, Trophy } from "lucide-react";
+import { GameHubButton } from "@/components/game/game-hub-button";
 import { BowlingCanvasLoader } from "@/components/game/bowling-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { computeBowlingState, type BowlingRoll } from "@/lib/game/bowling-scoring";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_SEAT_NAMES = ["Blush Lane", "Lavender Lane"];
@@ -24,6 +26,8 @@ export function BowlingClient() {
         .map((move) => ({
           seat: Number(move.seat_index ?? 0),
           pins: Number((move.payload as { pins?: number })?.pins ?? 0),
+          aim: Number((move.payload as { aim?: number })?.aim ?? 0),
+          power: Number((move.payload as { power?: number })?.power ?? 0),
         })),
     [game.moves],
   );
@@ -35,6 +39,17 @@ export function BowlingClient() {
   const state = useMemo(() => computeBowlingState(rolls, seatCount), [rolls, seatCount]);
 
   const mySeatIndex = game.mySeat?.seat_index ?? null;
+  const [submitStatus, setSubmitStatus] = useState("Choose your direction, then power.");
+  const [pendingRoll, setPendingRoll] = useState(false);
+  const pendingRollCountRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const pendingAt = pendingRollCountRef.current;
+    if (pendingAt === null || rolls.length <= pendingAt) return;
+    pendingRollCountRef.current = null;
+    setPendingRoll(false);
+    setSubmitStatus("Roll confirmed on the shared lane.");
+  }, [rolls.length]);
 
   const seatNames = useMemo(() => {
     const names = [...DEFAULT_SEAT_NAMES];
@@ -65,9 +80,61 @@ export function BowlingClient() {
     });
   }, [state.gameOver, state.players, mySeatIndex, game]);
 
-  const onRoll = async (pins: number) => {
-    const result = await game.submitMove("roll", { pins });
-    return { ok: result.ok, reason: result.ok ? undefined : result.reason };
+  const onRoll = async (pins: number, details: { aim: number; power: number }) => {
+    if (pendingRoll) return { ok: false, reason: "Waiting for the shared lane to confirm your last roll." };
+    if (state.gameOver) return { ok: false, reason: "This match is already over." };
+    if (mySeatIndex !== null && state.currentSeat !== mySeatIndex) {
+      return { ok: false, reason: "Wait for your turn before bowling." };
+    }
+    if (pins < 0 || pins > state.standingPins) {
+      return { ok: false, reason: "That roll does not match the standing pins." };
+    }
+    setSubmitStatus("Saving roll...");
+    setPendingRoll(true);
+    const payload = {
+      pins,
+      aim: Number(details.aim.toFixed(3)),
+      power: Number(details.power.toFixed(3)),
+      frame: state.currentFrame,
+      ball: state.ballInFrame,
+    };
+    let result: { ok: true } | { ok: false; reason: string };
+    if (isSupabaseConfigured() && game.sessionId) {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase.rpc("submit_bowling_roll", {
+        p_session_id: game.sessionId,
+        p_pins: payload.pins,
+        p_aim: payload.aim,
+        p_power: payload.power,
+        p_frame: payload.frame,
+        p_ball: payload.ball,
+      });
+      if (error) {
+        // Keep local/dev playable before migration 0064 is applied, but
+        // still use the server-enforced Bowling RPC as the primary path.
+        if (error.message.toLowerCase().includes("submit_bowling_roll")) {
+          const fallback = await game.submitMove("roll", payload);
+          result = fallback.ok ? { ok: true } : { ok: false, reason: fallback.reason };
+        } else {
+          result = { ok: false, reason: error.message };
+        }
+      } else {
+        const row = Array.isArray(data) ? data[0] : null;
+        result = row?.ok ? { ok: true } : { ok: false, reason: String(row?.error_message ?? "Move rejected.") };
+      }
+    } else {
+      const fallback = await game.submitMove("roll", payload);
+      result = fallback.ok ? { ok: true } : { ok: false, reason: fallback.reason };
+    }
+    if (!result.ok) {
+      setPendingRoll(false);
+      pendingRollCountRef.current = null;
+      setSubmitStatus(result.reason);
+      return { ok: false, reason: result.reason };
+    }
+    pendingRollCountRef.current = rolls.length;
+    setSubmitStatus("Roll saved. Waiting for the lane to sync.");
+    return { ok: true };
   };
 
   const turnLabel = state.gameOver
@@ -93,9 +160,7 @@ export function BowlingClient() {
           <p className="mt-2 text-xs font-extrabold text-honey-700">{game.status}</p>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="secondary">
-            <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-          </Button>
+          <GameHubButton returnToLobby={game.returnToLobby} />
           <Button variant="warm"><Heart /> {turnLabel}</Button>
         </div>
       </section>
@@ -108,8 +173,14 @@ export function BowlingClient() {
         seatCount={seatCount}
         seatNames={seatNames}
         onRoll={onRoll}
+        rollLocked={pendingRoll}
         sessionId={game.sessionId}
       />
+
+      <div className="rounded-lg border border-lavender-300/40 bg-lavender-100/60 p-4 text-sm font-bold text-ink-700">
+        <CircleDot className="mr-2 inline size-4 text-lavender-500" />
+        {submitStatus}
+      </div>
 
       <RewardWalletPanel />
 
@@ -123,6 +194,28 @@ export function BowlingClient() {
   );
 }
 
+function rollSymbols(frame: ReturnType<typeof computeBowlingState>["players"][number]["frames"][number], frameIndex: number) {
+  const rolls = frame?.rolls ?? [];
+  if (!frame) return ["", "", frameIndex === 9 ? "" : undefined].filter((value): value is string => value !== undefined);
+  if (frameIndex < 9) {
+    if (frame.isStrike) return ["", "X"];
+    const first = rolls[0] ?? 0;
+    const second = rolls[1];
+    return [
+      first === 0 ? "-" : String(first),
+      frame.isSpare ? "/" : second === undefined ? "" : second === 0 ? "-" : String(second),
+    ];
+  }
+  return [0, 1, 2].map((index) => {
+    const value = rolls[index];
+    if (value === undefined) return "";
+    if (value === 10) return "X";
+    if (index === 1 && (rolls[0] ?? 0) < 10 && (rolls[0] ?? 0) + value === 10) return "/";
+    if (index === 2 && (rolls[1] ?? 0) < 10 && (rolls[1] ?? 0) + value === 10) return "/";
+    return value === 0 ? "-" : String(value);
+  });
+}
+
 function BowlingScoreboard({
   state,
   seatNames,
@@ -133,15 +226,28 @@ function BowlingScoreboard({
   mySeatIndex: number | null;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-cream-300 bg-white/80 p-3 shadow-sm">
-      <table className="w-full min-w-[640px] border-collapse text-center text-xs font-bold text-ink-700">
+    <div className="overflow-x-auto rounded-2xl border border-cream-300 bg-white/86 p-3 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-honey-700">
+            <Trophy className="size-3.5" /> Official lane scoreboard
+          </p>
+          <p className="text-xs font-bold text-ink-600">X = strike, / = spare, - = gutter.</p>
+        </div>
+        {!state.gameOver && (
+          <span className="rounded-full border border-honey-500/30 bg-honey-100 px-3 py-1 text-xs font-black text-honey-800">
+            Frame {state.currentFrame + 1}, ball {state.ballInFrame + 1}
+          </span>
+        )}
+      </div>
+      <table className="w-full min-w-[760px] border-separate border-spacing-0 text-center text-xs font-bold text-ink-700">
         <thead>
           <tr>
-            <th className="px-2 py-1 text-left">Lane</th>
+            <th className="rounded-l-lg border-y border-l border-cream-300 bg-cream-100 px-2 py-2 text-left">Bowler</th>
             {Array.from({ length: 10 }, (_, f) => (
-              <th key={f} className="px-1 py-1">{f + 1}</th>
+              <th key={f} className="border-y border-cream-300 bg-cream-100 px-1 py-2">{f + 1}</th>
             ))}
-            <th className="px-2 py-1">Total</th>
+            <th className="rounded-r-lg border-y border-r border-cream-300 bg-cream-100 px-2 py-2">Total</th>
           </tr>
         </thead>
         <tbody>
@@ -156,30 +262,37 @@ function BowlingScoreboard({
                   isTurn && "bg-honey-100/70",
                 )}
               >
-                <td className="px-2 py-1 text-left font-extrabold text-ink-900">
+                <td className="border-b border-cream-200 px-2 py-3 text-left font-extrabold text-ink-900">
                   {seatNames[player.seat] ?? `Player ${player.seat + 1}`}
                   {isMe && <span className="ml-1 text-[10px] text-blush-500">(you)</span>}
+                  {isTurn && <span className="ml-2 rounded-full bg-honey-500/15 px-2 py-0.5 text-[10px] text-honey-800">up</span>}
                 </td>
                 {Array.from({ length: 10 }, (_, f) => {
                   const frame = player.frames[f];
+                  const symbols = frame ? rollSymbols(frame, f) : f === 9 ? ["", "", ""] : ["", ""];
                   return (
-                    <td key={f} className="px-1 py-1 align-top">
-                      <div className="flex justify-center gap-0.5 text-[10px] text-ink-500">
-                        {frame
-                          ? frame.rolls.map((r, ri) => (
-                              <span key={ri}>
-                                {frame.isStrike && ri === 0 ? "X" : r === 0 ? "-" : r}
-                              </span>
-                            ))
-                          : <span>&nbsp;</span>}
+                    <td key={f} className="border-b border-cream-200 px-1 py-2 align-top">
+                      <div className="mx-auto grid max-w-[72px] grid-cols-2 overflow-hidden rounded border border-cream-300 bg-white text-[11px] text-ink-700 shadow-sm">
+                        {symbols.map((symbol, index) => (
+                          <span
+                            className={cn(
+                              "grid min-h-6 place-items-center border-cream-200 px-1 font-black",
+                              index > 0 && "border-l",
+                              f === 9 && "min-h-5",
+                            )}
+                            key={`${f}-${index}`}
+                          >
+                            {symbol || "\u00a0"}
+                          </span>
+                        ))}
                       </div>
-                      <div className="font-extrabold text-ink-900">
+                      <div className="mt-1 font-extrabold text-ink-900">
                         {frame?.cumulative ?? ""}
                       </div>
                     </td>
                   );
                 })}
-                <td className="px-2 py-1 font-display text-base text-ink-900">{player.total}</td>
+                <td className="border-b border-cream-200 px-2 py-2 font-display text-lg text-ink-900">{player.total}</td>
               </tr>
             );
           })}

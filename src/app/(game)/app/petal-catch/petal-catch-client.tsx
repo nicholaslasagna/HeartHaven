@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft, Gift, Sparkles } from "lucide-react";
+import { GameHubButton } from "@/components/game/game-hub-button";
 import { PetalCatchCanvasLoader } from "@/components/game/petal-catch-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,8 @@ export function PetalCatchClient() {
             Catch falling petals and hearts, avoid thorns, build combos, and earn coins and hearts for the garden loop.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <GameHubButton returnToLobby={game.returnToLobby} />
           <Button asChild variant="secondary">
             <Link href="/app/area?zone=garden"><ArrowLeft /> Garden</Link>
           </Button>

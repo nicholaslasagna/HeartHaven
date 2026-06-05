@@ -27,6 +27,10 @@ export type BowlingRoll = {
   seat: number;
   /** Pins knocked down on this ball (0–10). */
   pins: number;
+  /** Optional aiming lane offset, -1 = far left, 1 = far right. */
+  aim?: number;
+  /** Optional locked power, 0–1. */
+  power?: number;
 };
 
 export type BowlingFrame = {

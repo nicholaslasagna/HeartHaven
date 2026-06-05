@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft, Flame, Sparkles } from "lucide-react";
+import { Flame, Sparkles } from "lucide-react";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { CozyQuestCanvasLoader } from "@/components/game/cozy-quest-canvas-loader";
-import { Button } from "@/components/ui/button";
+import { GameHubButton } from "@/components/game/game-hub-button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 
 export function LanternRelayClient() {
@@ -20,9 +19,7 @@ export function LanternRelayClient() {
             Light the garden lanterns in order before the timer ends. It is built for local play now and co-op turns later.
           </p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-        </Button>
+        <GameHubButton returnToLobby={game.returnToLobby} />
       </section>
       <RewardWalletPanel />
       <CozyQuestCanvasLoader onReward={game.handleReward} variant="lantern-relay" />

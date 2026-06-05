@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft, UsersRound } from "lucide-react";
+import { UsersRound } from "lucide-react";
 import { useEffect, useState } from "react";
+import { GameHubButton } from "@/components/game/game-hub-button";
 import { MemoryMatchCanvasLoader } from "@/components/game/memory-match-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import type { MemoryMatchMode } from "@/lib/game/memory-match-state";
@@ -45,9 +45,7 @@ export function MemoryMatchClient() {
             games hub party link with <code className="rounded bg-white/80 px-1">?session=</code>.
           </p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-        </Button>
+        <GameHubButton returnToLobby={game.returnToLobby} />
       </section>
 
       <section className="grid gap-3 rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm md:grid-cols-[1fr_auto] md:items-center">

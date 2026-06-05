@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft, HandHeart, RefreshCcw, Scissors } from "lucide-react";
+import { HandHeart, RefreshCcw, Scissors } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { GameHubButton } from "@/components/game/game-hub-button";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -213,11 +213,9 @@ export function RockPaperScissorsClient() {
           <p className="mt-2 text-xs font-extrabold text-lavender-600">{game.status}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button asChild variant="secondary">
-            <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-          </Button>
-          <Button asChild variant="warm">
-            <Link href="/app/games"><RefreshCcw /> New lobby</Link>
+          <GameHubButton returnToLobby={game.returnToLobby} />
+          <Button onClick={() => void game.returnToLobby()} variant="warm">
+            <RefreshCcw /> New lobby
           </Button>
         </div>
       </section>

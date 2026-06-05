@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft, Heart, Sparkles } from "lucide-react";
+import { Heart, Sparkles } from "lucide-react";
 import { CozyQuestCanvasLoader } from "@/components/game/cozy-quest-canvas-loader";
+import { GameHubButton } from "@/components/game/game-hub-button";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
-import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 
 export function HeartHuntClient() {
@@ -20,9 +19,7 @@ export function HeartHuntClient() {
             Search a cozy room for hidden keepsakes, build a warm score, and earn hearts for the shared memory loop.
           </p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-        </Button>
+        <GameHubButton returnToLobby={game.returnToLobby} />
       </section>
       <RewardWalletPanel />
       <CozyQuestCanvasLoader onReward={game.handleReward} variant="heart-hunt" />

@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft, HeartHandshake, Sparkles } from "lucide-react";
+import { HeartHandshake, Sparkles } from "lucide-react";
+import { GameHubButton } from "@/components/game/game-hub-button";
 import { GardenFourCanvasLoader } from "@/components/game/garden-four-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
@@ -23,9 +23,7 @@ export function GardenFourClient() {
           <p className="mt-2 text-xs font-extrabold text-garden-700">{game.status}</p>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="secondary">
-            <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-          </Button>
+          <GameHubButton returnToLobby={game.returnToLobby} />
           <Button variant="warm"><HeartHandshake /> Party table</Button>
         </div>
       </section>

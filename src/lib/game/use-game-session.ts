@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
@@ -75,6 +76,7 @@ export function useGameSession(
   gameKey: string,
   options?: { maxPlayers?: number; init?: Record<string, unknown> },
 ) {
+  const router = useRouter();
   const [sessionFromUrl] = useState(readSessionIdFromUrl);
   const [sessionId, setSessionId] = useState<string | null>(readSessionIdFromUrl);
   const [metadata, setMetadata] = useState<Record<string, unknown>>({});
@@ -124,6 +126,20 @@ export function useGameSession(
         return;
       }
       const meta = stateRow.metadata;
+      const rowStatus = String(stateRow.status ?? "");
+      if (sessionFromUrl && rowStatus === "waiting") {
+        setMetadata(meta && typeof meta === "object" && !Array.isArray(meta) ? (meta as Record<string, unknown>) : {});
+        setLoading(false);
+        setStatus("The host brought everyone back to the lobby.");
+        router.push("/app/games", { scroll: false });
+        return;
+      }
+      if (sessionFromUrl && rowStatus === "cancelled") {
+        setLoading(false);
+        setStatus("This party lobby was closed.");
+        router.push("/app/games", { scroll: false });
+        return;
+      }
       setMetadata(meta && typeof meta === "object" && !Array.isArray(meta) ? (meta as Record<string, unknown>) : {});
       const seatRows = Array.isArray(stateRow.seats) ? stateRow.seats : [];
       const parsedSeats: GameSessionSeat[] = seatRows
@@ -162,7 +178,7 @@ export function useGameSession(
     lastMoveIndexRef.current = parsedMoves.length > 0 ? parsedMoves[parsedMoves.length - 1].move_index : -1;
     setLoading(false);
     setStatus(`Live game session · ${parsedMoves.length} moves`);
-  }, [gameKey]);
+  }, [gameKey, router, sessionFromUrl]);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -247,6 +263,17 @@ export function useGameSession(
         { event: "UPDATE", schema: "public", table: "game_sessions", filter: `id=eq.${target}` },
         (payload) => {
           const row = payload.new as Record<string, unknown> | undefined;
+          const rowStatus = String(row?.status ?? "");
+          if (sessionFromUrl && rowStatus === "waiting") {
+            setStatus("The host brought everyone back to the lobby.");
+            router.push("/app/games", { scroll: false });
+            return;
+          }
+          if (sessionFromUrl && rowStatus === "cancelled") {
+            setStatus("This party lobby was closed.");
+            router.push("/app/games", { scroll: false });
+            return;
+          }
           const meta = row?.metadata;
           if (meta && typeof meta === "object" && !Array.isArray(meta)) {
             setMetadata(meta as Record<string, unknown>);
@@ -259,19 +286,19 @@ export function useGameSession(
     // game_moves are RLS-gated and occasionally dropped (browser sleep,
     // socket churn, replica lag) — and when the opponent's move event is
     // the one that's dropped, the board never advances and the match
-    // softlocks. Re-hydrating the full session state every 2s guarantees
-    // both players' boards converge within a couple seconds regardless of
+    // softlocks. Re-hydrating the full session state every 1s guarantees
+    // both players' boards converge quickly regardless of
     // realtime health. The two RPCs are cheap for a 2-player turn game.
     const pollTimer = window.setInterval(() => {
       const active = sessionIdRef.current;
       if (active) void hydrate(active);
-    }, 2000);
+    }, 1000);
 
     return () => {
       window.clearInterval(pollTimer);
       void supabase.removeChannel(channel);
     };
-  }, [sessionId, hydrate]);
+  }, [sessionId, hydrate, router, sessionFromUrl]);
 
   const mySeat = useMemo(
     () => seats.find((seat) => seat.profile_id === myProfileId) ?? null,
@@ -323,6 +350,31 @@ export function useGameSession(
     [],
   );
 
+  const returnToLobby = useCallback(async (): Promise<SubmitMoveResult> => {
+    const target = sessionIdRef.current;
+    if (!target || !isSupabaseConfigured()) {
+      router.push("/app/games", { scroll: false });
+      return { ok: true, moveIndex: -1, metadata: {} };
+    }
+
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.rpc("return_party_lobby_to_waiting", {
+        p_session_id: target,
+      });
+
+      // Guests and older databases can still use the button as ordinary
+      // navigation. The server RPC is only required for the host fan-out.
+      if (error && !/not-host|function public\.return_party_lobby_to_waiting|schema cache/i.test(error.message)) {
+        return { ok: false, reason: sessionErrorCopy(error.message) };
+      }
+      router.push("/app/games", { scroll: false });
+      return { ok: true, moveIndex: -1, metadata: {} };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : "Could not return to lobby." };
+    }
+  }, [router]);
+
   return {
     sessionId,
     metadata,
@@ -333,6 +385,7 @@ export function useGameSession(
     loading,
     status,
     submitMove,
+    returnToLobby,
     refresh: hydrate,
   };
 }
