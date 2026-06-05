@@ -60,6 +60,13 @@ function pinsFromAimPower(aim: number, power: number, standing: number): number 
   return clamp(base - Math.round(hookPenalty) - powerPenalty, 0, standing);
 }
 
+function describeRoll(pins: number, standingBeforeRoll: number) {
+  if (standingBeforeRoll === BOWLING_PINS && pins === BOWLING_PINS) return "Strike!";
+  if (standingBeforeRoll < BOWLING_PINS && pins === standingBeforeRoll) return "Spare!";
+  if (pins === 0) return "Gutter ball";
+  return `${pins} pin${pins === 1 ? "" : "s"}`;
+}
+
 export function BowlingCanvas({
   rolls,
   mySeatIndex,
@@ -110,6 +117,7 @@ export function BowlingCanvas({
         private powerFill!: Phaser.GameObjects.Graphics;
         private bannerText!: Phaser.GameObjects.Text;
         private helpText!: Phaser.GameObjects.Text;
+        private resultCallout?: Phaser.GameObjects.Text;
         private aimPhase: "idle" | "aim" | "power" | "rolling" = "idle";
         private aim = 0;
         private aimDir = 1;
@@ -249,8 +257,8 @@ export function BowlingCanvas({
         private resetBallVisual() {
           this.tweens.killTweensOf(this.ball);
           this.tweens.killTweensOf(this.ballShadow);
-          this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
-          this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30).setAlpha(1);
+          this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1).setRotation(0).setScale(1);
+          this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30).setAlpha(1).setScale(1);
         }
 
         private isMyTurn(state: ReturnType<typeof computeBowlingState>) {
@@ -286,6 +294,9 @@ export function BowlingCanvas({
           const newestRoll = total > 0 ? rollsRef.current[total - 1] : null;
           const mine = mySeatRef.current;
           const newestIsMine = mine !== null && mine !== undefined && newestSeat === mine;
+          const previousState = newestRoll ? computeBowlingState(rollsRef.current.slice(0, -1), seatCountRef.current) : null;
+          const rollLabel = newestRoll && previousState ? describeRoll(newestRoll.pins, previousState.standingPins) : null;
+          const bowlerName = newestSeat >= 0 ? (names[newestSeat] ?? `Player ${newestSeat + 1}`) : "Player";
 
           if (this.awaitingRollCount !== null && total >= this.awaitingRollCount) {
             this.awaitingRollCount = null;
@@ -297,7 +308,8 @@ export function BowlingCanvas({
           }
 
           if (grew && animateNewest && !newestIsMine) {
-            this.animateRoll(state.standingPins, newestRoll?.aim ?? 0);
+            this.animateRoll(state.standingPins, newestRoll?.aim ?? 0, rollLabel ?? undefined);
+            if (rollLabel) setStatus(`${bowlerName} rolled: ${rollLabel}`);
           } else {
             this.setStandingPins(state.standingPins);
           }
@@ -346,30 +358,80 @@ export function BowlingCanvas({
           }
         }
 
-        private animateRoll(finalStanding: number, aim = 0) {
+        private animateRoll(finalStanding: number, aim = 0, label?: string) {
           this.aimPhase = "rolling";
-          this.ball.setPosition(BALL_START.x, BALL_START.y);
-          this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30);
+          this.resetBallVisual();
           playCozyCue("move");
           const endX = clamp(460 + aim * 170, 260, 660);
           this.tweens.add({
             targets: [this.ball],
             x: endX,
             y: 168,
+            rotation: aim * 0.32 + Math.PI * 2.6,
+            scaleX: 0.82,
+            scaleY: 0.82,
             duration: 620,
             ease: "Sine.in",
             onComplete: () => {
               playCozyCue("place");
               this.setStandingPins(finalStanding);
+              if (label) this.showRollCallout(label);
               this.tweens.add({ targets: this.ball, alpha: 0, duration: 260, onComplete: () => {
-                this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1);
-                this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30);
+                this.resetBallVisual();
                 this.aimPhase = "idle";
                 this.renderFromLog(false);
               } });
             },
           });
-          this.tweens.add({ targets: [this.ballShadow], x: endX, y: 198, duration: 620, ease: "Sine.in" });
+          this.tweens.add({
+            targets: [this.ballShadow],
+            x: endX,
+            y: 198,
+            scaleX: 0.62,
+            scaleY: 0.62,
+            alpha: 0.08,
+            duration: 620,
+            ease: "Sine.in",
+          });
+        }
+
+        private showRollCallout(label: string) {
+          this.resultCallout?.destroy();
+          const isBig = label === "Strike!" || label === "Spare!";
+          const color = label === "Strike!" ? "#D9A53E" : label === "Spare!" ? "#8E70BD" : "#5B3F3F";
+          this.resultCallout = this.add
+            .text(GAME_WIDTH / 2, 94, label, {
+              fontFamily: "Caprasimo, Georgia, serif",
+              fontSize: isBig ? "35px" : "25px",
+              color,
+              align: "center",
+              stroke: "#fffdf6",
+              strokeThickness: 8,
+            })
+            .setOrigin(0.5)
+            .setDepth(7600)
+            .setAlpha(0)
+            .setScale(0.84);
+          this.tweens.add({
+            targets: this.resultCallout,
+            alpha: 1,
+            scale: 1,
+            y: 82,
+            duration: 180,
+            ease: "Back.out",
+          });
+          this.tweens.add({
+            targets: this.resultCallout,
+            alpha: 0,
+            y: 62,
+            delay: 980,
+            duration: 420,
+            ease: "Sine.in",
+            onComplete: () => {
+              this.resultCallout?.destroy();
+              this.resultCallout = undefined;
+            },
+          });
         }
 
         private handleTap() {
@@ -414,17 +476,32 @@ export function BowlingCanvas({
             targets: this.ball,
             x: endX,
             y: 168,
+            rotation: aim * 0.32 + Math.PI * 2.6,
+            scaleX: 0.82,
+            scaleY: 0.82,
             duration: 600,
             ease: "Sine.in",
             onComplete: () => {
               this.setStandingPins(standing - pins);
               playCozyCue(pins >= standing ? "score" : "place");
+              const label = describeRoll(pins, standing);
+              this.showRollCallout(label);
+              setStatus(`You rolled: ${label}`);
               this.time.delayedCall(220, () => {
                 this.resetBallVisual();
               });
             },
           });
-          this.tweens.add({ targets: [this.ballShadow], x: endX, y: 198, duration: 600, ease: "Sine.in" });
+          this.tweens.add({
+            targets: [this.ballShadow],
+            x: endX,
+            y: 198,
+            scaleX: 0.62,
+            scaleY: 0.62,
+            alpha: 0.08,
+            duration: 600,
+            ease: "Sine.in",
+          });
 
           const result = await onRollRef.current(pins, { aim, power });
           if (!result.ok) {

@@ -358,11 +358,18 @@ export function GardenFourCanvas({
           const player = players[this.currentPlayer - 1];
           const preview = this.add
             .image(BOARD_X + column * CELL, BOARD_Y + row * CELL, "minigame-props", player.frame)
-            .setDisplaySize(54, 70)
-            .setAlpha(0.48)
+            .setDisplaySize(28, 36)
+            .setAlpha(0.5)
             .setDepth(3000)
             .setName("garden-four-preview");
-          this.tweens.add({ targets: preview, scale: 1.08, duration: 420, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+          this.tweens.add({
+            targets: preview,
+            alpha: 0.72,
+            duration: 520,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.inOut",
+          });
         }
 
         private clearPreview() {
