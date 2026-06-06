@@ -3,13 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
-  getKeeperHairColor,
-  getKeeperSkinTone,
   getPetTone,
+  KEEPER_PRESET_ANIMATION_SHEET_PATH,
   keeperGaitPose,
-  keeperFrame,
-  keeperHairFrame,
-  keeperSkinFrame,
+  keeperPresetFrame,
   petFrame,
   readKeeperCustomization,
   readPetCustomization,
@@ -164,7 +161,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         }
 
         preload() {
-          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-base-sheet.png", {
+          this.load.spritesheet("keeper-preset-animation-sheet", KEEPER_PRESET_ANIMATION_SHEET_PATH, {
             frameWidth: 256,
             frameHeight: 384,
           });
@@ -348,23 +345,24 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
           this.keeperCustomization = keeperCustomization;
           const petCustomization = readPetCustomization();
           this.keeperSkinSprite = this.add
-            .sprite(332, 382, "keeper-skin-mask-sheet", keeperSkinFrame("idle", keeperCustomization.outfitId, keeperCustomization.bodyId))
+            .sprite(332, 382, "keeper-skin-mask-sheet", 0)
             .setDisplaySize(150, 225)
             .setDepth(421)
-            .setAlpha(0.92);
+            .setAlpha(0);
           this.keeperSprite = this.add
             .sprite(
               332,
               382,
-              "keeper-animation-sheet",
-              keeperFrame(keeperCustomization.paletteId, "idle", keeperCustomization.outfitId, keeperCustomization.bodyId),
+              "keeper-preset-animation-sheet",
+              keeperPresetFrame(keeperCustomization.characterId, "idle"),
             )
             .setDisplaySize(150, 225)
             .setDepth(420);
           this.keeperHairSprite = this.add
-            .sprite(332, 382, "keeper-hair-style-sheet", keeperHairFrame(keeperCustomization.hairStyleId, "idle", keeperCustomization.bodyId))
+            .sprite(332, 382, "keeper-hair-style-sheet", 0)
             .setDisplaySize(150, 225)
-            .setDepth(422);
+            .setDepth(422)
+            .setAlpha(0);
           this.applyKeeperLayerTints();
           this.petSprite = this.add
             .sprite(574, 428, "pet-animation-sheet", petFrame(petCustomization.speciesId, "idle"))
@@ -382,20 +380,16 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         }
 
         private applyKeeperLayerTints() {
-          const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(this.keeperCustomization.skinId).color).color;
-          const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(this.keeperCustomization.hairColorId).color).color;
-          this.keeperSkinSprite?.clearTint().setTintFill(skinColor).setAlpha(0.86);
+          this.keeperSkinSprite?.clearTint().setAlpha(0);
           this.keeperSprite?.clearTint().setAlpha(1);
-          this.keeperHairSprite?.clearTint().setTintFill(hairColor).setAlpha(0.94);
+          this.keeperHairSprite?.clearTint().setAlpha(0);
         }
 
         private setKeeperLook(paletteId: KeeperPaletteId, pose: KeeperPose, outfitId: KeeperOutfitId) {
           this.keeperSprite.setTexture(
-            "keeper-animation-sheet",
-            keeperFrame(paletteId, pose, outfitId, this.keeperCustomization.bodyId),
+            "keeper-preset-animation-sheet",
+            keeperPresetFrame(this.keeperCustomization.characterId, pose),
           );
-          this.keeperSkinSprite.setFrame(keeperSkinFrame(pose, outfitId, this.keeperCustomization.bodyId));
-          this.keeperHairSprite.setFrame(keeperHairFrame(this.keeperCustomization.hairStyleId, pose, this.keeperCustomization.bodyId));
           this.applyKeeperLayerTints();
         }
 

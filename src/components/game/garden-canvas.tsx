@@ -5,15 +5,12 @@ import type { DragEvent } from "react";
 import Image from "next/image";
 import type Phaser from "phaser";
 import {
-  getKeeperHairColor,
-  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
-  keeperFrame,
   keeperGaitPose,
-  keeperHairFrame,
-  keeperSkinFrame,
+  keeperPresetFrame,
+  KEEPER_PRESET_ANIMATION_SHEET_PATH,
   isFlyingPetSpecies,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
@@ -681,7 +678,7 @@ export function GardenCanvas({
           this.load.image("garden-bare-map", "/game-assets/generated/heartheaven-garden-bare-map.png");
           this.load.image("park-bare-map", "/game-assets/generated/heartheaven-park-bare-map.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
-          this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-base-sheet.png", {
+          this.load.spritesheet("keeper-preset-animation-sheet", KEEPER_PRESET_ANIMATION_SHEET_PATH, {
             frameWidth: 256,
             frameHeight: 384,
           });
@@ -1425,21 +1422,16 @@ export function GardenCanvas({
               0,
               -66,
               "keeper-skin-mask-sheet",
-              keeperSkinFrame("idle", this.keeperCustomization.outfitId, this.keeperCustomization.bodyId),
+              0,
             )
             .setDisplaySize(98, 147)
-            .setAlpha(0.92);
+            .setAlpha(0);
           this.avatarSprite = this.add
             .sprite(
               0,
               -66,
-              "keeper-animation-sheet",
-              keeperFrame(
-                this.keeperCustomization.paletteId,
-                "idle",
-                this.keeperCustomization.outfitId,
-                this.keeperCustomization.bodyId,
-              ),
+              "keeper-preset-animation-sheet",
+              keeperPresetFrame(this.keeperCustomization.characterId, "idle"),
             )
             .setDisplaySize(98, 147);
           this.avatarHairSprite = this.add
@@ -1447,9 +1439,10 @@ export function GardenCanvas({
               0,
               -66,
               "keeper-hair-style-sheet",
-              keeperHairFrame(this.keeperCustomization.hairStyleId, "idle", this.keeperCustomization.bodyId),
+              0,
             )
-            .setDisplaySize(98, 147);
+            .setDisplaySize(98, 147)
+            .setAlpha(0);
           this.avatar.add([this.avatarSprite, this.avatarSkinSprite, this.avatarHairSprite]);
           this.applyKeeperLayerTints();
           this.avatar.setSize(62, 92);
@@ -2063,35 +2056,18 @@ export function GardenCanvas({
         private setAvatarPose(pose: KeeperPose) {
           this.avatarPose = pose;
           this.avatarSprite?.setTexture(
-            "keeper-animation-sheet",
-            keeperFrame(
-              this.keeperCustomization.paletteId,
-              pose,
-              this.keeperCustomization.outfitId,
-              this.keeperCustomization.bodyId,
-            ),
+            "keeper-preset-animation-sheet",
+            keeperPresetFrame(this.keeperCustomization.characterId, pose),
           );
-          this.avatarSkinSprite?.setFrame(keeperSkinFrame(pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
-          this.avatarHairSprite?.setFrame(keeperHairFrame(this.keeperCustomization.hairStyleId, pose, this.keeperCustomization.bodyId));
           this.applyKeeperLayerTints();
         }
 
         private applyKeeperLayerTints() {
-          const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(this.keeperCustomization.skinId).color).color;
-          const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(this.keeperCustomization.hairColorId).color).color;
           this.avatarSprite
             ?.clearTint()
             .setAlpha(1);
-          this.avatarSkinSprite
-            ?.clearTint()
-            .setTintFill(skinColor)
-            .setAlpha(0.86)
-            .setDepth((this.avatarSprite?.depth ?? 0) + 1);
-          this.avatarHairSprite
-            ?.clearTint()
-            .setTintFill(hairColor)
-            .setAlpha(0.94)
-            .setDepth((this.avatarSprite?.depth ?? 0) + 2);
+          this.avatarSkinSprite?.clearTint().setAlpha(0);
+          this.avatarHairSprite?.clearTint().setAlpha(0);
         }
 
         private setKeeperLayerFlip(facing: FacingDirection) {
@@ -2374,9 +2350,7 @@ export function GardenCanvas({
         }
 
         private setRemoteKeeperFrame(remote: RemoteGardenAvatarObject, pose: KeeperPose) {
-          remote.sprite.setTexture("keeper-animation-sheet", keeperFrame(remote.paletteId, pose, remote.outfitId, remote.bodyId));
-          remote.skinSprite.setFrame(keeperSkinFrame(pose, remote.outfitId, remote.bodyId));
-          remote.hairSprite.setFrame(keeperHairFrame(remote.hairStyleId, pose, remote.bodyId));
+          remote.sprite.setTexture("keeper-preset-animation-sheet", keeperPresetFrame(remote.characterId, pose));
           this.applyRemoteKeeperTints(remote);
         }
 
@@ -2388,19 +2362,9 @@ export function GardenCanvas({
         }
 
         private applyRemoteKeeperTints(remote: RemoteGardenAvatarObject) {
-          const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(remote.skinId).color).color;
-          const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(remote.hairColorId).color).color;
           remote.sprite.clearTint().setAlpha(1);
-          remote.skinSprite
-            .clearTint()
-            .setTintFill(skinColor)
-            .setAlpha(0.86)
-            .setDepth(remote.sprite.depth + 1);
-          remote.hairSprite
-            .clearTint()
-            .setTintFill(hairColor)
-            .setAlpha(0.94)
-            .setDepth(remote.sprite.depth + 2);
+          remote.skinSprite.clearTint().setAlpha(0);
+          remote.hairSprite.clearTint().setAlpha(0);
         }
 
         private tintPetForTone() {
@@ -3111,17 +3075,17 @@ export function GardenCanvas({
             const container = this.add.container(player.x, player.y).setDepth(player.y);
             const aura = this.add.circle(0, -80, 14, color, 0.28);
             const skinSprite = this.add
-              .sprite(0, -66, "keeper-skin-mask-sheet", keeperSkinFrame("idle", custom.outfitId, custom.bodyId))
+              .sprite(0, -66, "keeper-skin-mask-sheet", 0)
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
             const sprite = this.add
-              .sprite(0, -66, "keeper-animation-sheet", keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId))
+              .sprite(0, -66, "keeper-preset-animation-sheet", keeperPresetFrame(custom.characterId, "idle"))
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
             const hairSprite = this.add
-              .sprite(0, -66, "keeper-hair-style-sheet", keeperHairFrame(custom.hairStyleId, "idle", custom.bodyId))
+              .sprite(0, -66, "keeper-hair-style-sheet", 0)
               .setDisplaySize(98, 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);

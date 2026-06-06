@@ -139,7 +139,7 @@ export const KEEPER_CHARACTER_PRESETS: Array<{
     id: "rose-waves",
     label: "Rose Waves",
     shortLabel: "Rose",
-    image: "/game-assets/generated/keepers/presets/rose-waves.png",
+    image: "/game-assets/generated/keepers/presets-v2/rose-waves.png",
     bodyId: "female",
     skinId: "fair",
     hairStyleId: "long-waves",
@@ -152,7 +152,7 @@ export const KEEPER_CHARACTER_PRESETS: Array<{
     id: "moonlit-overalls",
     label: "Moonlit Overalls",
     shortLabel: "Moonlit",
-    image: "/game-assets/generated/keepers/presets/moonlit-overalls.png",
+    image: "/game-assets/generated/keepers/presets-v2/moonlit-overalls.png",
     bodyId: "male",
     skinId: "tan",
     hairStyleId: "side-part",
@@ -165,7 +165,7 @@ export const KEEPER_CHARACTER_PRESETS: Array<{
     id: "sage-braids",
     label: "Sage Braids",
     shortLabel: "Sage",
-    image: "/game-assets/generated/keepers/presets/sage-braids.png",
+    image: "/game-assets/generated/keepers/presets-v2/sage-braids.png",
     bodyId: "female",
     skinId: "ebony",
     hairStyleId: "braids",
@@ -178,7 +178,7 @@ export const KEEPER_CHARACTER_PRESETS: Array<{
     id: "honey-curls",
     label: "Honey Curls",
     shortLabel: "Honey",
-    image: "/game-assets/generated/keepers/presets/honey-curls.png",
+    image: "/game-assets/generated/keepers/presets-v2/honey-curls.png",
     bodyId: "male",
     skinId: "deep",
     hairStyleId: "curly-fade",
@@ -191,7 +191,7 @@ export const KEEPER_CHARACTER_PRESETS: Array<{
     id: "blush-blonde",
     label: "Blush Blonde",
     shortLabel: "Blush",
-    image: "/game-assets/generated/keepers/presets/blush-blonde.png",
+    image: "/game-assets/generated/keepers/presets-v2/blush-blonde.png",
     bodyId: "female",
     skinId: "porcelain",
     hairStyleId: "soft-curls",
@@ -204,7 +204,7 @@ export const KEEPER_CHARACTER_PRESETS: Array<{
     id: "starlight-cape",
     label: "Starlight Cape",
     shortLabel: "Starlight",
-    image: "/game-assets/generated/keepers/presets/starlight-cape.png",
+    image: "/game-assets/generated/keepers/presets-v2/starlight-cape.png",
     bodyId: "male",
     skinId: "olive",
     hairStyleId: "short-curls",
@@ -217,7 +217,7 @@ export const KEEPER_CHARACTER_PRESETS: Array<{
     id: "garden-bangs",
     label: "Garden Bangs",
     shortLabel: "Garden",
-    image: "/game-assets/generated/keepers/presets/garden-bangs.png",
+    image: "/game-assets/generated/keepers/presets-v2/garden-bangs.png",
     bodyId: "female",
     skinId: "warm",
     hairStyleId: "straight-bangs",
@@ -230,7 +230,7 @@ export const KEEPER_CHARACTER_PRESETS: Array<{
     id: "clover-curls",
     label: "Clover Curls",
     shortLabel: "Clover",
-    image: "/game-assets/generated/keepers/presets/clover-curls.png",
+    image: "/game-assets/generated/keepers/presets-v2/clover-curls.png",
     bodyId: "male",
     skinId: "brown",
     hairStyleId: "soft-curls",
@@ -300,6 +300,7 @@ const petPoseColumns: Record<PetPose, number> = {
 };
 
 const GAIT_FRAME_MS = 105;
+export const KEEPER_PRESET_ANIMATION_SHEET_PATH = "/game-assets/generated/keepers/preset-animation-sheet.png";
 
 export function gaitPhase(timeMs: number) {
   return (timeMs % (GAIT_FRAME_MS * 4)) / (GAIT_FRAME_MS * 4);
@@ -335,6 +336,24 @@ export function keeperPlayableTextureKey(characterId: KeeperCharacterId) {
 
 export function keeperPlayableTexturePath(characterId: KeeperCharacterId) {
   return getKeeperCharacterPreset(characterId).image;
+}
+
+export function keeperPresetFrame(characterId: KeeperCharacterId, pose: KeeperPose) {
+  const row = Math.max(0, KEEPER_CHARACTER_PRESETS.findIndex((preset) => preset.id === characterId));
+  return row * 6 + keeperPoseColumns[pose];
+}
+
+export function keeperCustomizationFromPreset(characterId: KeeperCharacterId): KeeperCustomization {
+  const preset = getKeeperCharacterPreset(characterId);
+  return {
+    characterId: preset.id,
+    bodyId: preset.bodyId,
+    skinId: preset.skinId,
+    hairStyleId: preset.hairStyleId,
+    hairColorId: preset.hairColorId,
+    paletteId: preset.paletteId,
+    outfitId: preset.outfitId,
+  };
 }
 
 export function keeperFrame(
@@ -381,14 +400,8 @@ export function readKeeperCustomization(): KeeperCustomization {
       outfitId: "cardigan",
     };
   }
-  const bodyId = normalizeKeeperBody(window.localStorage.getItem("hearthaven:keeper-body-id"));
   const characterId = normalizeKeeperCharacter(window.localStorage.getItem("hearthaven:keeper-character-id"));
-  const skinId = normalizeKeeperSkin(window.localStorage.getItem("hearthaven:keeper-skin-id"));
-  const hairStyleId = normalizeKeeperHairStyle(window.localStorage.getItem("hearthaven:keeper-hair-style-id"));
-  const hairColorId = normalizeKeeperHairColor(window.localStorage.getItem("hearthaven:keeper-hair-color-id"));
-  const paletteId = normalizeKeeperPalette(window.localStorage.getItem("hearthaven:keeper-palette-id"));
-  const outfitId = normalizeKeeperOutfit(window.localStorage.getItem("hearthaven:keeper-outfit-id"));
-  return { characterId, bodyId, skinId, hairStyleId, hairColorId, paletteId, outfitId };
+  return keeperCustomizationFromPreset(characterId);
 }
 
 export function writeKeeperCustomization(customization: KeeperCustomization) {
@@ -404,15 +417,7 @@ export function writeKeeperCustomization(customization: KeeperCustomization) {
 }
 
 function normalizeKeeperCustomization(value: Partial<KeeperCustomization> | null | undefined): KeeperCustomization {
-  return {
-    characterId: normalizeKeeperCharacter(value?.characterId),
-    bodyId: normalizeKeeperBody(value?.bodyId),
-    skinId: normalizeKeeperSkin(value?.skinId),
-    hairStyleId: normalizeKeeperHairStyle(value?.hairStyleId),
-    hairColorId: normalizeKeeperHairColor(value?.hairColorId),
-    paletteId: normalizeKeeperPalette(value?.paletteId ?? null),
-    outfitId: normalizeKeeperOutfit(value?.outfitId ?? null),
-  };
+  return keeperCustomizationFromPreset(normalizeKeeperCharacter(value?.characterId));
 }
 
 function parseKeeperCustomizationPayload(value: unknown): KeeperCustomization | null {
@@ -426,15 +431,7 @@ function parseLegacyAvatarKey(value: unknown): KeeperCustomization | null {
   if (!trimmed) return null;
   const preset = KEEPER_CHARACTER_PRESETS.find((character) => character.id === trimmed);
   if (preset) {
-    return normalizeKeeperCustomization({
-      characterId: preset.id,
-      bodyId: preset.bodyId,
-      skinId: preset.skinId,
-      hairStyleId: preset.hairStyleId,
-      hairColorId: preset.hairColorId,
-      paletteId: preset.paletteId,
-      outfitId: preset.outfitId,
-    });
+    return keeperCustomizationFromPreset(preset.id);
   }
   return null;
 }
