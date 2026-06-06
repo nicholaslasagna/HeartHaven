@@ -2,7 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import {
-  getKeeperCharacterPreset,
+  getKeeperHairColor,
+  getKeeperSkinTone,
+  keeperFrame,
+  keeperHairFrame,
+  keeperSkinFrame,
   type KeeperBodyId,
   type KeeperCharacterId,
   type KeeperHairColorId,
@@ -27,8 +31,15 @@ type KeeperAvatarPreviewProps = {
 
 const frameWidth = 256;
 const frameHeight = 384;
+const baseSheetPath = "/game-assets/generated/keeper-custom-base-sheet.png";
+const skinSheetPath = "/game-assets/generated/keeper-skin-mask-sheet.png";
+const hairSheetPath = "/game-assets/generated/keeper-hair-style-sheet.png";
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
+const tintCanvas =
+  typeof document === "undefined"
+    ? null
+    : Object.assign(document.createElement("canvas"), { width: frameWidth, height: frameHeight });
 
 function loadPreviewImage(src: string) {
   const cached = imageCache.get(src);
@@ -44,7 +55,7 @@ function loadPreviewImage(src: string) {
 }
 
 export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
-  const { characterId, pose = "idle", className } = props;
+  const { bodyId, hairColorId, hairStyleId, outfitId, paletteId, pose = "idle", skinId, className } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -54,8 +65,11 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const preset = getKeeperCharacterPreset(characterId);
-      const image = await loadPreviewImage(preset.image);
+      const [baseImage, skinImage, hairImage] = await Promise.all([
+        loadPreviewImage(baseSheetPath),
+        loadPreviewImage(skinSheetPath),
+        loadPreviewImage(hairSheetPath),
+      ]);
       if (!active) return;
       ctx.clearRect(0, 0, frameWidth, frameHeight);
       ctx.save();
@@ -65,14 +79,32 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
       ctx.translate(frameWidth / 2, frameHeight / 2 + verticalOffset);
       ctx.rotate(rotation);
       ctx.scale(1, scaleY);
-      ctx.drawImage(image, -frameWidth / 2, -frameHeight / 2, frameWidth, frameHeight);
+      drawSheetFrame(ctx, baseImage, keeperFrame(paletteId, pose, outfitId, bodyId), -frameWidth / 2, -frameHeight / 2);
+      drawTintedSheetFrame(
+        ctx,
+        skinImage,
+        keeperSkinFrame(pose, outfitId, bodyId),
+        getKeeperSkinTone(skinId).color,
+        -frameWidth / 2,
+        -frameHeight / 2,
+        0.86,
+      );
+      drawTintedSheetFrame(
+        ctx,
+        hairImage,
+        keeperHairFrame(hairStyleId, pose, bodyId),
+        getKeeperHairColor(hairColorId).color,
+        -frameWidth / 2,
+        -frameHeight / 2,
+        0.94,
+      );
       ctx.restore();
     }
     void renderPreview();
     return () => {
       active = false;
     };
-  }, [characterId, pose]);
+  }, [bodyId, hairColorId, hairStyleId, outfitId, paletteId, pose, skinId]);
 
   return (
     <canvas
@@ -83,4 +115,46 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
       width={frameWidth}
     />
   );
+}
+
+function frameSource(frame: number) {
+  return {
+    sx: (frame % 6) * frameWidth,
+    sy: Math.floor(frame / 6) * frameHeight,
+  };
+}
+
+function drawSheetFrame(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  frame: number,
+  dx: number,
+  dy: number,
+) {
+  const { sx, sy } = frameSource(frame);
+  ctx.drawImage(image, sx, sy, frameWidth, frameHeight, dx, dy, frameWidth, frameHeight);
+}
+
+function drawTintedSheetFrame(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  frame: number,
+  color: string,
+  dx: number,
+  dy: number,
+  alpha: number,
+) {
+  if (!tintCanvas) return;
+  const tintCtx = tintCanvas.getContext("2d");
+  if (!tintCtx) return;
+  tintCtx.clearRect(0, 0, frameWidth, frameHeight);
+  drawSheetFrame(tintCtx, image, frame, 0, 0);
+  tintCtx.globalCompositeOperation = "source-in";
+  tintCtx.fillStyle = color;
+  tintCtx.fillRect(0, 0, frameWidth, frameHeight);
+  tintCtx.globalCompositeOperation = "source-over";
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(tintCanvas, dx, dy, frameWidth, frameHeight);
+  ctx.restore();
 }

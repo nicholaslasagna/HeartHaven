@@ -162,7 +162,7 @@ export function MultiplayerDiagnosticsPanel() {
   if (!enabled) return null;
 
   return (
-    <aside className="fixed bottom-4 left-4 z-[160] max-h-[70vh] w-[min(380px,calc(100vw-2rem))] overflow-auto rounded-lg border border-lavender-300 bg-white/95 p-3 text-xs font-bold text-ink-800 shadow-2xl">
+    <aside className="pointer-events-none fixed bottom-4 left-4 z-[160] max-h-[70vh] w-[min(380px,calc(100vw-2rem))] overflow-auto rounded-lg border border-lavender-300 bg-white/95 p-3 text-xs font-bold text-ink-800 shadow-2xl">
       <p className="mb-2 text-[11px] font-black uppercase tracking-normal text-lavender-600">Multiplayer diagnostics</p>
       <dl className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-2 gap-y-1">
         <dt>Supabase</dt><dd className="truncate font-mono">{snapshot.supabaseHost ?? "not configured"}</dd>

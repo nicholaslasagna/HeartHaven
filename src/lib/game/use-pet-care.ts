@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  DEFAULT_CARE_PROFILE,
   PET_VITALS_EVENT,
   getActionCooldownMs,
   getCooldownRemaining,
@@ -30,9 +31,13 @@ const CARE_ACTIONS: PetCareAction[] = ["feed", "play", "pamper", "rest"];
 export function usePetCare() {
   const [vitals, setVitals] = useState<PetVitals | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [careProfile, setCareProfile] = useState(DEFAULT_CARE_PROFILE);
 
   useEffect(() => {
-    const sync = () => setVitals(getPetVitals());
+    const sync = () => {
+      setVitals(getPetVitals());
+      setCareProfile(getPetCareProfile());
+    };
     sync();
 
     const tick = window.setInterval(() => {
@@ -80,7 +85,6 @@ export function usePetCare() {
 
   const mood = vitals ? getPetMood(vitals) : "content";
   const neediest = vitals ? getNeediestVital(vitals) : "happiness";
-  const careProfile = getPetCareProfile();
 
   return useMemo(
     () => ({ vitals, mood, neediest, cooldowns, care, feedFood, careProfile, ready: vitals !== null }),

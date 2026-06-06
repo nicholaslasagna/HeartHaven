@@ -5,6 +5,8 @@ import type { DragEvent } from "react";
 import Image from "next/image";
 import type Phaser from "phaser";
 import {
+  getKeeperHairColor,
+  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
@@ -2084,19 +2086,20 @@ export function GardenCanvas({
         }
 
         private applyKeeperLayerTints() {
-          // The painterly keeper sheet is the art source of truth. Hide the
-          // old tint-mask layers so skin/hair choices never paint glitched
-          // blotches over the character while generated variants are pending.
+          const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(this.keeperCustomization.skinId).color).color;
+          const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(this.keeperCustomization.hairColorId).color).color;
           this.avatarSprite
             ?.clearTint()
             .setAlpha(1);
           this.avatarSkinSprite
             ?.clearTint()
-            .setAlpha(0)
+            .setTintFill(skinColor)
+            .setAlpha(0.86)
             .setDepth((this.avatarSprite?.depth ?? 0) + 1);
           this.avatarHairSprite
             ?.clearTint()
-            .setAlpha(0)
+            .setTintFill(hairColor)
+            .setAlpha(0.94)
             .setDepth((this.avatarSprite?.depth ?? 0) + 2);
         }
 
@@ -2394,14 +2397,18 @@ export function GardenCanvas({
         }
 
         private applyRemoteKeeperTints(remote: RemoteGardenAvatarObject) {
+          const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(remote.skinId).color).color;
+          const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(remote.hairColorId).color).color;
           remote.sprite.clearTint().setAlpha(1);
           remote.skinSprite
             .clearTint()
-            .setAlpha(0)
+            .setTintFill(skinColor)
+            .setAlpha(0.86)
             .setDepth(remote.sprite.depth + 1);
           remote.hairSprite
             .clearTint()
-            .setAlpha(0)
+            .setTintFill(hairColor)
+            .setAlpha(0.94)
             .setDepth(remote.sprite.depth + 2);
         }
 
@@ -3159,7 +3166,7 @@ export function GardenCanvas({
               .setVisible(!isFlyingPetSpecies(custom.petSpeciesId));
             petContainer.add([petSprite, petAccessorySprite]);
 
-            this.remoteAvatars.set(player.id, {
+            const remoteAvatar: RemoteGardenAvatarObject = {
               container,
               shadow,
               sprite,
@@ -3184,7 +3191,9 @@ export function GardenCanvas({
               petFacing: remotePetFacing,
               controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
-            });
+            };
+            this.remoteAvatars.set(player.id, remoteAvatar);
+            this.applyRemoteKeeperTints(remoteAvatar);
           });
         }
 

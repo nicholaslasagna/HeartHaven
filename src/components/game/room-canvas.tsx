@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
+  getKeeperHairColor,
+  getKeeperSkinTone,
   getPetAccessory,
   getPetTone,
   gaitPhase,
@@ -1402,18 +1404,18 @@ export function RoomCanvas({
         }
 
         private applyKeeperLayerTints() {
-          // The current keeper sheet is full painterly art. The old mask tint
-          // pass produced visible "paint spill" over the face/hair on several
-          // skin and hair choices, so we keep those layers transparent until
-          // full generated variant sheets replace them.
+          const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(this.keeperCustomization.skinId).color).color;
+          const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(this.keeperCustomization.hairColorId).color).color;
           this.avatarSprite?.clearTint().setAlpha(1);
           this.avatarSkinSprite
             ?.clearTint()
-            .setAlpha(0)
+            .setTintFill(skinColor)
+            .setAlpha(0.86)
             .setDepth((this.avatarSprite?.depth ?? 0) + 1);
           this.avatarHairSprite
             ?.clearTint()
-            .setAlpha(0)
+            .setTintFill(hairColor)
+            .setAlpha(0.94)
             .setDepth((this.avatarSprite?.depth ?? 0) + 2);
         }
 
@@ -1727,16 +1729,18 @@ export function RoomCanvas({
         }
 
         private applyRemoteKeeperTints(remote: RemoteAvatarObject) {
-          // Match local keeper logic: keep legacy tint masks hidden so remote
-          // avatars do not get the broken blotchy overlay either.
+          const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(remote.skinId).color).color;
+          const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(remote.hairColorId).color).color;
           remote.sprite.clearTint().setAlpha(1);
           remote.skinSprite
             .clearTint()
-            .setAlpha(0)
+            .setTintFill(skinColor)
+            .setAlpha(0.86)
             .setDepth(remote.sprite.depth + 1);
           remote.hairSprite
             .clearTint()
-            .setAlpha(0)
+            .setTintFill(hairColor)
+            .setAlpha(0.94)
             .setDepth(remote.sprite.depth + 2);
         }
 
@@ -1964,7 +1968,7 @@ export function RoomCanvas({
               .setVisible(!isFlyingPetSpecies(custom.petSpeciesId));
             petContainer.add([petSprite, petAccessorySprite]);
 
-            this.remoteAvatars.set(player.id, {
+            const remoteAvatar: RemoteAvatarObject = {
               container,
               shadow,
               sprite,
@@ -1989,7 +1993,9 @@ export function RoomCanvas({
               petFacing: remotePetFacing,
               controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
-            });
+            };
+            this.remoteAvatars.set(player.id, remoteAvatar);
+            this.applyRemoteKeeperTints(remoteAvatar);
           });
         }
 

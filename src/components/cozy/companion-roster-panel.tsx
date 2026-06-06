@@ -23,9 +23,25 @@ import {
   renameCompanion,
   selectCompanion,
   type CompanionRecord,
+  type CompanionRosterState,
 } from "@/lib/game/companion-roster";
 import { usePlayerProgression } from "@/lib/game/use-player-progression";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+
+const fallbackRosterState: CompanionRosterState = {
+  activeId: "companion-casper",
+  companions: [
+    {
+      id: "companion-casper",
+      name: "Casper",
+      speciesId: "kitten",
+      toneId: "cream",
+      accessory: "moonberry-bow",
+      adoptedAt: "starter",
+      active: true,
+    },
+  ],
+};
 
 function previewFor(companion: CompanionRecord) {
   return `/game-assets/generated/pet-art-preview-${companion.speciesId}.png`;
@@ -33,7 +49,7 @@ function previewFor(companion: CompanionRecord) {
 
 export function CompanionRosterPanel() {
   const progression = usePlayerProgression();
-  const [state, setState] = useState(getCompanionRoster);
+  const [state, setState] = useState<CompanionRosterState>(fallbackRosterState);
   const [newName, setNewName] = useState("Moonberry");
   const [speciesId, setSpeciesId] = useState<PetSpeciesId>("bunny");
   const [toneId, setToneId] = useState<PetToneId>("cream");

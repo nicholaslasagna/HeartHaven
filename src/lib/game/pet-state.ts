@@ -130,7 +130,7 @@ export const PET_NAP_DURATION_MS = 5 * 60_000;
 /** How much energy a completed nap restores (as a percent of the 0-100 bar). */
 export const PET_NAP_ENERGY_RESTORE = 25;
 
-const DEFAULT_CARE_PROFILE: CompanionCareProfile = {
+export const DEFAULT_CARE_PROFILE: CompanionCareProfile = {
   speciesId: "default",
   label: "Balanced companion",
   careStyle: "Balanced needs. Snack, play, pamper, and rest all matter evenly.",

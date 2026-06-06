@@ -30,6 +30,15 @@ import {
 } from "@/lib/game/avatar-customization";
 
 export function KeeperCustomizerCard() {
+  const keeperRef = useRef<KeeperCustomization>({
+    characterId: "rose-waves",
+    bodyId: "female",
+    skinId: "fair",
+    hairStyleId: "long-waves",
+    hairColorId: "chestnut",
+    paletteId: "blush",
+    outfitId: "cardigan",
+  });
   const [characterId, setCharacterId] = useState<KeeperCharacterId>("rose-waves");
   const [bodyId, setBodyId] = useState<KeeperBodyId>("female");
   const [skinId, setSkinId] = useState<KeeperSkinId>("fair");
@@ -45,28 +54,28 @@ export function KeeperCustomizerCard() {
   const hairStyle = KEEPER_HAIR_STYLES.find((item) => item.id === hairStyleId) ?? KEEPER_HAIR_STYLES[0];
   const character = getKeeperCharacterPreset(characterId);
 
+  function applyKeeperCustomization(customization: KeeperCustomization) {
+    keeperRef.current = customization;
+    setCharacterId(customization.characterId);
+    setBodyId(customization.bodyId);
+    setSkinId(customization.skinId);
+    setHairStyleId(customization.hairStyleId);
+    setHairColorId(customization.hairColorId);
+    setPaletteId(customization.paletteId);
+    setOutfitId(customization.outfitId);
+  }
+
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
       const saved = readKeeperCustomization();
-      setCharacterId(saved.characterId);
-      setBodyId(saved.bodyId);
-      setSkinId(saved.skinId);
-      setHairStyleId(saved.hairStyleId);
-      setHairColorId(saved.hairColorId);
-      setPaletteId(saved.paletteId);
-      setOutfitId(saved.outfitId);
+      applyKeeperCustomization(saved);
     });
+    const loadSequence = saveSequenceRef.current;
     void loadKeeperCustomizationFromServer().then((result) => {
-      if (!active || !result.ok) return;
-      setCharacterId(result.customization.characterId);
-      setBodyId(result.customization.bodyId);
-      setSkinId(result.customization.skinId);
-      setHairStyleId(result.customization.hairStyleId);
-      setHairColorId(result.customization.hairColorId);
-      setPaletteId(result.customization.paletteId);
-      setOutfitId(result.customization.outfitId);
+      if (!active || !result.ok || saveSequenceRef.current !== loadSequence) return;
+      applyKeeperCustomization(result.customization);
       setNotice("Loaded your saved keeper.");
     });
     return () => {
@@ -97,22 +106,17 @@ export function KeeperCustomizerCard() {
     paletteId: KeeperPaletteId;
     outfitId: KeeperOutfitId;
   }>) {
+    const current = keeperRef.current;
     const customization = {
-      characterId: next.characterId ?? characterId,
-      bodyId: next.bodyId ?? bodyId,
-      skinId: next.skinId ?? skinId,
-      hairStyleId: next.hairStyleId ?? hairStyleId,
-      hairColorId: next.hairColorId ?? hairColorId,
-      paletteId: next.paletteId ?? paletteId,
-      outfitId: next.outfitId ?? outfitId,
+      characterId: next.characterId ?? current.characterId,
+      bodyId: next.bodyId ?? current.bodyId,
+      skinId: next.skinId ?? current.skinId,
+      hairStyleId: next.hairStyleId ?? current.hairStyleId,
+      hairColorId: next.hairColorId ?? current.hairColorId,
+      paletteId: next.paletteId ?? current.paletteId,
+      outfitId: next.outfitId ?? current.outfitId,
     };
-    setCharacterId(customization.characterId);
-    setBodyId(customization.bodyId);
-    setSkinId(customization.skinId);
-    setHairStyleId(customization.hairStyleId);
-    setHairColorId(customization.hairColorId);
-    setPaletteId(customization.paletteId);
-    setOutfitId(customization.outfitId);
+    applyKeeperCustomization(customization);
     writeKeeperCustomization(customization);
     persistKeeper(customization);
   }
@@ -127,18 +131,6 @@ export function KeeperCustomizerCard() {
       paletteId: preset.paletteId,
       outfitId: preset.outfitId,
     });
-  }
-
-  function chooseClosestCharacter(
-    predicate: (preset: (typeof KEEPER_CHARACTER_PRESETS)[number]) => boolean,
-    fallbackNotice: string,
-  ) {
-    const preset = KEEPER_CHARACTER_PRESETS.find(predicate);
-    if (preset) {
-      chooseCharacter(preset);
-      return;
-    }
-    setNotice(fallbackNotice);
   }
 
   return (
@@ -179,8 +171,10 @@ export function KeeperCustomizerCard() {
 
             <div className="mt-4 grid gap-2 rounded-2xl border border-white/70 bg-white/55 p-3 shadow-sm sm:grid-cols-3">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-normal text-ink-500">Character</p>
-                <p className="mt-1 font-display text-lg text-ink-900">{character.label}</p>
+                <p className="text-[11px] font-black uppercase tracking-normal text-ink-500">Body</p>
+                <p className="mt-1 font-display text-lg text-ink-900">
+                  {KEEPER_BODY_TYPES.find((item) => item.id === bodyId)?.label ?? character.label}
+                </p>
               </div>
               <div>
                 <p className="text-[11px] font-black uppercase tracking-normal text-ink-500">Outfit</p>
@@ -203,10 +197,10 @@ export function KeeperCustomizerCard() {
         <div className="relative grid gap-4 border-t border-white/70 bg-white/42 p-5">
           <section className="rounded-2xl border border-cream-300/80 bg-cream-50/70 p-3">
             <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-ink-500">
-              <Sparkles className="size-3.5" /> Complete characters
+              <Sparkles className="size-3.5" /> Starting looks
             </p>
             <p className="mt-1 text-xs font-bold leading-5 text-ink-600">
-              Pick a finished keeper design with its own face, hair, outfit, and skin tone.
+              Pick a finished look as a starting point, then change body, outfit, skin, hair, and colors independently.
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {KEEPER_CHARACTER_PRESETS.map((item) => (
@@ -251,12 +245,7 @@ export function KeeperCustomizerCard() {
                         : "border-cream-300 bg-white/75 text-ink-700 hover:border-blush-200"
                     }`}
                     key={item.id}
-                    onClick={() =>
-                      chooseClosestCharacter(
-                        (preset) => preset.bodyId === item.id,
-                        "That body type is coming to the painted roster next.",
-                      )
-                    }
+                    onClick={() => updateKeeper({ bodyId: item.id })}
                     type="button"
                   >
                     <UserRound className="size-3" /> {item.label}
@@ -279,12 +268,7 @@ export function KeeperCustomizerCard() {
                         : "border-cream-300 bg-white/75 text-ink-700 hover:border-blush-200"
                     }`}
                     key={item.id}
-                    onClick={() =>
-                      chooseClosestCharacter(
-                        (preset) => preset.outfitId === item.id,
-                        "That outfit is coming to the painted roster next.",
-                      )
-                    }
+                    onClick={() => updateKeeper({ outfitId: item.id })}
                     type="button"
                   >
                     {outfitId === item.id ? <Sparkles className="size-3" /> : <Shirt className="size-3" />}
@@ -311,12 +295,7 @@ export function KeeperCustomizerCard() {
                         skinId === item.id ? "border-ink-900 shadow-sm" : "border-white hover:border-cream-300"
                       }`}
                       key={item.id}
-                      onClick={() =>
-                        chooseClosestCharacter(
-                          (preset) => preset.skinId === item.id,
-                          "That skin tone is coming to the painted roster next.",
-                        )
-                      }
+                      onClick={() => updateKeeper({ skinId: item.id })}
                       style={{ backgroundColor: item.color }}
                       type="button"
                     />
@@ -335,12 +314,7 @@ export function KeeperCustomizerCard() {
                           : "border-cream-300 bg-white/75 text-ink-700 hover:border-garden-200"
                       }`}
                       key={item.id}
-                      onClick={() =>
-                        chooseClosestCharacter(
-                          (preset) => preset.hairStyleId === item.id,
-                          "That hairstyle is coming to the painted roster next.",
-                        )
-                      }
+                      onClick={() => updateKeeper({ hairStyleId: item.id })}
                       type="button"
                     >
                       {item.label}
@@ -359,12 +333,7 @@ export function KeeperCustomizerCard() {
                         hairColorId === item.id ? "border-ink-900 shadow-sm" : "border-white hover:border-cream-300"
                       }`}
                       key={item.id}
-                      onClick={() =>
-                        chooseClosestCharacter(
-                          (preset) => preset.hairColorId === item.id,
-                          "That hair color is coming to the painted roster next.",
-                        )
-                      }
+                      onClick={() => updateKeeper({ hairColorId: item.id })}
                       style={{ backgroundColor: item.color }}
                       type="button"
                     />
@@ -383,12 +352,7 @@ export function KeeperCustomizerCard() {
                       paletteId === item.id ? "border-ink-900 shadow-sm" : "border-white hover:border-cream-300"
                     }`}
                     key={item.id}
-                    onClick={() =>
-                      chooseClosestCharacter(
-                        (preset) => preset.paletteId === item.id,
-                        "That palette is coming to the painted roster next.",
-                      )
-                    }
+                    onClick={() => updateKeeper({ paletteId: item.id })}
                     style={{ backgroundColor: item.color }}
                     type="button"
                   />
