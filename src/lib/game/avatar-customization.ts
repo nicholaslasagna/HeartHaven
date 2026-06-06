@@ -576,6 +576,18 @@ export function getKeeperCharacterPreset(id: KeeperCharacterId) {
   return KEEPER_CHARACTER_PRESETS.find((preset) => preset.id === id) ?? KEEPER_CHARACTER_PRESETS[0];
 }
 
+export function isKeeperPresetExactMatch(customization: Pick<KeeperCustomization, "bodyId" | "characterId" | "hairColorId" | "hairStyleId" | "outfitId" | "paletteId" | "skinId">) {
+  const preset = getKeeperCharacterPreset(customization.characterId);
+  return (
+    preset.bodyId === customization.bodyId &&
+    preset.skinId === customization.skinId &&
+    preset.hairStyleId === customization.hairStyleId &&
+    preset.hairColorId === customization.hairColorId &&
+    preset.paletteId === customization.paletteId &&
+    preset.outfitId === customization.outfitId
+  );
+}
+
 export function getKeeperSkinTone(id: KeeperSkinId) {
   return KEEPER_SKIN_TONES.find((skin) => skin.id === id) ?? KEEPER_SKIN_TONES[0];
 }

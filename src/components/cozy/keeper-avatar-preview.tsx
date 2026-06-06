@@ -2,8 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import {
+  getKeeperCharacterPreset,
   getKeeperHairColor,
   getKeeperSkinTone,
+  isKeeperPresetExactMatch,
   keeperFrame,
   keeperHairFrame,
   keeperSkinFrame,
@@ -55,7 +57,7 @@ function loadPreviewImage(src: string) {
 }
 
 export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
-  const { bodyId, hairColorId, hairStyleId, outfitId, paletteId, pose = "idle", skinId, className } = props;
+  const { bodyId, characterId, hairColorId, hairStyleId, outfitId, paletteId, pose = "idle", skinId, className } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -65,11 +67,22 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const [baseImage, skinImage, hairImage] = await Promise.all([
-        loadPreviewImage(baseSheetPath),
-        loadPreviewImage(skinSheetPath),
-        loadPreviewImage(hairSheetPath),
-      ]);
+      const usePresetArt = isKeeperPresetExactMatch({
+        bodyId,
+        characterId,
+        hairColorId,
+        hairStyleId,
+        outfitId,
+        paletteId,
+        skinId,
+      });
+      const [baseImage, skinImage, hairImage] = usePresetArt
+        ? [await loadPreviewImage(getKeeperCharacterPreset(characterId).image), null, null]
+        : await Promise.all([
+          loadPreviewImage(baseSheetPath),
+          loadPreviewImage(skinSheetPath),
+          loadPreviewImage(hairSheetPath),
+        ]);
       if (!active) return;
       ctx.clearRect(0, 0, frameWidth, frameHeight);
       ctx.save();
@@ -79,32 +92,36 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
       ctx.translate(frameWidth / 2, frameHeight / 2 + verticalOffset);
       ctx.rotate(rotation);
       ctx.scale(1, scaleY);
-      drawSheetFrame(ctx, baseImage, keeperFrame(paletteId, pose, outfitId, bodyId), -frameWidth / 2, -frameHeight / 2);
-      drawTintedSheetFrame(
-        ctx,
-        skinImage,
-        keeperSkinFrame(pose, outfitId, bodyId),
-        getKeeperSkinTone(skinId).color,
-        -frameWidth / 2,
-        -frameHeight / 2,
-        0.86,
-      );
-      drawTintedSheetFrame(
-        ctx,
-        hairImage,
-        keeperHairFrame(hairStyleId, pose, bodyId),
-        getKeeperHairColor(hairColorId).color,
-        -frameWidth / 2,
-        -frameHeight / 2,
-        0.94,
-      );
+      if (usePresetArt) {
+        ctx.drawImage(baseImage, -frameWidth / 2, -frameHeight / 2, frameWidth, frameHeight);
+      } else if (skinImage && hairImage) {
+        drawSheetFrame(ctx, baseImage, keeperFrame(paletteId, pose, outfitId, bodyId), -frameWidth / 2, -frameHeight / 2);
+        drawTintedSheetFrame(
+          ctx,
+          skinImage,
+          keeperSkinFrame(pose, outfitId, bodyId),
+          getKeeperSkinTone(skinId).color,
+          -frameWidth / 2,
+          -frameHeight / 2,
+          0.86,
+        );
+        drawTintedSheetFrame(
+          ctx,
+          hairImage,
+          keeperHairFrame(hairStyleId, pose, bodyId),
+          getKeeperHairColor(hairColorId).color,
+          -frameWidth / 2,
+          -frameHeight / 2,
+          0.94,
+        );
+      }
       ctx.restore();
     }
     void renderPreview();
     return () => {
       active = false;
     };
-  }, [bodyId, hairColorId, hairStyleId, outfitId, paletteId, pose, skinId]);
+  }, [bodyId, characterId, hairColorId, hairStyleId, outfitId, paletteId, pose, skinId]);
 
   return (
     <canvas
