@@ -5,18 +5,14 @@ import type Phaser from "phaser";
 import {
   getKeeperHairColor,
   getKeeperSkinTone,
-  isKeeperPresetExactMatch,
   getPetAccessory,
   getPetTone,
   gaitPhase,
   keeperFrame,
-  keeperPlayableTextureKey,
-  keeperPlayableTexturePath,
   keeperGaitPose,
   keeperHairFrame,
   keeperSkinFrame,
   isFlyingPetSpecies,
-  KEEPER_CHARACTER_PRESETS,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
   petAccessoryFrame,
@@ -139,11 +135,6 @@ type FurnitureObject = {
   /** Reference to the breathing bob tween so we can pause/resume it during drag. */
   bobTween?: Phaser.Tweens.Tween;
 };
-
-type KeeperRenderableCustomization = Pick<
-  KeeperCustomization,
-  "bodyId" | "characterId" | "hairColorId" | "hairStyleId" | "outfitId" | "paletteId" | "skinId"
->;
 
 type ActiveFurnitureInteraction = {
   placementId: string;
@@ -387,12 +378,6 @@ export function RoomCanvas({
           this.load.image("room-floor-surface", roomSurfaces.floor.asset);
           this.load.image("keeper-sprite", "/game-assets/generated/keeper-sprite.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
-          KEEPER_CHARACTER_PRESETS.forEach((preset) => {
-            this.load.spritesheet(keeperPlayableTextureKey(preset.id), keeperPlayableTexturePath(preset.id), {
-              frameWidth: 256,
-              frameHeight: 384,
-            });
-          });
           this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-base-sheet.png", {
             frameWidth: 256,
             frameHeight: 384,
@@ -1087,20 +1072,17 @@ export function RoomCanvas({
             )
             .setDisplaySize(98, 147)
             .setAlpha(0.92);
-          const usePresetArt = isKeeperPresetExactMatch(this.keeperCustomization);
           this.avatarSprite = this.add
             .sprite(
               0,
               -66,
-              usePresetArt ? keeperPlayableTextureKey(this.keeperCustomization.characterId) : "keeper-animation-sheet",
-              usePresetArt
-                ? 0
-                : keeperFrame(
-                    this.keeperCustomization.paletteId,
-                    "idle",
-                    this.keeperCustomization.outfitId,
-                    this.keeperCustomization.bodyId,
-                  ),
+              "keeper-animation-sheet",
+              keeperFrame(
+                this.keeperCustomization.paletteId,
+                "idle",
+                this.keeperCustomization.outfitId,
+                this.keeperCustomization.bodyId,
+              ),
             )
             .setDisplaySize(98, 147);
           this.avatarHairSprite = this.add
@@ -1398,35 +1380,21 @@ export function RoomCanvas({
 
         private setAvatarPose(pose: KeeperPose) {
           this.avatarPose = pose;
-          this.setKeeperBaseSprite(this.avatarSprite, this.keeperCustomization, pose);
+          this.avatarSprite?.setTexture(
+            "keeper-animation-sheet",
+            keeperFrame(
+              this.keeperCustomization.paletteId,
+              pose,
+              this.keeperCustomization.outfitId,
+              this.keeperCustomization.bodyId,
+            ),
+          );
           this.avatarSkinSprite?.setFrame(keeperSkinFrame(pose, this.keeperCustomization.outfitId, this.keeperCustomization.bodyId));
           this.avatarHairSprite?.setFrame(keeperHairFrame(this.keeperCustomization.hairStyleId, pose, this.keeperCustomization.bodyId));
           this.applyKeeperLayerTints();
         }
 
-        private setKeeperBaseSprite(
-          sprite: Phaser.GameObjects.Sprite | undefined,
-          customization: KeeperRenderableCustomization,
-          pose: KeeperPose,
-        ) {
-          if (!sprite) return;
-          if (isKeeperPresetExactMatch(customization)) {
-            sprite.setTexture(keeperPlayableTextureKey(customization.characterId), 0);
-            return;
-          }
-          sprite.setTexture(
-            "keeper-animation-sheet",
-            keeperFrame(customization.paletteId, pose, customization.outfitId, customization.bodyId),
-          );
-        }
-
         private applyKeeperLayerTints() {
-          if (isKeeperPresetExactMatch(this.keeperCustomization)) {
-            this.avatarSprite?.clearTint().setAlpha(1);
-            this.avatarSkinSprite?.clearTint().setAlpha(0);
-            this.avatarHairSprite?.clearTint().setAlpha(0);
-            return;
-          }
           const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(this.keeperCustomization.skinId).color).color;
           const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(this.keeperCustomization.hairColorId).color).color;
           this.avatarSprite?.clearTint().setAlpha(1);
@@ -1738,7 +1706,7 @@ export function RoomCanvas({
         }
 
         private setRemoteKeeperFrame(remote: RemoteAvatarObject, pose: KeeperPose) {
-          this.setKeeperBaseSprite(remote.sprite, remote, pose);
+          remote.sprite.setTexture("keeper-animation-sheet", keeperFrame(remote.paletteId, pose, remote.outfitId, remote.bodyId));
           remote.skinSprite.setFrame(keeperSkinFrame(pose, remote.outfitId, remote.bodyId));
           remote.hairSprite.setFrame(keeperHairFrame(remote.hairStyleId, pose, remote.bodyId));
           this.applyRemoteKeeperTints(remote);
@@ -1752,12 +1720,6 @@ export function RoomCanvas({
         }
 
         private applyRemoteKeeperTints(remote: RemoteAvatarObject) {
-          if (isKeeperPresetExactMatch(remote)) {
-            remote.sprite.clearTint().setAlpha(1);
-            remote.skinSprite.clearTint().setAlpha(0);
-            remote.hairSprite.clearTint().setAlpha(0);
-            return;
-          }
           const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(remote.skinId).color).color;
           const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(remote.hairColorId).color).color;
           remote.sprite.clearTint().setAlpha(1);
@@ -1955,14 +1917,8 @@ export function RoomCanvas({
               .setDisplaySize(94, 141)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
-            const usePresetArt = isKeeperPresetExactMatch(custom);
             const sprite = this.add
-              .sprite(
-                0,
-                -66,
-                usePresetArt ? keeperPlayableTextureKey(custom.characterId) : "keeper-animation-sheet",
-                usePresetArt ? 0 : keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId),
-              )
+              .sprite(0, -66, "keeper-animation-sheet", keeperFrame(custom.paletteId, "idle", custom.outfitId, custom.bodyId))
               .setDisplaySize(94, 141)
               .setAlpha(0.94)
               .setFlipX(facingLeft);

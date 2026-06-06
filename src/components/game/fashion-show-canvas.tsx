@@ -6,13 +6,9 @@ import {
   getKeeperHairColor,
   getKeeperSkinTone,
   getPetTone,
-  isKeeperPresetExactMatch,
-  KEEPER_CHARACTER_PRESETS,
   keeperGaitPose,
   keeperFrame,
   keeperHairFrame,
-  keeperPlayableTextureKey,
-  keeperPlayableTexturePath,
   keeperSkinFrame,
   petFrame,
   readKeeperCustomization,
@@ -160,7 +156,6 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         private feedbackText!: Phaser.GameObjects.Text;
         private walkButton!: Phaser.GameObjects.Container;
         private keeperCustomization: KeeperCustomization = readKeeperCustomization();
-        private currentDisplayUsesPreset = false;
         private choiceCards: FashionChoiceCard[] = [];
         private rewardLayer?: Phaser.GameObjects.Container;
 
@@ -169,12 +164,6 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         }
 
         preload() {
-          for (const preset of KEEPER_CHARACTER_PRESETS) {
-            this.load.spritesheet(keeperPlayableTextureKey(preset.id), keeperPlayableTexturePath(preset.id), {
-              frameWidth: 256,
-              frameHeight: 384,
-            });
-          }
           this.load.spritesheet("keeper-animation-sheet", "/game-assets/generated/keeper-custom-base-sheet.png", {
             frameWidth: 256,
             frameHeight: 384,
@@ -357,7 +346,6 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         private createPerformer() {
           const keeperCustomization = readKeeperCustomization();
           this.keeperCustomization = keeperCustomization;
-          this.currentDisplayUsesPreset = isKeeperPresetExactMatch(keeperCustomization);
           const petCustomization = readPetCustomization();
           this.keeperSkinSprite = this.add
             .sprite(332, 382, "keeper-skin-mask-sheet", keeperSkinFrame("idle", keeperCustomization.outfitId, keeperCustomization.bodyId))
@@ -368,10 +356,8 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
             .sprite(
               332,
               382,
-              this.currentDisplayUsesPreset ? keeperPlayableTextureKey(keeperCustomization.characterId) : "keeper-animation-sheet",
-              this.currentDisplayUsesPreset
-                ? 0
-                : keeperFrame(keeperCustomization.paletteId, "idle", keeperCustomization.outfitId, keeperCustomization.bodyId),
+              "keeper-animation-sheet",
+              keeperFrame(keeperCustomization.paletteId, "idle", keeperCustomization.outfitId, keeperCustomization.bodyId),
             )
             .setDisplaySize(150, 225)
             .setDepth(420);
@@ -396,12 +382,6 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         }
 
         private applyKeeperLayerTints() {
-          if (this.currentDisplayUsesPreset) {
-            this.keeperSkinSprite?.clearTint().setAlpha(0);
-            this.keeperSprite?.clearTint().setAlpha(1);
-            this.keeperHairSprite?.clearTint().setAlpha(0);
-            return;
-          }
           const skinColor = PhaserModule.Display.Color.HexStringToColor(getKeeperSkinTone(this.keeperCustomization.skinId).color).color;
           const hairColor = PhaserModule.Display.Color.HexStringToColor(getKeeperHairColor(this.keeperCustomization.hairColorId).color).color;
           this.keeperSkinSprite?.clearTint().setTintFill(skinColor).setAlpha(0.86);
@@ -410,16 +390,10 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         }
 
         private setKeeperLook(paletteId: KeeperPaletteId, pose: KeeperPose, outfitId: KeeperOutfitId) {
-          const displayCustomization = { ...this.keeperCustomization, paletteId, outfitId };
-          this.currentDisplayUsesPreset = isKeeperPresetExactMatch(displayCustomization);
-          if (this.currentDisplayUsesPreset) {
-            this.keeperSprite.setTexture(keeperPlayableTextureKey(displayCustomization.characterId), 0);
-          } else {
-            this.keeperSprite.setTexture(
-              "keeper-animation-sheet",
-              keeperFrame(paletteId, pose, outfitId, this.keeperCustomization.bodyId),
-            );
-          }
+          this.keeperSprite.setTexture(
+            "keeper-animation-sheet",
+            keeperFrame(paletteId, pose, outfitId, this.keeperCustomization.bodyId),
+          );
           this.keeperSkinSprite.setFrame(keeperSkinFrame(pose, outfitId, this.keeperCustomization.bodyId));
           this.keeperHairSprite.setFrame(keeperHairFrame(this.keeperCustomization.hairStyleId, pose, this.keeperCustomization.bodyId));
           this.applyKeeperLayerTints();
