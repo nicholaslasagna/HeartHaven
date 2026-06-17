@@ -616,6 +616,8 @@ export function GardenCanvas({
         private lastSentPetPosition: { x: number; y: number } | null = null;
         private footstepTimer = 0;
         private lastSentPosition = getAvatarStartPosition(variant);
+        private plotObjects: Phaser.GameObjects.GameObject[] = [];
+        private plotsUpdatedHandler?: (event: Event) => void;
         private selectedDecor?: GardenDecorPlacement;
         private decorBubble?: Phaser.GameObjects.Container;
         private decorObjects = new Map<string, Phaser.GameObjects.Container>();
@@ -935,18 +937,38 @@ export function GardenCanvas({
           // Water is part of the bare generated terrain so it stays pixel crisp across the scrollable map.
         }
 
-        private drawPlots() {
+        private drawPlots(nextPlots = plotsRef.current) {
           const positions = getPlotPositions(variant);
 
-          plots.forEach((plot, index) => {
+          nextPlots.forEach((plot, index) => {
             const [x, y] = positions[index % positions.length];
             this.createPlot(plot, x, y);
           });
         }
 
+        private clearPlots() {
+          this.plotObjects.forEach((object) => {
+            this.tweens.killTweensOf(object);
+            const maybeContainer = object as Phaser.GameObjects.Container;
+            if (Array.isArray(maybeContainer.list)) {
+              maybeContainer.list.forEach((child) => this.tweens.killTweensOf(child));
+            }
+            object.destroy();
+          });
+          this.plotObjects = [];
+        }
+
+        private syncPlots(nextPlots: GardenPlotState[]) {
+          plotsRef.current = nextPlots;
+          this.clearPlots();
+          this.drawPlots(nextPlots);
+          this.sortDepths();
+        }
+
         private createPlot(plot: GardenPlotState, x: number, y: number) {
           const color = PhaserModule.Display.Color.HexStringToColor(plot.accent).color;
           const container = this.add.container(x, y).setDepth(y);
+          this.plotObjects.push(container);
           container.add(this.add.ellipse(0, 30, 118, 46, 0x3a2a2a, 0.12));
           container.add(this.add.ellipse(0, 16, 126, 58, 0xead9b5).setStrokeStyle(3, 0xa06c42, 0.32));
           container.add(this.add.ellipse(0, 12, 96, 38, 0x8b5e3c, 0.22));
@@ -994,6 +1016,7 @@ export function GardenCanvas({
           );
 
           const zone = this.add.zone(x, y, 138, 106).setInteractive({ useHandCursor: true });
+          this.plotObjects.push(zone);
           zone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
             pointer.event.stopPropagation();
             const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? x, this.avatar?.y ?? y, x, y);
@@ -1933,6 +1956,10 @@ export function GardenCanvas({
             const ids = (event as CustomEvent<{ ids?: string[] }>).detail?.ids;
             this.updatePendingDecor(Array.isArray(ids) ? ids : []);
           };
+          this.plotsUpdatedHandler = (event: Event) => {
+            const nextPlots = (event as CustomEvent<{ plots?: GardenPlotState[] }>).detail?.plots;
+            if (Array.isArray(nextPlots)) this.syncPlots(nextPlots);
+          };
           this.sunshineHandler = () => this.applySunshinePulse();
           this.timeOfDayHandler = (event: Event) => {
             const nextTime = (event as CustomEvent<{ timeOfDay?: GardenTimeOfDay }>).detail?.timeOfDay;
@@ -1968,6 +1995,7 @@ export function GardenCanvas({
           window.addEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
           window.addEventListener("hearthaven:garden-decor-updated", this.decorUpdatedHandler);
           window.addEventListener("hearthaven:garden-pending-decor", this.pendingDecorHandler);
+          window.addEventListener("hearthaven:garden-plots-updated", this.plotsUpdatedHandler);
           window.addEventListener("hearthaven:partner-sunshine", this.sunshineHandler);
           window.addEventListener("hearthaven:garden-time", this.timeOfDayHandler);
           window.addEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
@@ -1982,6 +2010,7 @@ export function GardenCanvas({
             if (this.addDecorHandler) window.removeEventListener("hearthaven:garden-add-decor", this.addDecorHandler);
             if (this.decorUpdatedHandler) window.removeEventListener("hearthaven:garden-decor-updated", this.decorUpdatedHandler);
             if (this.pendingDecorHandler) window.removeEventListener("hearthaven:garden-pending-decor", this.pendingDecorHandler);
+            if (this.plotsUpdatedHandler) window.removeEventListener("hearthaven:garden-plots-updated", this.plotsUpdatedHandler);
             if (this.sunshineHandler) window.removeEventListener("hearthaven:partner-sunshine", this.sunshineHandler);
             if (this.timeOfDayHandler) window.removeEventListener("hearthaven:garden-time", this.timeOfDayHandler);
             if (this.keeperCustomizationHandler) window.removeEventListener(KEEPER_CUSTOMIZATION_EVENT, this.keeperCustomizationHandler);
@@ -2004,6 +2033,7 @@ export function GardenCanvas({
             // after the scene tears down.
             this.petBobTween?.stop();
             this.petBobTween = undefined;
+            this.clearPlots();
           };
           this.events.once("shutdown", cleanup);
           this.events.once("destroy", cleanup);
@@ -4151,7 +4181,7 @@ export function GardenCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, [activeEvent, canEditGarden, onAvatarMove, plots, timeOfDayRef, variant]);
+  }, [activeEvent, canEditGarden, onAvatarMove, timeOfDayRef, variant]);
 
   function dispatchAddDecor(kind: GardenDecorKind, point?: { clientX: number; clientY: number }) {
     window.dispatchEvent(new CustomEvent("hearthaven:garden-add-decor", { detail: { kind, ...point } }));
