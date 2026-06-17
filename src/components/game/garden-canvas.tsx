@@ -8,7 +8,7 @@ import {
   getPetAccessory,
   getPetTone,
   gaitPhase,
-  keeperGaitPose,
+  keeperTimedAnimationFrame,
   keeperPresetFrame,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
   isFlyingPetSpecies,
@@ -20,6 +20,7 @@ import {
   PET_CUSTOMIZATION_EVENT,
   readKeeperCustomization,
   readPetCustomization,
+  type KeeperAnimationId,
   type KeeperCustomization,
   type KeeperBodyId,
   type KeeperCharacterId,
@@ -141,7 +142,7 @@ type RemoteGardenAvatarObject = {
 };
 
 type GardenPetMood = "idle" | "follow" | "sit" | "happy";
-type KeeperAfkAnimation = "idle" | "sit" | "wave" | "heart" | "yoyo";
+type KeeperAfkAnimation = "idle" | "sit" | "wave" | "heart" | "yoyo" | "dance";
 type GardenTimeOfDay = "morning" | "noon" | "night";
 
 const gardenTimeOfDayCopy: Record<
@@ -383,21 +384,15 @@ const waterPolygonsByVariant: Record<GardenCanvasProps["variant"], WorldPolygonP
 };
 
 /**
- * Variant-aware starting position for the keeper. The previous default
- * (420, 430) sat above the corridor on every variant, which meant the very
- * first keypress yanked the avatar down onto the path. The new defaults
- * land squarely inside the first walkable segment / circle for each
- * variant, so movement feels stable from the first frame.
+ * Variant-aware starting position for the keeper. The maps now use obstacle
+ * based roaming, so these points simply land the keeper in a useful visible
+ * area instead of trying to match brittle painted-path corridors.
  */
 function getAvatarStartPosition(variant: GardenCanvasProps["variant"]) {
   if (variant === "park") {
-    // Inside the first park circle (540, 404, r=210) — center-of-path.
-    return { x: worldX(540), y: worldY(404) };
+    return { x: worldX(760), y: worldY(610) };
   }
-  // Both `garden` and `partner` share the same walkable corridor. The first
-  // shared circle sits at (500, 570, r=190), which is the natural "you walk
-  // in from the path" entry point.
-  return { x: worldX(500), y: worldY(570) };
+  return { x: worldX(640), y: worldY(635) };
 }
 
 function getPlotPositions(variant: GardenCanvasProps["variant"]) {
@@ -815,56 +810,46 @@ export function GardenCanvas({
         }
 
         private drawRoadNetwork() {
-          const segments = variant === "park" ? parkWalkSegments : sharedWalkSegments;
-          const circles = variant === "park" ? parkWalkCircles : sharedWalkCircles;
-          const extensionCircles = variant === "park" ? parkWalkableExtensions : sharedWalkableExtensions;
-          const extensionSegments = variant === "park" ? parkWalkableConnectors : [];
-
-          // DEV-ONLY corridor overlay. The cream stripes painted across the
-          // scene were originally a "here is where you walk" guide, but
-          // players read them as visual debris — the painted park art
-          // already shows where the paths are. Now they only render with
-          // `?debug=paths` in the URL, leaving the painted scene clean for
-          // everyone else.
+          // DEV-ONLY movement overlay. The maps now use obstacle-based
+          // roaming: the whole interior is walkable, while water and placed
+          // decor block movement. Keep the overlay behind `?debug-paths` so
+          // normal play stays clean.
           const debugPaths =
             typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug-paths");
 
           if (debugPaths) {
-            const lawn = this.add.graphics().setDepth(-4);
-            lawn.fillStyle(0xfae3a8, 0.18);
-            extensionCircles.forEach((circle) => {
-              lawn.fillCircle(circle.x, circle.y, circle.radius);
-            });
-            extensionSegments.forEach((segment) => {
-              lawn.lineStyle(segment.radius * 2, 0xfae3a8, 0.12);
-              lawn.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
-            });
-
-            const corridor = this.add.graphics().setDepth(-3);
-            segments.forEach((segment) => {
-              corridor.lineStyle(segment.radius * 2 + 24, 0xfae3a8, 0.28);
-              corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
-            });
-            circles.forEach((circle) => {
-              corridor.fillStyle(0xfae3a8, 0.28);
-              corridor.fillCircle(circle.x, circle.y, circle.radius + 12);
-            });
-            segments.forEach((segment) => {
-              corridor.lineStyle(segment.radius * 2, 0xfffcf3, 0.5);
-              corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
-            });
-            circles.forEach((circle) => {
-              corridor.fillStyle(0xfffcf3, 0.45);
-              corridor.fillCircle(circle.x, circle.y, circle.radius);
-            });
-            segments.forEach((segment) => {
-              corridor.lineStyle(3, 0xd9a53e, 0.4);
-              corridor.lineBetween(segment.x1, segment.y1, segment.x2, segment.y2);
+            const overlay = this.add.graphics().setDepth(-3);
+            overlay.fillStyle(0x7fb56a, 0.12);
+            overlay.fillRect(
+              WORLD_EDGE_INSET,
+              WORLD_EDGE_INSET,
+              GARDEN_WORLD_WIDTH - WORLD_EDGE_INSET * 2,
+              GARDEN_WORLD_HEIGHT - WORLD_EDGE_INSET * 2,
+            );
+            overlay.lineStyle(4, 0x4f7f38, 0.35);
+            overlay.strokeRect(
+              WORLD_EDGE_INSET,
+              WORLD_EDGE_INSET,
+              GARDEN_WORLD_WIDTH - WORLD_EDGE_INSET * 2,
+              GARDEN_WORLD_HEIGHT - WORLD_EDGE_INSET * 2,
+            );
+            overlay.fillStyle(0x5e94b0, 0.28);
+            waterPolygonsByVariant[variant].forEach((points) => {
+              overlay.beginPath();
+              points.forEach((point, index) => {
+                if (index === 0) overlay.moveTo(point.x, point.y);
+                else overlay.lineTo(point.x, point.y);
+              });
+              overlay.closePath();
+              overlay.fillPath();
             });
           }
 
-          // 2. Ambient star glints — the original cozy magic — kept on top.
-          segments.forEach((segment, segmentIndex) => {
+          // 2. Ambient star glints — the original cozy magic — kept on top
+          // of the painted visual roads. These are decorative only; they do
+          // not define movement anymore.
+          const sparkleSegments = variant === "park" ? parkWalkSegments : sharedWalkSegments;
+          sparkleSegments.forEach((segment, segmentIndex) => {
             const steps = Math.max(4, Math.floor(PhaserModule.Math.Distance.Between(segment.x1, segment.y1, segment.x2, segment.y2) / 180));
             for (let index = 0; index <= steps; index += 1) {
               const t = index / steps;
@@ -2062,6 +2047,14 @@ export function GardenCanvas({
           this.applyKeeperLayerTints();
         }
 
+        private setAvatarAnimation(animation: KeeperAnimationId, frameDurationMs = 135) {
+          this.avatarSprite?.setTexture(
+            "keeper-preset-animation-sheet",
+            keeperTimedAnimationFrame(this.keeperCustomization.characterId, animation, this.time.now, frameDurationMs),
+          );
+          this.applyKeeperLayerTints();
+        }
+
         private applyKeeperLayerTints() {
           this.avatarSprite
             ?.clearTint()
@@ -2104,10 +2097,10 @@ export function GardenCanvas({
 
         private chooseAfkAnimation(): KeeperAfkAnimation {
           const weightedByOutfit: Record<KeeperOutfitId, KeeperAfkAnimation[]> = {
-            cardigan: ["sit", "heart", "wave", "yoyo", "sit"],
-            overalls: ["yoyo", "wave", "sit", "yoyo", "heart"],
-            cape: ["heart", "wave", "sit", "heart", "yoyo"],
-            sweater: ["yoyo", "wave", "heart", "yoyo", "sit"],
+            cardigan: ["sit", "heart", "wave", "yoyo", "dance", "sit"],
+            overalls: ["yoyo", "wave", "sit", "dance", "yoyo", "heart"],
+            cape: ["heart", "wave", "sit", "dance", "heart", "yoyo"],
+            sweater: ["yoyo", "wave", "heart", "dance", "yoyo", "sit"],
           };
           const choices = weightedByOutfit[this.keeperCustomization.outfitId] ?? weightedByOutfit.cardigan;
           return choices[PhaserModule.Math.Between(0, choices.length - 1)];
@@ -2190,7 +2183,7 @@ export function GardenCanvas({
 
           if (this.afkAnimation === "idle") {
             const breathe = Math.sin(this.time.now / 680);
-            this.setAvatarPose("idle");
+            this.setAvatarAnimation("idle", 520);
             this.setKeeperLayerMotion(-66 - breathe * 0.9, breathe * 0.003, 1 + breathe * 0.008, 1 - breathe * 0.006);
             this.avatarShadow?.setScale(1 + breathe * 0.025, 1 - breathe * 0.012);
             return;
@@ -2207,14 +2200,14 @@ export function GardenCanvas({
 
           const wave = Math.sin(elapsed / 360);
           if (this.afkAnimation === "sit") {
-            this.setAvatarPose("sit");
+            this.setAvatarAnimation("sit", 560);
             this.setKeeperLayerMotion(-52, 0);
             this.avatarShadow?.setScale(1.16, 1);
             return;
           }
 
           if (this.afkAnimation === "heart") {
-            this.setAvatarPose("heart");
+            this.setAvatarAnimation("heart", 280);
             this.setKeeperLayerMotion(-66 - Math.max(0, wave) * 1.2, wave * 0.006);
             this.avatarShadow?.setScale(1.04, 1);
             if (this.time.now >= this.afkEffectNextAt) {
@@ -2225,7 +2218,7 @@ export function GardenCanvas({
           }
 
           if (this.afkAnimation === "wave") {
-            this.setAvatarPose("wave");
+            this.setAvatarAnimation("wave", 160);
             this.setKeeperLayerMotion(-66, wave * 0.012 * (this.avatarFacing === "left" ? -1 : 1));
             this.avatarShadow?.setScale(1.04, 1);
             if (this.time.now >= this.afkEffectNextAt) {
@@ -2235,7 +2228,18 @@ export function GardenCanvas({
             return;
           }
 
-          this.setAvatarPose("wave");
+          if (this.afkAnimation === "dance") {
+            this.setAvatarAnimation("dance", 155);
+            this.setKeeperLayerMotion(-66 - Math.abs(wave) * 2.2, wave * 0.024);
+            this.avatarShadow?.setScale(1.05 + Math.abs(wave) * 0.04, 1);
+            if (this.time.now >= this.afkEffectNextAt) {
+              this.afkEffectNextAt = this.time.now + 850;
+              this.emitAfkSparkle("wave");
+            }
+            return;
+          }
+
+          this.setAvatarAnimation("yoyo", 145);
           this.setKeeperLayerMotion(-66 - Math.abs(wave) * 1.2, wave * 0.01);
           this.avatarShadow?.setScale(1.05, 1);
           if (this.afkEffect) this.afkEffect.setScale(this.avatarFacing === "left" ? -1 : 1, 1);
@@ -2253,7 +2257,7 @@ export function GardenCanvas({
           const stride = Math.abs(wave);
           const direction = this.avatarFacing === "left" ? -1 : 1;
           const stepX = wave * 3.4 * direction;
-          this.setAvatarPose(keeperGaitPose(this.time.now));
+          this.setAvatarAnimation("walk", 105);
           this.setKeeperLayerMotion(-66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, stepX);
           this.avatarShadow?.setScale(1 + stride * 0.12, 1 - stride * 0.05);
         }
@@ -2296,7 +2300,7 @@ export function GardenCanvas({
               const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
               if (moving) {
                 const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
-                this.setRemoteKeeperFrame(remote, keeperGaitPose(this.time.now));
+                this.setRemoteKeeperAnimation(remote, "walk", 105);
                 const stride = Math.abs(wave);
                 const direction = facingLeft ? -1 : 1;
                 this.setRemoteKeeperMotion(remote, -66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, wave * 3.4 * direction);
@@ -2308,7 +2312,7 @@ export function GardenCanvas({
                 .setRotation(petWave * 0.04 * (petFacingLeft ? -1 : 1));
               remote.petShadow.setScale(0.84 + Math.abs(petWave) * 0.1, 0.72);
               if (!moving) {
-                this.setRemoteKeeperFrame(remote, "idle");
+                this.setRemoteKeeperAnimation(remote, "idle", 520);
                 this.setRemoteKeeperMotion(remote, -66, 0);
                 remote.shadow.setScale(1, 1);
                 return;
@@ -2317,7 +2321,7 @@ export function GardenCanvas({
             }
 
             if (!moving) {
-              this.setRemoteKeeperFrame(remote, "idle");
+              this.setRemoteKeeperAnimation(remote, "idle", 520);
               this.setRemoteKeeperMotion(remote, -66, 0);
               remote.petSprite
                 .setFrame(petFrame(remote.petSpeciesId, "idle"))
@@ -2332,7 +2336,7 @@ export function GardenCanvas({
             const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
             const stride = Math.abs(wave);
             const direction = facingLeft ? -1 : 1;
-            this.setRemoteKeeperFrame(remote, keeperGaitPose(this.time.now));
+            this.setRemoteKeeperAnimation(remote, "walk", 105);
             this.setRemoteKeeperMotion(remote, -66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, wave * 3.4 * direction);
             remote.petSprite
               .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
@@ -2351,6 +2355,14 @@ export function GardenCanvas({
 
         private setRemoteKeeperFrame(remote: RemoteGardenAvatarObject, pose: KeeperPose) {
           remote.sprite.setTexture("keeper-preset-animation-sheet", keeperPresetFrame(remote.characterId, pose));
+          this.applyRemoteKeeperTints(remote);
+        }
+
+        private setRemoteKeeperAnimation(remote: RemoteGardenAvatarObject, animation: KeeperAnimationId, frameDurationMs = 135) {
+          remote.sprite.setTexture(
+            "keeper-preset-animation-sheet",
+            keeperTimedAnimationFrame(remote.characterId, animation, this.time.now, frameDurationMs),
+          );
           this.applyRemoteKeeperTints(remote);
         }
 
@@ -2889,16 +2901,19 @@ export function GardenCanvas({
         }
 
         private constrainAvatarToWalkable(x: number, y: number) {
-          let point = this.projectToPaintedWalkable(x, y);
+          let point = this.constrainToWorldBounds(x, y);
 
-          // Painted-path model: keep the keeper on roads, pads, and discovery
-          // bubbles, then push out of water/decor. Loop because pushing away
-          // from one obstacle can land near another.
-          for (let attempts = 0; attempts < 4; attempts += 1) {
+          // Obstacle model: the bare garden and park grounds are walkable.
+          // Only the world edge, water, and placed decor footprints block
+          // movement. Loop because pushing away from one obstacle can land
+          // near another.
+          for (let attempts = 0; attempts < 5; attempts += 1) {
             const before = { ...point };
+            point = this.constrainToWorldBounds(point.x, point.y);
             point = this.pushOutOfWater(point.x, point.y);
+            point = this.constrainToWorldBounds(point.x, point.y);
             point = this.pushOutOfDecorFootprints(point.x, point.y);
-            point = this.projectToPaintedWalkable(point.x, point.y);
+            point = this.constrainToWorldBounds(point.x, point.y);
             if (PhaserModule.Math.Distance.Between(before.x, before.y, point.x, point.y) < 0.5) break;
           }
 
@@ -3764,9 +3779,9 @@ export function GardenCanvas({
         }
 
         /**
-         * Walk the keeper to the decor + play the sit pose for a few
-         * seconds. Re-uses the keeper's existing "sit" pose so we don't
-         * need new sprite frames for every keeper × swing combo.
+         * Walk the keeper to the decor + play the matching seated animation.
+         * Swings now use the dedicated keeper swing frames from the expanded
+         * preset sheet; picnic/gazebo still use the gentler sit cycle.
          */
         private sitOnSwing(decoration: GardenDecorPlacement) {
           const container = this.decorObjects.get(decoration.id);
@@ -3781,7 +3796,8 @@ export function GardenCanvas({
             duration: 360,
             ease: "Sine.inOut",
             onComplete: () => {
-              this.setAvatarPose("sit");
+              const animation = decoration.kind === "swing" ? "swing" : "sit";
+              this.setAvatarAnimation(animation, decoration.kind === "swing" ? 150 : 560);
               // Add a slight oscillation to suggest swinging.
               this.tweens.killTweensOf(this.avatar);
               this.tweens.add({
@@ -3791,8 +3807,9 @@ export function GardenCanvas({
                 ease: "Sine.inOut",
                 yoyo: true,
                 repeat: 4,
+                onUpdate: () => this.setAvatarAnimation(animation, decoration.kind === "swing" ? 150 : 560),
                 onComplete: () => {
-                  this.setAvatarPose("idle");
+                  this.setAvatarAnimation("idle", 520);
                 },
               });
             },

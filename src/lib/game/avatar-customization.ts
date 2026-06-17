@@ -27,6 +27,7 @@ export type KeeperHairColorId =
 export type KeeperPaletteId = "blush" | "lavender" | "garden" | "honey" | "sky";
 export type KeeperOutfitId = "cardigan" | "overalls" | "cape" | "sweater";
 export type KeeperPose = "idle" | "walk1" | "walk2" | "sit" | "wave" | "heart";
+export type KeeperAnimationId = "idle" | "walk" | "sit" | "sleep" | "wave" | "heart" | "yoyo" | "dance" | "swing";
 export type KeeperCharacterId =
   | "rose-waves"
   | "moonlit-overalls"
@@ -281,13 +282,34 @@ export const PET_ACCESSORIES: Array<{
   { id: "heart-vest", label: "Heart vest", frame: 3, width: 64, height: 54, x: 0, y: -54 },
 ];
 
-const keeperPoseColumns: Record<KeeperPose, number> = {
+const legacyKeeperPoseColumns: Record<KeeperPose, number> = {
   idle: 0,
   walk1: 1,
   walk2: 2,
   sit: 3,
   wave: 4,
   heart: 5,
+};
+
+const keeperPresetPoseColumns: Record<KeeperPose, number> = {
+  idle: 0,
+  walk1: 4,
+  walk2: 6,
+  sit: 8,
+  wave: 12,
+  heart: 15,
+};
+
+const keeperPresetAnimationColumns: Record<KeeperAnimationId, number[]> = {
+  idle: [0, 1, 2, 3, 2, 1],
+  walk: [4, 5, 6, 7],
+  sit: [8, 9],
+  sleep: [10, 11],
+  wave: [12, 13, 14, 13],
+  heart: [15, 16, 15, 0],
+  yoyo: [17, 18, 19, 18],
+  dance: [20, 21, 22, 21],
+  swing: [23, 24, 25, 24],
 };
 
 const petPoseColumns: Record<PetPose, number> = {
@@ -301,6 +323,7 @@ const petPoseColumns: Record<PetPose, number> = {
 
 const GAIT_FRAME_MS = 105;
 export const KEEPER_PRESET_ANIMATION_SHEET_PATH = "/game-assets/generated/keepers/preset-animation-sheet.png";
+export const KEEPER_PRESET_FRAME_COLUMNS = 26;
 
 export function gaitPhase(timeMs: number) {
   return (timeMs % (GAIT_FRAME_MS * 4)) / (GAIT_FRAME_MS * 4);
@@ -340,7 +363,28 @@ export function keeperPlayableTexturePath(characterId: KeeperCharacterId) {
 
 export function keeperPresetFrame(characterId: KeeperCharacterId, pose: KeeperPose) {
   const row = Math.max(0, KEEPER_CHARACTER_PRESETS.findIndex((preset) => preset.id === characterId));
-  return row * 6 + keeperPoseColumns[pose];
+  return row * KEEPER_PRESET_FRAME_COLUMNS + keeperPresetPoseColumns[pose];
+}
+
+export function keeperPresetAnimationFrame(
+  characterId: KeeperCharacterId,
+  animation: KeeperAnimationId,
+  frameIndex = 0,
+) {
+  const row = Math.max(0, KEEPER_CHARACTER_PRESETS.findIndex((preset) => preset.id === characterId));
+  const columns = keeperPresetAnimationColumns[animation] ?? keeperPresetAnimationColumns.idle;
+  const column = columns[Math.abs(frameIndex) % columns.length] ?? columns[0];
+  return row * KEEPER_PRESET_FRAME_COLUMNS + column;
+}
+
+export function keeperTimedAnimationFrame(
+  characterId: KeeperCharacterId,
+  animation: KeeperAnimationId,
+  timeMs: number,
+  frameDurationMs = 135,
+) {
+  const frameIndex = Math.floor(timeMs / Math.max(48, frameDurationMs));
+  return keeperPresetAnimationFrame(characterId, animation, frameIndex);
 }
 
 export function keeperCustomizationFromPreset(characterId: KeeperCharacterId): KeeperCustomization {
@@ -365,7 +409,7 @@ export function keeperFrame(
   const bodyBlock = KEEPER_BODY_TYPES.find((body) => body.id === bodyId)?.frameBlock ?? 0;
   const outfitRow = Math.max(0, KEEPER_OUTFITS.findIndex((outfit) => outfit.id === outfitId));
   const row = bodyBlock * KEEPER_OUTFITS.length + outfitRow;
-  return row * 6 + keeperPoseColumns[pose];
+  return row * 6 + legacyKeeperPoseColumns[pose];
 }
 
 export function keeperSkinFrame(pose: KeeperPose, outfitId: KeeperOutfitId = "cardigan", bodyId: KeeperBodyId = "female") {
@@ -376,7 +420,7 @@ export function keeperHairFrame(hairStyleId: KeeperHairStyleId, pose: KeeperPose
   const bodyBlock = KEEPER_BODY_TYPES.find((body) => body.id === bodyId)?.frameBlock ?? 0;
   const hairRow = Math.max(0, KEEPER_HAIR_STYLES.findIndex((hair) => hair.id === hairStyleId));
   const row = bodyBlock * KEEPER_HAIR_STYLES.length + hairRow;
-  return row * 6 + keeperPoseColumns[pose];
+  return row * 6 + legacyKeeperPoseColumns[pose];
 }
 
 export function petFrame(speciesId: PetSpeciesId, pose: PetPose) {

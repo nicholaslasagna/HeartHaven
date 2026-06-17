@@ -5,7 +5,7 @@ import type Phaser from "phaser";
 import {
   getPetTone,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
-  keeperGaitPose,
+  keeperTimedAnimationFrame,
   keeperPresetFrame,
   petFrame,
   readKeeperCustomization,
@@ -393,6 +393,14 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
           this.applyKeeperLayerTints();
         }
 
+        private setKeeperWalkFrame() {
+          this.keeperSprite.setTexture(
+            "keeper-preset-animation-sheet",
+            keeperTimedAnimationFrame(this.keeperCustomization.characterId, "walk", this.time.now, 105),
+          );
+          this.applyKeeperLayerTints();
+        }
+
         private createChoiceCards() {
           fashionChoices.forEach((choice, index) => {
             const x = 132 + index * 218;
@@ -490,8 +498,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
             duration: 980,
             ease: "Sine.inOut",
             onUpdate: () => {
-              const pose = keeperGaitPose(this.time.now);
-              this.setKeeperLook(choice.paletteId, pose, choice.outfitId);
+              this.setKeeperWalkFrame();
             },
             onComplete: () => {
               this.setKeeperLook(choice.paletteId, choice.pose, choice.outfitId);

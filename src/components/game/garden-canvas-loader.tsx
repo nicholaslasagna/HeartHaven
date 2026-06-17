@@ -6,6 +6,8 @@ import type { GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { loadKeeperCustomizationFromServer } from "@/lib/game/avatar-customization";
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
 
+const KEEPER_LOAD_TIMEOUT_MS = 1800;
+
 type GardenPlotState = {
   id: string;
   name: string;
@@ -61,7 +63,10 @@ export function GardenCanvasLoader({
 
   useEffect(() => {
     let active = true;
-    void loadKeeperCustomizationFromServer().finally(() => {
+    const timeout = new Promise<void>((resolve) => {
+      window.setTimeout(resolve, KEEPER_LOAD_TIMEOUT_MS);
+    });
+    void Promise.race([loadKeeperCustomizationFromServer(), timeout]).finally(() => {
       if (active) setKeeperReady(true);
     });
     return () => {

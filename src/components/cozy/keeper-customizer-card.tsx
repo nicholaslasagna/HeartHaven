@@ -131,8 +131,8 @@ export function KeeperCustomizerCard() {
             <Sparkles className="size-3.5" /> Finished keeper lineup
           </p>
           <p className="mt-1 text-xs font-bold leading-5 text-ink-600">
-            These are no longer mix-and-match placeholders. Each keeper uses a dedicated animated preset sheet for idle,
-            walking, sitting, waving, and heart poses.
+            These are no longer mix-and-match placeholders. Each keeper now uses a dedicated animated preset sheet for
+            idle breathing, walking, sitting, sleeping, waving, heart, yoyo, dance, and swing poses.
           </p>
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
             {KEEPER_CHARACTER_PRESETS.map((item) => (

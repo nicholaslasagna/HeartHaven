@@ -2,8 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import {
+  KEEPER_PRESET_FRAME_COLUMNS,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
-  keeperPresetFrame,
+  keeperTimedAnimationFrame,
+  type KeeperAnimationId,
   type KeeperBodyId,
   type KeeperCharacterId,
   type KeeperHairColorId,
@@ -51,6 +53,9 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
 
   useEffect(() => {
     let active = true;
+    let frameRequest = 0;
+    const startedAt = performance.now();
+
     async function renderPreview() {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -58,15 +63,29 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
       if (!ctx) return;
       const baseImage = await loadPreviewImage(presetSheetPath);
       if (!active) return;
-      ctx.clearRect(0, 0, frameWidth, frameHeight);
-      ctx.save();
-      ctx.translate(frameWidth / 2, frameHeight / 2);
-      drawSheetFrame(ctx, baseImage, keeperPresetFrame(characterId, pose), -frameWidth / 2, -frameHeight / 2);
-      ctx.restore();
+
+      const paint = (time: number) => {
+        if (!active) return;
+        ctx.clearRect(0, 0, frameWidth, frameHeight);
+        ctx.save();
+        ctx.translate(frameWidth / 2, frameHeight / 2);
+        drawSheetFrame(
+          ctx,
+          baseImage,
+          keeperTimedAnimationFrame(characterId, previewAnimationForPose(pose), time - startedAt, previewFrameDuration(pose)),
+          -frameWidth / 2,
+          -frameHeight / 2,
+        );
+        ctx.restore();
+        frameRequest = requestAnimationFrame(paint);
+      };
+
+      frameRequest = requestAnimationFrame(paint);
     }
     void renderPreview();
     return () => {
       active = false;
+      if (frameRequest) cancelAnimationFrame(frameRequest);
     };
   }, [characterId, pose]);
 
@@ -83,8 +102,8 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
 
 function frameSource(frame: number) {
   return {
-    sx: (frame % 6) * frameWidth,
-    sy: Math.floor(frame / 6) * frameHeight,
+    sx: (frame % KEEPER_PRESET_FRAME_COLUMNS) * frameWidth,
+    sy: Math.floor(frame / KEEPER_PRESET_FRAME_COLUMNS) * frameHeight,
   };
 }
 
@@ -97,4 +116,20 @@ function drawSheetFrame(
 ) {
   const { sx, sy } = frameSource(frame);
   ctx.drawImage(image, sx, sy, frameWidth, frameHeight, dx, dy, frameWidth, frameHeight);
+}
+
+function previewAnimationForPose(pose: KeeperPose): KeeperAnimationId {
+  if (pose === "walk1" || pose === "walk2") return "walk";
+  if (pose === "wave") return "wave";
+  if (pose === "heart") return "heart";
+  if (pose === "sit") return "sit";
+  return "idle";
+}
+
+function previewFrameDuration(pose: KeeperPose) {
+  if (pose === "walk1" || pose === "walk2") return 115;
+  if (pose === "wave") return 170;
+  if (pose === "heart") return 260;
+  if (pose === "sit") return 520;
+  return 520;
 }
