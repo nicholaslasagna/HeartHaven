@@ -17,7 +17,9 @@ from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "public/game-assets/generated/keepers/presets-v2"
-OUT_PATH = ROOT / "public/game-assets/generated/keepers/preset-animation-sheet.png"
+OUT_PATH = ROOT / "public/game-assets/generated/keepers/preset-animation-sheet-v2.png"
+LEGACY_OUT_PATH = ROOT / "public/game-assets/generated/keepers/preset-animation-sheet.png"
+INDIVIDUAL_OUT_DIR = ROOT / "public/game-assets/generated/keepers/animation-sheets-v2"
 
 FRAME_W = 256
 FRAME_H = 384
@@ -47,31 +49,31 @@ class FrameSpec(NamedTuple):
 
 FRAMES: list[FrameSpec] = [
     FrameSpec("idle-a", y=0),
-    FrameSpec("idle-blink", scale_y=0.992, y=1, overlay="blink"),
-    FrameSpec("idle-breathe", scale_x=1.012, scale_y=0.992, y=-2),
-    FrameSpec("idle-look", rotate=-1.0, x=-1, y=0, overlay="sparkle"),
-    FrameSpec("walk-left-step", scale_x=1.016, scale_y=0.972, rotate=-3.1, x=-7, y=-5, overlay="step-left"),
-    FrameSpec("walk-left-mid", scale_x=0.99, scale_y=1.018, rotate=-1.1, x=-3, y=-8),
-    FrameSpec("walk-right-step", scale_x=1.016, scale_y=0.972, rotate=3.1, x=7, y=-5, overlay="step-right"),
-    FrameSpec("walk-right-mid", scale_x=0.99, scale_y=1.018, rotate=1.1, x=3, y=-8),
-    FrameSpec("sit-a", scale_x=1.04, scale_y=0.87, y=34, overlay="sit-shadow"),
-    FrameSpec("sit-b", scale_x=1.03, scale_y=0.855, rotate=-0.8, y=38, overlay="sit-heart"),
-    FrameSpec("sleep-a", scale_x=1.04, scale_y=0.8, rotate=-10, x=-4, y=58, overlay="sleep"),
-    FrameSpec("sleep-b", scale_x=1.05, scale_y=0.79, rotate=-8, x=-2, y=60, overlay="sleep-breathe"),
-    FrameSpec("wave-a", rotate=-2.0, x=-2, y=-2, overlay="wave-a"),
-    FrameSpec("wave-b", rotate=2.5, x=4, y=-5, overlay="wave-b"),
-    FrameSpec("wave-c", rotate=-1.5, x=-1, y=-2, overlay="wave-c"),
-    FrameSpec("heart-a", scale_x=1.03, scale_y=0.975, y=-2, overlay="heart-a"),
-    FrameSpec("heart-b", scale_x=1.06, scale_y=0.95, y=-7, overlay="heart-b"),
-    FrameSpec("yoyo-a", rotate=-1.0, x=-2, y=-1, overlay="yoyo-a"),
-    FrameSpec("yoyo-b", rotate=1.0, x=2, y=-3, overlay="yoyo-b"),
-    FrameSpec("yoyo-c", rotate=-0.8, x=-1, y=1, overlay="yoyo-c"),
-    FrameSpec("dance-a", scale_x=1.02, scale_y=0.98, rotate=-5.0, x=-8, y=-7, overlay="dance-a"),
-    FrameSpec("dance-b", scale_x=0.99, scale_y=1.018, rotate=0.0, x=0, y=-11, overlay="dance-b"),
-    FrameSpec("dance-c", scale_x=1.02, scale_y=0.98, rotate=5.0, x=8, y=-7, overlay="dance-c"),
-    FrameSpec("swing-a", rotate=-6.5, x=-13, y=2, overlay="swing-a"),
-    FrameSpec("swing-b", rotate=0.0, x=0, y=-7, overlay="swing-b"),
-    FrameSpec("swing-c", rotate=6.5, x=13, y=2, overlay="swing-c"),
+    FrameSpec("idle-blink", scale_y=0.986, y=2, overlay="blink"),
+    FrameSpec("idle-breathe", scale_x=1.018, scale_y=0.986, y=-3),
+    FrameSpec("idle-look", rotate=-1.8, x=-2, y=0, overlay="sparkle"),
+    FrameSpec("walk-left-step", scale_x=1.055, scale_y=0.93, rotate=-8.8, x=-17, y=-8, overlay="step-left"),
+    FrameSpec("walk-left-mid", scale_x=0.965, scale_y=1.035, rotate=-2.8, x=-8, y=-13, overlay="step-mid-left"),
+    FrameSpec("walk-right-step", scale_x=1.055, scale_y=0.93, rotate=8.8, x=17, y=-8, overlay="step-right"),
+    FrameSpec("walk-right-mid", scale_x=0.965, scale_y=1.035, rotate=2.8, x=8, y=-13, overlay="step-mid-right"),
+    FrameSpec("sit-a", scale_x=1.08, scale_y=0.72, y=74, overlay="sit-shadow"),
+    FrameSpec("sit-b", scale_x=1.065, scale_y=0.705, rotate=-2.0, y=80, overlay="sit-heart"),
+    FrameSpec("sleep-a", scale_x=0.9, scale_y=0.68, rotate=-68, x=-8, y=76, overlay="sleep"),
+    FrameSpec("sleep-b", scale_x=0.92, scale_y=0.66, rotate=-64, x=-2, y=82, overlay="sleep-breathe"),
+    FrameSpec("wave-a", rotate=-4.0, x=-4, y=-3, overlay="wave-a"),
+    FrameSpec("wave-b", rotate=5.2, x=8, y=-9, overlay="wave-b"),
+    FrameSpec("wave-c", rotate=-3.0, x=-3, y=-3, overlay="wave-c"),
+    FrameSpec("heart-a", scale_x=1.045, scale_y=0.955, y=-3, overlay="heart-a"),
+    FrameSpec("heart-b", scale_x=1.085, scale_y=0.925, y=-10, overlay="heart-b"),
+    FrameSpec("yoyo-a", rotate=-2.8, x=-5, y=-2, overlay="yoyo-a"),
+    FrameSpec("yoyo-b", rotate=2.8, x=5, y=-7, overlay="yoyo-b"),
+    FrameSpec("yoyo-c", rotate=-2.2, x=-3, y=3, overlay="yoyo-c"),
+    FrameSpec("dance-a", scale_x=1.045, scale_y=0.952, rotate=-9.5, x=-16, y=-10, overlay="dance-a"),
+    FrameSpec("dance-b", scale_x=0.97, scale_y=1.04, rotate=0.0, x=0, y=-17, overlay="dance-b"),
+    FrameSpec("dance-c", scale_x=1.045, scale_y=0.952, rotate=9.5, x=16, y=-10, overlay="dance-c"),
+    FrameSpec("swing-a", rotate=-13.5, x=-25, y=8, overlay="swing-a"),
+    FrameSpec("swing-b", rotate=0.0, x=0, y=-12, overlay="swing-b"),
+    FrameSpec("swing-c", rotate=13.5, x=25, y=8, overlay="swing-c"),
 ]
 
 
@@ -100,6 +102,9 @@ def transformed_sprite(source: Image.Image, spec: FrameSpec, personality: float)
     original_bottom = bbox[3]
     x = int(round(original_center_x - crop.width / 2 + spec.x * personality))
     y = int(round(original_bottom - crop.height + spec.y))
+    if spec.name.startswith("sleep-"):
+        x = int(round(FRAME_W / 2 - crop.width / 2 + spec.x * personality))
+        y = int(round(286 - crop.height / 2 + spec.y * 0.1))
     canvas.alpha_composite(crop, (x, y))
     return canvas
 
@@ -134,10 +139,12 @@ def overlay_effect(frame: Image.Image, spec: FrameSpec, row: int) -> Image.Image
     ]
     accent = accent_cycle[row % len(accent_cycle)]
 
-    if spec.overlay in {"step-left", "step-right"}:
-        side = -1 if spec.overlay == "step-left" else 1
-        draw.arc((104 + side * 20, 330, 158 + side * 20, 356), 190, 330, fill=(142, 112, 189, 92), width=3)
-        draw.arc((98 - side * 14, 336, 142 - side * 14, 360), 205, 335, fill=(217, 165, 62, 82), width=3)
+    if spec.overlay in {"step-left", "step-right", "step-mid-left", "step-mid-right"}:
+        side = -1 if "left" in spec.overlay else 1
+        intensity = 122 if "mid" not in spec.overlay else 82
+        draw.arc((98 + side * 24, 322, 166 + side * 24, 364), 190, 330, fill=(142, 112, 189, intensity), width=4)
+        draw.arc((82 - side * 16, 334, 150 - side * 16, 366), 205, 335, fill=(217, 165, 62, max(70, intensity - 28)), width=4)
+        draw.ellipse((98 + side * 34, 346, 150 + side * 34, 358), fill=(58, 42, 42, 26))
 
     if spec.overlay == "blink":
         # A tiny glossy lid shimmer reads as a blink without trying to paint
@@ -151,17 +158,19 @@ def overlay_effect(frame: Image.Image, spec: FrameSpec, row: int) -> Image.Image
             draw.line((x, y - s, x, y + s), fill=(255, 244, 214, 210), width=2)
 
     if spec.overlay == "sit-shadow":
-        draw_soft_ellipse(draw, (76, 318, 180, 350), (58, 42, 42, 34))
+        draw_soft_ellipse(draw, (58, 322, 198, 356), (58, 42, 42, 42))
+        draw.rounded_rectangle((76, 285, 180, 326), radius=18, fill=(255, 244, 214, 72))
 
     if spec.overlay == "sit-heart":
-        draw_heart(draw, 187, 176, 0.44, (216, 126, 140, 210))
+        draw_soft_ellipse(draw, (58, 322, 198, 356), (58, 42, 42, 38))
+        draw_heart(draw, 190, 174, 0.5, (216, 126, 140, 220))
 
     if spec.overlay in {"sleep", "sleep-breathe"}:
-        draw_soft_ellipse(draw, (70, 318, 188, 352), (58, 42, 42, 30))
+        draw_soft_ellipse(draw, (48, 318, 208, 354), (58, 42, 42, 34))
         z_alpha = 220 if spec.overlay == "sleep" else 150
-        draw.text((174, 118), "Z", fill=(142, 112, 189, z_alpha))
-        draw.text((194, 96), "z", fill=(142, 112, 189, max(110, z_alpha - 45)))
-        draw.text((210, 82), "z", fill=(142, 112, 189, max(80, z_alpha - 80)))
+        draw.text((174, 100), "Z", fill=(142, 112, 189, z_alpha))
+        draw.text((197, 78), "z", fill=(142, 112, 189, max(110, z_alpha - 45)))
+        draw.text((214, 62), "z", fill=(142, 112, 189, max(80, z_alpha - 80)))
 
     if spec.overlay in {"wave-a", "wave-b", "wave-c"}:
         offset = {"wave-a": 0, "wave-b": -8, "wave-c": 6}[spec.overlay]
@@ -192,10 +201,11 @@ def overlay_effect(frame: Image.Image, spec: FrameSpec, row: int) -> Image.Image
             draw.text((x, y), glyph, fill=accent)
 
     if spec.overlay in {"swing-a", "swing-b", "swing-c"}:
-        lean = {"swing-a": -14, "swing-b": 0, "swing-c": 14}[spec.overlay]
-        draw.line((86 + lean, 54, 106, 308), fill=(142, 112, 189, 118), width=4)
-        draw.line((170 + lean, 54, 150, 308), fill=(142, 112, 189, 118), width=4)
-        draw.rounded_rectangle((84, 306, 172, 324), radius=9, fill=(217, 165, 62, 150), outline=(255, 244, 214, 170), width=2)
+        lean = {"swing-a": -28, "swing-b": 0, "swing-c": 28}[spec.overlay]
+        draw.line((76 + lean, 34, 104, 310), fill=(142, 112, 189, 145), width=5)
+        draw.line((180 + lean, 34, 152, 310), fill=(142, 112, 189, 145), width=5)
+        draw.rounded_rectangle((74, 304, 182, 326), radius=10, fill=(217, 165, 62, 182), outline=(255, 244, 214, 205), width=3)
+        draw.arc((54 + lean * 0.45, 252, 202 + lean * 0.45, 350), 24, 156, fill=(255, 244, 214, 85), width=3)
 
     if effect.getchannel("A").getbbox():
         # Keep effects soft and integrated with the painterly assets.
@@ -217,16 +227,21 @@ def main() -> None:
         raise SystemExit(f"Missing keeper source portraits: {', '.join(missing)}")
 
     sheet = Image.new("RGBA", (FRAME_W * len(FRAMES), FRAME_H * len(KEEPERS)), (0, 0, 0, 0))
+    INDIVIDUAL_OUT_DIR.mkdir(parents=True, exist_ok=True)
     for row, keeper in enumerate(KEEPERS):
         source = Image.open(SOURCE_DIR / f"{keeper}.png").convert("RGBA")
         if source.size != (FRAME_W, FRAME_H):
             source = source.resize((FRAME_W, FRAME_H), Image.Resampling.LANCZOS)
+        row_sheet = Image.new("RGBA", (FRAME_W * len(FRAMES), FRAME_H), (0, 0, 0, 0))
         for col, spec in enumerate(FRAMES):
             frame = make_frame(source, spec, row)
             sheet.alpha_composite(frame, (col * FRAME_W, row * FRAME_H))
+            row_sheet.alpha_composite(frame, (col * FRAME_W, 0))
+        row_sheet.save(INDIVIDUAL_OUT_DIR / f"{keeper}.png", optimize=True)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(OUT_PATH, optimize=True)
+    sheet.save(LEGACY_OUT_PATH, optimize=True)
     print(f"Wrote {OUT_PATH.relative_to(ROOT)} ({len(KEEPERS)} rows x {len(FRAMES)} columns)")
 
 

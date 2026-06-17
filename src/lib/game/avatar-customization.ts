@@ -322,7 +322,7 @@ const petPoseColumns: Record<PetPose, number> = {
 };
 
 const GAIT_FRAME_MS = 105;
-export const KEEPER_PRESET_ANIMATION_SHEET_PATH = "/game-assets/generated/keepers/preset-animation-sheet.png";
+export const KEEPER_PRESET_ANIMATION_SHEET_PATH = "/game-assets/generated/keepers/preset-animation-sheet-v2.png";
 export const KEEPER_PRESET_FRAME_COLUMNS = 26;
 
 export function gaitPhase(timeMs: number) {
