@@ -10,6 +10,7 @@ import {
   gaitPhase,
   keeperTimedAnimationFrame,
   keeperPresetFrame,
+  keeperDisplayWidth,
   keeperWalkAnimationFromDelta,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
   KEEPER_PRESET_FRAME_WIDTH,
@@ -1435,7 +1436,7 @@ export function GardenCanvas({
               "keeper-skin-mask-sheet",
               0,
             )
-            .setDisplaySize(98, 147)
+            .setDisplaySize(keeperDisplayWidth(147), 147)
             .setAlpha(0);
           this.avatarSprite = this.add
             .sprite(
@@ -1444,7 +1445,7 @@ export function GardenCanvas({
               "keeper-preset-animation-sheet",
               keeperPresetFrame(this.keeperCustomization.characterId, "idle"),
             )
-            .setDisplaySize(98, 147);
+            .setDisplaySize(keeperDisplayWidth(147), 147);
           this.avatarHairSprite = this.add
             .sprite(
               0,
@@ -1452,7 +1453,7 @@ export function GardenCanvas({
               "keeper-hair-style-sheet",
               0,
             )
-            .setDisplaySize(98, 147)
+            .setDisplaySize(keeperDisplayWidth(147), 147)
             .setAlpha(0);
           this.avatar.add([this.avatarSprite, this.avatarSkinSprite, this.avatarHairSprite]);
           this.applyKeeperLayerTints();
@@ -3117,17 +3118,17 @@ export function GardenCanvas({
             const aura = this.add.circle(0, -80, 14, color, 0.28);
             const skinSprite = this.add
               .sprite(0, -66, "keeper-skin-mask-sheet", 0)
-              .setDisplaySize(98, 147)
+              .setDisplaySize(keeperDisplayWidth(147), 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
             const sprite = this.add
               .sprite(0, -66, "keeper-preset-animation-sheet", keeperPresetFrame(custom.characterId, "idle"))
-              .setDisplaySize(98, 147)
+              .setDisplaySize(keeperDisplayWidth(147), 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
             const hairSprite = this.add
               .sprite(0, -66, "keeper-hair-style-sheet", 0)
-              .setDisplaySize(98, 147)
+              .setDisplaySize(keeperDisplayWidth(147), 147)
               .setAlpha(0.94)
               .setFlipX(facingLeft);
             sprite.clearTint().setAlpha(1);

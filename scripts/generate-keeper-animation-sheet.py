@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = ROOT / "public/game-assets/source/keeper-animations"
+SOURCE_ROOT = ROOT / "art/keeper-animations"
 SOURCE_MANIFEST = SOURCE_ROOT / "manifest.json"
 TEMPORARY_SHEET = "/game-assets/generated/keepers/preset-animation-sheet-v2.png"
 AUTHORED_SHEET = ROOT / "public/game-assets/generated/keepers/preset-animation-sheet-authored.png"
@@ -117,7 +117,7 @@ def make_contact_sheet(
 ) -> None:
     frame_width = int(manifest["frameSize"]["width"])
     frame_height = int(manifest["frameSize"]["height"])
-    preview_groups = ["idle", "walkRight", "sit", "sleep", "wave"]
+    preview_groups = ["idle", "walkSide", "sit", "sleep", "wave"]
     preview_labels = ["IDLE", "WALK", "SIT", "SLEEP", "WAVE"]
     card_width = 170
     card_height = 236

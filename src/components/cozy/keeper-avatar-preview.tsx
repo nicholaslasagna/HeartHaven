@@ -7,7 +7,6 @@ import {
   KEEPER_PRESET_FRAME_WIDTH,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
   getKeeperCharacterPreset,
-  keeperAuthoredPreviewPath,
   keeperTimedAnimationFrame,
   type KeeperAnimationId,
   type KeeperBodyId,
@@ -66,8 +65,7 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const animation = previewAnimationForPose(pose);
-      const authoredPath = keeperAuthoredPreviewPath(characterId, animation);
-      const staticPath = authoredPath ?? getKeeperCharacterPreset(characterId).image;
+      const staticPath = getKeeperCharacterPreset(characterId).image;
       const baseImage = await loadPreviewImage(
         KEEPER_ANIMATION_ART_PRODUCTION_READY ? presetSheetPath : staticPath,
       );

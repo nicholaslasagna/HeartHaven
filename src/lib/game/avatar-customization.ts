@@ -332,27 +332,27 @@ const temporaryKeeperAnimationColumns: Record<KeeperAnimationId, number[]> = {
 
 const authoredKeeperPoseColumns: Record<KeeperPose, number> = {
   idle: 0,
-  walk1: 22,
-  walk2: 25,
-  sit: 28,
-  wave: 36,
-  heart: 36,
+  walk1: 2,
+  walk2: 4,
+  sit: 10,
+  wave: 14,
+  heart: 14,
 };
 
 const authoredKeeperAnimationColumns: Record<KeeperAnimationId, number[]> = {
-  idle: [0, 1, 2, 3],
-  walk: [22, 23, 24, 25, 26, 27],
-  walkDown: [4, 5, 6, 7, 8, 9],
-  walkUp: [10, 11, 12, 13, 14, 15],
-  walkLeft: [16, 17, 18, 19, 20, 21],
-  walkRight: [22, 23, 24, 25, 26, 27],
-  sit: [28, 29, 30, 31],
-  sleep: [32, 33, 34, 35],
-  wave: [36, 37, 38, 39],
-  heart: [36, 37, 38, 39],
-  yoyo: [0, 1, 2, 3],
-  dance: [0, 1, 2, 3],
-  swing: [28, 29, 30, 31],
+  idle: [0, 1],
+  walk: [2, 3, 4, 5],
+  walkDown: [6, 7],
+  walkUp: [8, 9],
+  walkLeft: [2, 3, 4, 5],
+  walkRight: [2, 3, 4, 5],
+  sit: [10, 11],
+  sleep: [12, 13],
+  wave: [14, 15],
+  heart: [14, 15],
+  yoyo: [0, 1],
+  dance: [0, 1],
+  swing: [10, 11],
 };
 
 const keeperPresetPoseColumns = keeperAnimationRuntime.productionReady
@@ -377,21 +377,8 @@ export const KEEPER_PRESET_FRAME_COLUMNS = keeperAnimationRuntime.frameColumns;
 export const KEEPER_PRESET_FRAME_WIDTH = keeperAnimationRuntime.frameWidth;
 export const KEEPER_ANIMATION_ART_PRODUCTION_READY = keeperAnimationRuntime.productionReady;
 
-const authoredPreviewFrames: Partial<
-  Record<KeeperCharacterId, Partial<Record<KeeperAnimationId, string>>>
-> = {
-  "rose-waves": {
-    idle: "/game-assets/source/keeper-animations/rose-waves/idle/00.png",
-    walk: "/game-assets/source/keeper-animations/rose-waves/walkRight/00.png",
-    walkLeft: "/game-assets/source/keeper-animations/rose-waves/walkLeft/00.png",
-    walkRight: "/game-assets/source/keeper-animations/rose-waves/walkRight/00.png",
-    sit: "/game-assets/source/keeper-animations/rose-waves/sit/00.png",
-    wave: "/game-assets/source/keeper-animations/rose-waves/wave/00.png",
-  },
-};
-
-export function keeperAuthoredPreviewPath(characterId: KeeperCharacterId, animation: KeeperAnimationId) {
-  return authoredPreviewFrames[characterId]?.[animation] ?? null;
+export function keeperDisplayWidth(frameHeight: number) {
+  return Math.round((frameHeight * KEEPER_PRESET_FRAME_WIDTH) / 384);
 }
 
 export function keeperWalkAnimationFromDelta(

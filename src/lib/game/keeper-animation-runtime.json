@@ -1,8 +1,8 @@
 {
-  "productionReady": false,
-  "artStatus": "temporary-transform",
-  "sheetPath": "/game-assets/generated/keepers/preset-animation-sheet-v2.png",
-  "frameColumns": 26,
-  "frameWidth": 256,
+  "productionReady": true,
+  "artStatus": "pose-authored",
+  "sheetPath": "/game-assets/generated/keepers/preset-animation-sheet-authored.png",
+  "frameColumns": 16,
+  "frameWidth": 320,
   "frameHeight": 384
 }

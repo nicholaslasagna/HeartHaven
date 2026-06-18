@@ -6,6 +6,7 @@ import {
   getPetTone,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
   KEEPER_PRESET_FRAME_WIDTH,
+  keeperDisplayWidth,
   keeperTimedAnimationFrame,
   keeperPresetFrame,
   petFrame,
@@ -347,7 +348,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
           const petCustomization = readPetCustomization();
           this.keeperSkinSprite = this.add
             .sprite(332, 382, "keeper-skin-mask-sheet", 0)
-            .setDisplaySize(150, 225)
+            .setDisplaySize(keeperDisplayWidth(225), 225)
             .setDepth(421)
             .setAlpha(0);
           this.keeperSprite = this.add
@@ -357,11 +358,11 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
               "keeper-preset-animation-sheet",
               keeperPresetFrame(keeperCustomization.characterId, "idle"),
             )
-            .setDisplaySize(150, 225)
+            .setDisplaySize(keeperDisplayWidth(225), 225)
             .setDepth(420);
           this.keeperHairSprite = this.add
             .sprite(332, 382, "keeper-hair-style-sheet", 0)
-            .setDisplaySize(150, 225)
+            .setDisplaySize(keeperDisplayWidth(225), 225)
             .setDepth(422)
             .setAlpha(0);
           this.applyKeeperLayerTints();
