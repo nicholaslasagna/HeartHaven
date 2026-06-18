@@ -10,7 +10,9 @@ import {
   gaitPhase,
   keeperTimedAnimationFrame,
   keeperPresetFrame,
+  keeperWalkAnimationFromDelta,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
+  KEEPER_PRESET_FRAME_WIDTH,
   isFlyingPetSpecies,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
@@ -139,6 +141,7 @@ type RemoteGardenAvatarObject = {
    *  glance who's actually being controlled. */
   controlMode: "keeper" | "companion";
   movingUntil: number;
+  walkAnimation: KeeperAnimationId;
 };
 
 type GardenPetMood = "idle" | "follow" | "sit" | "happy";
@@ -676,7 +679,7 @@ export function GardenCanvas({
           this.load.image("park-bare-map", "/game-assets/generated/heartheaven-park-bare-map.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
           this.load.spritesheet("keeper-preset-animation-sheet", KEEPER_PRESET_ANIMATION_SHEET_PATH, {
-            frameWidth: 256,
+            frameWidth: KEEPER_PRESET_FRAME_WIDTH,
             frameHeight: 384,
           });
           this.load.spritesheet("keeper-skin-mask-sheet", "/game-assets/generated/keeper-skin-mask-sheet.png", {
@@ -2212,10 +2215,9 @@ export function GardenCanvas({
           }
 
           if (this.afkAnimation === "idle") {
-            const breathe = Math.sin(this.time.now / 680);
             this.setAvatarAnimation("idle", 520);
-            this.setKeeperLayerMotion(-66 - breathe * 0.9, breathe * 0.003, 1 + breathe * 0.008, 1 - breathe * 0.006);
-            this.avatarShadow?.setScale(1 + breathe * 0.025, 1 - breathe * 0.012);
+            this.setKeeperLayerMotion(-66, 0);
+            this.avatarShadow?.setScale(1, 1);
             return;
           }
 
@@ -2228,7 +2230,6 @@ export function GardenCanvas({
             return;
           }
 
-          const wave = Math.sin(elapsed / 360);
           if (this.afkAnimation === "sit") {
             this.setAvatarAnimation("sit", 560);
             this.setKeeperLayerMotion(-52, 0);
@@ -2238,7 +2239,7 @@ export function GardenCanvas({
 
           if (this.afkAnimation === "heart") {
             this.setAvatarAnimation("heart", 280);
-            this.setKeeperLayerMotion(-66 - Math.max(0, wave) * 1.2, wave * 0.006);
+            this.setKeeperLayerMotion(-66, 0);
             this.avatarShadow?.setScale(1.04, 1);
             if (this.time.now >= this.afkEffectNextAt) {
               this.afkEffectNextAt = this.time.now + 900;
@@ -2249,7 +2250,7 @@ export function GardenCanvas({
 
           if (this.afkAnimation === "wave") {
             this.setAvatarAnimation("wave", 160);
-            this.setKeeperLayerMotion(-66, wave * 0.012 * (this.avatarFacing === "left" ? -1 : 1));
+            this.setKeeperLayerMotion(-66, 0);
             this.avatarShadow?.setScale(1.04, 1);
             if (this.time.now >= this.afkEffectNextAt) {
               this.afkEffectNextAt = this.time.now + 1200;
@@ -2260,8 +2261,8 @@ export function GardenCanvas({
 
           if (this.afkAnimation === "dance") {
             this.setAvatarAnimation("dance", 155);
-            this.setKeeperLayerMotion(-66 - Math.abs(wave) * 2.2, wave * 0.024);
-            this.avatarShadow?.setScale(1.05 + Math.abs(wave) * 0.04, 1);
+            this.setKeeperLayerMotion(-66, 0);
+            this.avatarShadow?.setScale(1.05, 1);
             if (this.time.now >= this.afkEffectNextAt) {
               this.afkEffectNextAt = this.time.now + 850;
               this.emitAfkSparkle("wave");
@@ -2270,12 +2271,12 @@ export function GardenCanvas({
           }
 
           this.setAvatarAnimation("yoyo", 145);
-          this.setKeeperLayerMotion(-66 - Math.abs(wave) * 1.2, wave * 0.01);
+          this.setKeeperLayerMotion(-66, 0);
           this.avatarShadow?.setScale(1.05, 1);
           if (this.afkEffect) this.afkEffect.setScale(this.avatarFacing === "left" ? -1 : 1, 1);
         }
 
-        private applyKeeperLocomotion(moving: boolean, delta = 16) {
+        private applyKeeperLocomotion(moving: boolean, delta = 16, moveDx = 0, moveDy = 0) {
           if (!this.avatarSprite) return;
           if (!moving) {
             this.updateAfkAnimation(delta);
@@ -2283,13 +2284,9 @@ export function GardenCanvas({
           }
 
           if (this.afkAnimation !== "idle" || this.afkIdleMs !== 0) this.resetAfkAnimation();
-          const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
-          const stride = Math.abs(wave);
-          const direction = this.avatarFacing === "left" ? -1 : 1;
-          const stepX = wave * 3.4 * direction;
-          this.setAvatarAnimation("walk", 105);
-          this.setKeeperLayerMotion(-66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, stepX);
-          this.avatarShadow?.setScale(1 + stride * 0.12, 1 - stride * 0.05);
+          this.setAvatarAnimation(keeperWalkAnimationFromDelta(moveDx, moveDy, this.avatarFacing), 105);
+          this.setKeeperLayerMotion(-66, 0);
+          this.avatarShadow?.setScale(1, 1);
         }
 
         private applyPetLocomotion(moving: boolean, idlePose: PetPose) {
@@ -2329,12 +2326,9 @@ export function GardenCanvas({
             if (isFlyingPetSpecies(remote.petSpeciesId)) {
               const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
               if (moving) {
-                const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
-                this.setRemoteKeeperAnimation(remote, "walk", 105);
-                const stride = Math.abs(wave);
-                const direction = facingLeft ? -1 : 1;
-                this.setRemoteKeeperMotion(remote, -66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, wave * 3.4 * direction);
-                remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
+                this.setRemoteKeeperAnimation(remote, remote.walkAnimation, 105);
+                this.setRemoteKeeperMotion(remote, -66, 0);
+                remote.shadow.setScale(1, 1);
               }
               remote.petSprite
                 .setFrame(petFrame(remote.petSpeciesId, moving ? petGaitPose(this.time.now + 90) : "idle"))
@@ -2362,17 +2356,14 @@ export function GardenCanvas({
               return;
             }
 
-            const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
             const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
-            const stride = Math.abs(wave);
-            const direction = facingLeft ? -1 : 1;
-            this.setRemoteKeeperAnimation(remote, "walk", 105);
-            this.setRemoteKeeperMotion(remote, -66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, wave * 3.4 * direction);
+            this.setRemoteKeeperAnimation(remote, remote.walkAnimation, 105);
+            this.setRemoteKeeperMotion(remote, -66, 0);
             remote.petSprite
               .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
               .setY(-38 - Math.abs(petWave) * 2.3)
               .setRotation(petWave * 0.03 * (petFacingLeft ? -1 : 1));
-            remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
+            remote.shadow.setScale(1, 1);
             remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
           });
         }
@@ -2491,11 +2482,13 @@ export function GardenCanvas({
           const speed = 0.24 * delta;
           let moving = false;
           let moveDx = 0;
+          let moveDy = 0;
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
             this.target = undefined;
             const next = this.constrainAvatarToWalkable(this.avatar.x + keyboard.x * speed, this.avatar.y + keyboard.y * speed);
             moveDx = next.x - this.avatar.x;
+            moveDy = next.y - this.avatar.y;
             this.avatar.setPosition(next.x, next.y);
             moving = true;
           } else if (this.target) {
@@ -2509,6 +2502,7 @@ export function GardenCanvas({
                 this.avatar.y + Math.sin(angle) * speed,
               );
               moveDx = next.x - this.avatar.x;
+              moveDy = next.y - this.avatar.y;
               this.avatar.setPosition(next.x, next.y);
               moving = true;
             }
@@ -2533,7 +2527,7 @@ export function GardenCanvas({
 
           this.avatarShadow.setPosition(this.avatar.x, this.avatar.y + 22);
           this.avatarShadow.setDepth(this.avatar.y - 1);
-          this.applyKeeperLocomotion(moving, delta);
+          this.applyKeeperLocomotion(moving, delta, moveDx, moveDy);
 
           this.moveBroadcastTimer += delta;
           this.footstepTimer += delta;
@@ -3047,8 +3041,10 @@ export function GardenCanvas({
             if (existing) {
               const distance = PhaserModule.Math.Distance.Between(existing.container.x, existing.container.y, player.x, player.y);
               const dx = player.x - existing.container.x;
+              const dy = player.y - existing.container.y;
               if (Math.abs(dx) > 2) facingLeft = dx < 0;
               existing.facing = facingLeft ? "left" : "right";
+              existing.walkAnimation = keeperWalkAnimationFromDelta(dx, dy, existing.facing);
               existing.movingUntil = distance > 2 ? this.time.now + 280 : this.time.now;
               // Prefer the broadcast pet position when the sender includes
               // it — that's the path that fixes "multiplayer companion
@@ -3191,6 +3187,7 @@ export function GardenCanvas({
               petFacing: remotePetFacing,
               controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
+              walkAnimation: facingLeft ? "walkLeft" : "walkRight",
             };
             this.remoteAvatars.set(player.id, remoteAvatar);
             this.applyRemoteKeeperTints(remoteAvatar);

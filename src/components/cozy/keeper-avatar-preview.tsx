@@ -2,8 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import {
+  KEEPER_ANIMATION_ART_PRODUCTION_READY,
   KEEPER_PRESET_FRAME_COLUMNS,
+  KEEPER_PRESET_FRAME_WIDTH,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
+  getKeeperCharacterPreset,
+  keeperAuthoredPreviewPath,
   keeperTimedAnimationFrame,
   type KeeperAnimationId,
   type KeeperBodyId,
@@ -28,7 +32,7 @@ type KeeperAvatarPreviewProps = {
   className?: string;
 };
 
-const frameWidth = 256;
+const frameWidth = 320;
 const frameHeight = 384;
 const presetSheetPath = KEEPER_PRESET_ANIMATION_SHEET_PATH;
 
@@ -61,22 +65,30 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const baseImage = await loadPreviewImage(presetSheetPath);
+      const animation = previewAnimationForPose(pose);
+      const authoredPath = keeperAuthoredPreviewPath(characterId, animation);
+      const staticPath = authoredPath ?? getKeeperCharacterPreset(characterId).image;
+      const baseImage = await loadPreviewImage(
+        KEEPER_ANIMATION_ART_PRODUCTION_READY ? presetSheetPath : staticPath,
+      );
       if (!active) return;
 
       const paint = (time: number) => {
         if (!active) return;
         ctx.clearRect(0, 0, frameWidth, frameHeight);
-        ctx.save();
-        ctx.translate(frameWidth / 2, frameHeight / 2);
-        drawSheetFrame(
-          ctx,
-          baseImage,
-          keeperTimedAnimationFrame(characterId, previewAnimationForPose(pose), time - startedAt, previewFrameDuration(pose)),
-          -frameWidth / 2,
-          -frameHeight / 2,
-        );
-        ctx.restore();
+        if (KEEPER_ANIMATION_ART_PRODUCTION_READY) {
+          drawSheetFrame(
+            ctx,
+            baseImage,
+            keeperTimedAnimationFrame(characterId, animation, time - startedAt, previewFrameDuration(pose)),
+            0,
+            0,
+          );
+        } else {
+          const x = Math.round((frameWidth - baseImage.naturalWidth) / 2);
+          const y = Math.round((frameHeight - baseImage.naturalHeight) / 2);
+          ctx.drawImage(baseImage, x, y);
+        }
         frameRequest = requestAnimationFrame(paint);
       };
 
@@ -102,7 +114,7 @@ export function KeeperAvatarPreview(props: KeeperAvatarPreviewProps) {
 
 function frameSource(frame: number) {
   return {
-    sx: (frame % KEEPER_PRESET_FRAME_COLUMNS) * frameWidth,
+    sx: (frame % KEEPER_PRESET_FRAME_COLUMNS) * KEEPER_PRESET_FRAME_WIDTH,
     sy: Math.floor(frame / KEEPER_PRESET_FRAME_COLUMNS) * frameHeight,
   };
 }
@@ -115,7 +127,18 @@ function drawSheetFrame(
   dy: number,
 ) {
   const { sx, sy } = frameSource(frame);
-  ctx.drawImage(image, sx, sy, frameWidth, frameHeight, dx, dy, frameWidth, frameHeight);
+  const inset = Math.round((frameWidth - KEEPER_PRESET_FRAME_WIDTH) / 2);
+  ctx.drawImage(
+    image,
+    sx,
+    sy,
+    KEEPER_PRESET_FRAME_WIDTH,
+    frameHeight,
+    dx + inset,
+    dy,
+    KEEPER_PRESET_FRAME_WIDTH,
+    frameHeight,
+  );
 }
 
 function previewAnimationForPose(pose: KeeperPose): KeeperAnimationId {

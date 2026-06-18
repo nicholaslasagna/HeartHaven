@@ -8,7 +8,9 @@ import {
   gaitPhase,
   keeperTimedAnimationFrame,
   keeperPresetFrame,
+  keeperWalkAnimationFromDelta,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
+  KEEPER_PRESET_FRAME_WIDTH,
   isFlyingPetSpecies,
   KEEPER_CUSTOMIZATION_EVENT,
   normalizeRemoteCustomization,
@@ -171,6 +173,7 @@ type RemoteAvatarObject = {
   /** Whose body the remote keeper is currently driving. */
   controlMode: "keeper" | "companion";
   movingUntil: number;
+  walkAnimation: KeeperAnimationId;
 };
 
 const ROOM_WIDTH = 960;
@@ -377,7 +380,7 @@ export function RoomCanvas({
           this.load.image("keeper-sprite", "/game-assets/generated/keeper-sprite.png");
           this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
           this.load.spritesheet("keeper-preset-animation-sheet", KEEPER_PRESET_ANIMATION_SHEET_PATH, {
-            frameWidth: 256,
+            frameWidth: KEEPER_PRESET_FRAME_WIDTH,
             frameHeight: 384,
           });
           this.load.spritesheet("keeper-skin-mask-sheet", "/game-assets/generated/keeper-skin-mask-sheet.png", {
@@ -1514,10 +1517,9 @@ export function RoomCanvas({
           }
 
           if (this.afkAnimation === "idle") {
-            const breathe = Math.sin(this.time.now / 680);
             this.setAvatarAnimation("idle", 520);
-            this.setKeeperLayerMotion(-66 - breathe * 0.9, breathe * 0.003, 1 + breathe * 0.008, 1 - breathe * 0.006);
-            this.avatarShadow?.setScale(1 + breathe * 0.025, 1 - breathe * 0.012);
+            this.setKeeperLayerMotion(-66, 0);
+            this.avatarShadow?.setScale(1, 1);
             return;
           }
 
@@ -1530,7 +1532,6 @@ export function RoomCanvas({
             return;
           }
 
-          const wave = Math.sin(elapsed / 360);
           if (this.afkAnimation === "sit") {
             this.setAvatarAnimation("sit", 560);
             this.setKeeperLayerMotion(-52, 0);
@@ -1540,7 +1541,7 @@ export function RoomCanvas({
 
           if (this.afkAnimation === "heart") {
             this.setAvatarAnimation("heart", 280);
-            this.setKeeperLayerMotion(-66 - Math.max(0, wave) * 1.2, wave * 0.006);
+            this.setKeeperLayerMotion(-66, 0);
             this.avatarShadow?.setScale(1.04, 1);
             if (this.time.now >= this.afkEffectNextAt) {
               this.afkEffectNextAt = this.time.now + 900;
@@ -1551,7 +1552,7 @@ export function RoomCanvas({
 
           if (this.afkAnimation === "wave") {
             this.setAvatarAnimation("wave", 160);
-            this.setKeeperLayerMotion(-66, wave * 0.012 * (this.avatarFacing === "left" ? -1 : 1));
+            this.setKeeperLayerMotion(-66, 0);
             this.avatarShadow?.setScale(1.04, 1);
             if (this.time.now >= this.afkEffectNextAt) {
               this.afkEffectNextAt = this.time.now + 1200;
@@ -1562,8 +1563,8 @@ export function RoomCanvas({
 
           if (this.afkAnimation === "dance") {
             this.setAvatarAnimation("dance", 155);
-            this.setKeeperLayerMotion(-66 - Math.abs(wave) * 2.2, wave * 0.024);
-            this.avatarShadow?.setScale(1.05 + Math.abs(wave) * 0.04, 1);
+            this.setKeeperLayerMotion(-66, 0);
+            this.avatarShadow?.setScale(1.05, 1);
             if (this.time.now >= this.afkEffectNextAt) {
               this.afkEffectNextAt = this.time.now + 850;
               this.emitAfkSparkle("wave");
@@ -1572,12 +1573,12 @@ export function RoomCanvas({
           }
 
           this.setAvatarAnimation("yoyo", 145);
-          this.setKeeperLayerMotion(-66 - Math.abs(wave) * 1.2, wave * 0.01);
+          this.setKeeperLayerMotion(-66, 0);
           this.avatarShadow?.setScale(1.05, 1);
           if (this.afkEffect) this.afkEffect.setScale(this.avatarFacing === "left" ? -1 : 1, 1);
         }
 
-        private applyKeeperLocomotion(moving: boolean, delta = 16) {
+        private applyKeeperLocomotion(moving: boolean, delta = 16, moveDx = 0, moveDy = 0) {
           if (!this.avatarSprite) return;
           if (!moving) {
             this.updateAfkAnimation(delta);
@@ -1585,14 +1586,9 @@ export function RoomCanvas({
           }
 
           if (this.afkAnimation !== "idle" || this.afkIdleMs !== 0) this.resetAfkAnimation();
-          const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
-          const stride = Math.abs(wave);
-          const direction = this.avatarFacing === "left" ? -1 : 1;
-          const tilt = wave * 0.032 * direction;
-          const stepX = wave * 3.4 * direction;
-          this.setAvatarAnimation("walk", 105);
-          this.setKeeperLayerMotion(-66 - stride * 5.2, tilt, 1 + stride * 0.035, 1 - stride * 0.025, stepX);
-          this.avatarShadow?.setScale(1 + stride * 0.12, 1 - stride * 0.05);
+          this.setAvatarAnimation(keeperWalkAnimationFromDelta(moveDx, moveDy, this.avatarFacing), 105);
+          this.setKeeperLayerMotion(-66, 0);
+          this.avatarShadow?.setScale(1, 1);
         }
 
         private applyPetLocomotion(moving: boolean, idlePose: PetPose) {
@@ -1647,12 +1643,9 @@ export function RoomCanvas({
             if (isFlyingPetSpecies(remote.petSpeciesId)) {
               const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
               if (moving) {
-                const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
-                this.setRemoteKeeperAnimation(remote, "walk", 105);
-                const stride = Math.abs(wave);
-                const direction = facingLeft ? -1 : 1;
-                this.setRemoteKeeperMotion(remote, -66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, wave * 3.4 * direction);
-                remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
+                this.setRemoteKeeperAnimation(remote, remote.walkAnimation, 105);
+                this.setRemoteKeeperMotion(remote, -66, 0);
+                remote.shadow.setScale(1, 1);
               }
               remote.petSprite
                 .setFrame(petFrame(remote.petSpeciesId, moving ? petGaitPose(this.time.now + 90) : "idle"))
@@ -1680,17 +1673,14 @@ export function RoomCanvas({
               return;
             }
 
-            const wave = Math.sin(gaitPhase(this.time.now) * Math.PI * 2);
             const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
-            const stride = Math.abs(wave);
-            const direction = facingLeft ? -1 : 1;
-            this.setRemoteKeeperAnimation(remote, "walk", 105);
-            this.setRemoteKeeperMotion(remote, -66 - stride * 5.2, wave * 0.032 * direction, 1 + stride * 0.035, 1 - stride * 0.025, wave * 3.4 * direction);
+            this.setRemoteKeeperAnimation(remote, remote.walkAnimation, 105);
+            this.setRemoteKeeperMotion(remote, -66, 0);
             remote.petSprite
               .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
               .setY(-36 - Math.abs(petWave) * 2.2)
               .setRotation(petWave * 0.03 * (petFacingLeft ? -1 : 1));
-            remote.shadow.setScale(1 + Math.abs(wave) * 0.08, 1);
+            remote.shadow.setScale(1, 1);
             remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
           });
         }
@@ -1833,8 +1823,10 @@ export function RoomCanvas({
             if (existing) {
               const distance = PhaserModule.Math.Distance.Between(existing.container.x, existing.container.y, player.x, player.y);
               const dx = player.x - existing.container.x;
+              const dy = player.y - existing.container.y;
               if (Math.abs(dx) > 2) facingLeft = dx < 0;
               existing.facing = facingLeft ? "left" : "right";
+              existing.walkAnimation = keeperWalkAnimationFromDelta(dx, dy, existing.facing);
               existing.movingUntil = distance > 2 ? this.time.now + 280 : this.time.now;
               // Honor broadcast pet position when present — companion-mode
               // movement only updates `petX`/`petY`, not the keeper's
@@ -1976,6 +1968,7 @@ export function RoomCanvas({
               petFacing: remotePetFacing,
               controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
+              walkAnimation: facingLeft ? "walkLeft" : "walkRight",
             };
             this.remoteAvatars.set(player.id, remoteAvatar);
             this.applyRemoteKeeperTints(remoteAvatar);
@@ -2095,11 +2088,13 @@ export function RoomCanvas({
           let moving = false;
           // Horizontal intent this frame — drives the left/right sprite mirror.
           let moveDx = 0;
+          let moveDy = 0;
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
             this.target = undefined;
             const next = this.constrainToFloor(this.avatar.x + keyboard.x * speed, this.avatar.y + keyboard.y * speed);
             moveDx = next.x - this.avatar.x;
+            moveDy = next.y - this.avatar.y;
             this.avatar.setPosition(next.x, next.y);
             moving = true;
           } else if (this.target) {
@@ -2113,6 +2108,7 @@ export function RoomCanvas({
                 this.avatar.y + Math.sin(angle) * speed,
               );
               moveDx = next.x - this.avatar.x;
+              moveDy = next.y - this.avatar.y;
               this.avatar.setPosition(next.x, next.y);
               moving = true;
             }
@@ -2135,16 +2131,11 @@ export function RoomCanvas({
               this.avatarShadow.setDepth(this.avatar.y - 1);
               if (sleeping) {
                 this.setAvatarAnimation("sleep", 640);
-                const sleepWave = Math.sin(this.time.now / 720);
-                this.setKeeperLayerMotion(
-                  -48 + sleepWave * 0.5,
-                  (this.avatarFacing === "left" ? -0.11 : 0.11) + sleepWave * 0.005,
-                );
+                this.setKeeperLayerMotion(-48, 0);
                 this.avatarShadow.setScale(1.26, 0.84);
               } else if (swinging) {
-                const swingWave = Math.sin(this.time.now / 380);
                 this.setAvatarAnimation("swing", 150);
-                this.setKeeperLayerMotion(-54 - Math.abs(swingWave) * 1.4, swingWave * 0.025);
+                this.setKeeperLayerMotion(-54, 0);
                 this.avatarShadow.setScale(1.12, 0.94);
               } else {
                 this.setAvatarAnimation("sit", 560);
@@ -2187,7 +2178,7 @@ export function RoomCanvas({
           this.avatarShadow.setDepth(this.avatar.y - 1);
           this.avatarEmoteTimer = Math.max(0, this.avatarEmoteTimer - delta);
           if (this.avatarEmoteTimer === 0) {
-            this.applyKeeperLocomotion(moving, delta);
+            this.applyKeeperLocomotion(moving, delta, moveDx, moveDy);
           }
           this.checkRoomPortalTravel();
 

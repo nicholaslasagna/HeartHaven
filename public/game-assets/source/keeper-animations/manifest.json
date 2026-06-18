@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "frameSize": {
+    "width": 320,
+    "height": 384
+  },
+  "anchor": {
+    "x": 160,
+    "y": 352
+  },
+  "animations": [
+    { "name": "idle", "frameCount": 4, "frameDurationMs": 520, "loop": true },
+    { "name": "walkDown", "frameCount": 6, "frameDurationMs": 105, "loop": true },
+    { "name": "walkUp", "frameCount": 6, "frameDurationMs": 105, "loop": true },
+    { "name": "walkLeft", "frameCount": 6, "frameDurationMs": 105, "loop": true },
+    { "name": "walkRight", "frameCount": 6, "frameDurationMs": 105, "loop": true },
+    { "name": "sit", "frameCount": 4, "frameDurationMs": 520, "loop": true },
+    { "name": "sleep", "frameCount": 4, "frameDurationMs": 640, "loop": true },
+    { "name": "wave", "frameCount": 4, "frameDurationMs": 170, "loop": false }
+  ],
+  "characters": [
+    { "id": "rose-waves", "label": "Rose Waves" },
+    { "id": "moonlit-overalls", "label": "Moonlit Overalls" },
+    { "id": "sage-braids", "label": "Sage Braids" },
+    { "id": "honey-curls", "label": "Honey Curls" },
+    { "id": "blush-blonde", "label": "Blush Blonde" },
+    { "id": "starlight-cape", "label": "Starlight Cape" },
+    { "id": "garden-bangs", "label": "Garden Bangs" },
+    { "id": "clover-curls", "label": "Clover Curls" }
+  ]
+}

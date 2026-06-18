@@ -128,11 +128,11 @@ export function KeeperCustomizerCard() {
 
         <section className="relative border-t border-white/70 bg-white/42 p-5">
           <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-normal text-ink-500">
-            <Sparkles className="size-3.5" /> Finished keeper lineup
+            <Sparkles className="size-3.5" /> Keeper lineup
           </p>
           <p className="mt-1 text-xs font-bold leading-5 text-ink-600">
-            These are no longer mix-and-match placeholders. Each keeper now uses a dedicated animated preset sheet for
-            idle breathing, walking, sitting, sleeping, waving, heart, yoyo, dance, and swing poses.
+            Each keeper keeps the same authored identity everywhere. Studio only previews pose art that has passed the
+            source-art quality gate; incomplete poses stay still instead of using distorted stand-ins.
           </p>
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
             {KEEPER_CHARACTER_PRESETS.map((item) => (

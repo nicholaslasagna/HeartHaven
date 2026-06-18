@@ -1,0 +1,2488 @@
+{
+  "schemaVersion": 1,
+  "artStatus": "temporary-transform",
+  "productionReady": false,
+  "runtime": {
+    "sheetPath": "/game-assets/generated/keepers/preset-animation-sheet-v2.png",
+    "frameColumns": 26,
+    "frameWidth": 256,
+    "frameHeight": 384
+  },
+  "target": {
+    "frameColumns": 40,
+    "frameWidth": 320,
+    "frameHeight": 384,
+    "anchor": {
+      "x": 160,
+      "y": 352
+    }
+  },
+  "characters": {
+    "rose-waves": {
+      "row": 0,
+      "ready": false,
+      "animations": {
+        "idle": {
+          "start": 0,
+          "end": 3,
+          "frameCount": 4,
+          "availableFrames": 1,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "walkDown": {
+          "start": 4,
+          "end": 9,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkUp": {
+          "start": 10,
+          "end": 15,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkLeft": {
+          "start": 16,
+          "end": 21,
+          "frameCount": 6,
+          "availableFrames": 1,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkRight": {
+          "start": 22,
+          "end": 27,
+          "frameCount": 6,
+          "availableFrames": 1,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "sit": {
+          "start": 28,
+          "end": 31,
+          "frameCount": 4,
+          "availableFrames": 1,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "sleep": {
+          "start": 32,
+          "end": 35,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 640,
+          "loop": true
+        },
+        "wave": {
+          "start": 36,
+          "end": 39,
+          "frameCount": 4,
+          "availableFrames": 1,
+          "frameDurationMs": 170,
+          "loop": false
+        }
+      },
+      "issues": [
+        {
+          "frame": "idle/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/03",
+          "issues": [
+            "missing"
+          ]
+        }
+      ]
+    },
+    "moonlit-overalls": {
+      "row": 1,
+      "ready": false,
+      "animations": {
+        "idle": {
+          "start": 40,
+          "end": 43,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "walkDown": {
+          "start": 44,
+          "end": 49,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkUp": {
+          "start": 50,
+          "end": 55,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkLeft": {
+          "start": 56,
+          "end": 61,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkRight": {
+          "start": 62,
+          "end": 67,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "sit": {
+          "start": 68,
+          "end": 71,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "sleep": {
+          "start": 72,
+          "end": 75,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 640,
+          "loop": true
+        },
+        "wave": {
+          "start": 76,
+          "end": 79,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 170,
+          "loop": false
+        }
+      },
+      "issues": [
+        {
+          "frame": "idle/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/03",
+          "issues": [
+            "missing"
+          ]
+        }
+      ]
+    },
+    "sage-braids": {
+      "row": 2,
+      "ready": false,
+      "animations": {
+        "idle": {
+          "start": 80,
+          "end": 83,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "walkDown": {
+          "start": 84,
+          "end": 89,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkUp": {
+          "start": 90,
+          "end": 95,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkLeft": {
+          "start": 96,
+          "end": 101,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkRight": {
+          "start": 102,
+          "end": 107,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "sit": {
+          "start": 108,
+          "end": 111,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "sleep": {
+          "start": 112,
+          "end": 115,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 640,
+          "loop": true
+        },
+        "wave": {
+          "start": 116,
+          "end": 119,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 170,
+          "loop": false
+        }
+      },
+      "issues": [
+        {
+          "frame": "idle/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/03",
+          "issues": [
+            "missing"
+          ]
+        }
+      ]
+    },
+    "honey-curls": {
+      "row": 3,
+      "ready": false,
+      "animations": {
+        "idle": {
+          "start": 120,
+          "end": 123,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "walkDown": {
+          "start": 124,
+          "end": 129,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkUp": {
+          "start": 130,
+          "end": 135,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkLeft": {
+          "start": 136,
+          "end": 141,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkRight": {
+          "start": 142,
+          "end": 147,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "sit": {
+          "start": 148,
+          "end": 151,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "sleep": {
+          "start": 152,
+          "end": 155,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 640,
+          "loop": true
+        },
+        "wave": {
+          "start": 156,
+          "end": 159,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 170,
+          "loop": false
+        }
+      },
+      "issues": [
+        {
+          "frame": "idle/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/03",
+          "issues": [
+            "missing"
+          ]
+        }
+      ]
+    },
+    "blush-blonde": {
+      "row": 4,
+      "ready": false,
+      "animations": {
+        "idle": {
+          "start": 160,
+          "end": 163,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "walkDown": {
+          "start": 164,
+          "end": 169,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkUp": {
+          "start": 170,
+          "end": 175,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkLeft": {
+          "start": 176,
+          "end": 181,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkRight": {
+          "start": 182,
+          "end": 187,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "sit": {
+          "start": 188,
+          "end": 191,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "sleep": {
+          "start": 192,
+          "end": 195,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 640,
+          "loop": true
+        },
+        "wave": {
+          "start": 196,
+          "end": 199,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 170,
+          "loop": false
+        }
+      },
+      "issues": [
+        {
+          "frame": "idle/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/03",
+          "issues": [
+            "missing"
+          ]
+        }
+      ]
+    },
+    "starlight-cape": {
+      "row": 5,
+      "ready": false,
+      "animations": {
+        "idle": {
+          "start": 200,
+          "end": 203,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "walkDown": {
+          "start": 204,
+          "end": 209,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkUp": {
+          "start": 210,
+          "end": 215,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkLeft": {
+          "start": 216,
+          "end": 221,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkRight": {
+          "start": 222,
+          "end": 227,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "sit": {
+          "start": 228,
+          "end": 231,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "sleep": {
+          "start": 232,
+          "end": 235,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 640,
+          "loop": true
+        },
+        "wave": {
+          "start": 236,
+          "end": 239,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 170,
+          "loop": false
+        }
+      },
+      "issues": [
+        {
+          "frame": "idle/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/03",
+          "issues": [
+            "missing"
+          ]
+        }
+      ]
+    },
+    "garden-bangs": {
+      "row": 6,
+      "ready": false,
+      "animations": {
+        "idle": {
+          "start": 240,
+          "end": 243,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "walkDown": {
+          "start": 244,
+          "end": 249,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkUp": {
+          "start": 250,
+          "end": 255,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkLeft": {
+          "start": 256,
+          "end": 261,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkRight": {
+          "start": 262,
+          "end": 267,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "sit": {
+          "start": 268,
+          "end": 271,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "sleep": {
+          "start": 272,
+          "end": 275,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 640,
+          "loop": true
+        },
+        "wave": {
+          "start": 276,
+          "end": 279,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 170,
+          "loop": false
+        }
+      },
+      "issues": [
+        {
+          "frame": "idle/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/03",
+          "issues": [
+            "missing"
+          ]
+        }
+      ]
+    },
+    "clover-curls": {
+      "row": 7,
+      "ready": false,
+      "animations": {
+        "idle": {
+          "start": 280,
+          "end": 283,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "walkDown": {
+          "start": 284,
+          "end": 289,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkUp": {
+          "start": 290,
+          "end": 295,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkLeft": {
+          "start": 296,
+          "end": 301,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "walkRight": {
+          "start": 302,
+          "end": 307,
+          "frameCount": 6,
+          "availableFrames": 0,
+          "frameDurationMs": 105,
+          "loop": true
+        },
+        "sit": {
+          "start": 308,
+          "end": 311,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 520,
+          "loop": true
+        },
+        "sleep": {
+          "start": 312,
+          "end": 315,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 640,
+          "loop": true
+        },
+        "wave": {
+          "start": 316,
+          "end": 319,
+          "frameCount": 4,
+          "availableFrames": 0,
+          "frameDurationMs": 170,
+          "loop": false
+        }
+      },
+      "issues": [
+        {
+          "frame": "idle/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "idle/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkDown/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkUp/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkLeft/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/04",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "walkRight/05",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sit/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "sleep/03",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/00",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/01",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/02",
+          "issues": [
+            "missing"
+          ]
+        },
+        {
+          "frame": "wave/03",
+          "issues": [
+            "missing"
+          ]
+        }
+      ]
+    }
+  }
+}

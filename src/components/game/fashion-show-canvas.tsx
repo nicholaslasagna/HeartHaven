@@ -5,6 +5,7 @@ import type Phaser from "phaser";
 import {
   getPetTone,
   KEEPER_PRESET_ANIMATION_SHEET_PATH,
+  KEEPER_PRESET_FRAME_WIDTH,
   keeperTimedAnimationFrame,
   keeperPresetFrame,
   petFrame,
@@ -162,7 +163,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
 
         preload() {
           this.load.spritesheet("keeper-preset-animation-sheet", KEEPER_PRESET_ANIMATION_SHEET_PATH, {
-            frameWidth: 256,
+            frameWidth: KEEPER_PRESET_FRAME_WIDTH,
             frameHeight: 384,
           });
           this.load.spritesheet("keeper-skin-mask-sheet", "/game-assets/generated/keeper-skin-mask-sheet.png", {

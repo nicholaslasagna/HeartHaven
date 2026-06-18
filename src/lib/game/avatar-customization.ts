@@ -3,6 +3,7 @@
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import keeperAnimationRuntime from "./keeper-animation-runtime.json";
 
 export type KeeperBodyId = "female" | "male";
 export type KeeperSkinId = "porcelain" | "fair" | "warm" | "olive" | "tan" | "brown" | "deep" | "ebony";
@@ -27,7 +28,20 @@ export type KeeperHairColorId =
 export type KeeperPaletteId = "blush" | "lavender" | "garden" | "honey" | "sky";
 export type KeeperOutfitId = "cardigan" | "overalls" | "cape" | "sweater";
 export type KeeperPose = "idle" | "walk1" | "walk2" | "sit" | "wave" | "heart";
-export type KeeperAnimationId = "idle" | "walk" | "sit" | "sleep" | "wave" | "heart" | "yoyo" | "dance" | "swing";
+export type KeeperAnimationId =
+  | "idle"
+  | "walk"
+  | "walkDown"
+  | "walkUp"
+  | "walkLeft"
+  | "walkRight"
+  | "sit"
+  | "sleep"
+  | "wave"
+  | "heart"
+  | "yoyo"
+  | "dance"
+  | "swing";
 export type KeeperCharacterId =
   | "rose-waves"
   | "moonlit-overalls"
@@ -291,7 +305,7 @@ const legacyKeeperPoseColumns: Record<KeeperPose, number> = {
   heart: 5,
 };
 
-const keeperPresetPoseColumns: Record<KeeperPose, number> = {
+const temporaryKeeperPoseColumns: Record<KeeperPose, number> = {
   idle: 0,
   walk1: 4,
   walk2: 6,
@@ -300,9 +314,13 @@ const keeperPresetPoseColumns: Record<KeeperPose, number> = {
   heart: 15,
 };
 
-const keeperPresetAnimationColumns: Record<KeeperAnimationId, number[]> = {
+const temporaryKeeperAnimationColumns: Record<KeeperAnimationId, number[]> = {
   idle: [0, 1, 2, 3, 2, 1],
   walk: [4, 5, 6, 7],
+  walkDown: [4, 5, 6, 7],
+  walkUp: [4, 5, 6, 7],
+  walkLeft: [4, 5, 6, 7],
+  walkRight: [4, 5, 6, 7],
   sit: [8, 9],
   sleep: [10, 11],
   wave: [12, 13, 14, 13],
@@ -311,6 +329,38 @@ const keeperPresetAnimationColumns: Record<KeeperAnimationId, number[]> = {
   dance: [20, 21, 22, 21],
   swing: [23, 24, 25, 24],
 };
+
+const authoredKeeperPoseColumns: Record<KeeperPose, number> = {
+  idle: 0,
+  walk1: 22,
+  walk2: 25,
+  sit: 28,
+  wave: 36,
+  heart: 36,
+};
+
+const authoredKeeperAnimationColumns: Record<KeeperAnimationId, number[]> = {
+  idle: [0, 1, 2, 3],
+  walk: [22, 23, 24, 25, 26, 27],
+  walkDown: [4, 5, 6, 7, 8, 9],
+  walkUp: [10, 11, 12, 13, 14, 15],
+  walkLeft: [16, 17, 18, 19, 20, 21],
+  walkRight: [22, 23, 24, 25, 26, 27],
+  sit: [28, 29, 30, 31],
+  sleep: [32, 33, 34, 35],
+  wave: [36, 37, 38, 39],
+  heart: [36, 37, 38, 39],
+  yoyo: [0, 1, 2, 3],
+  dance: [0, 1, 2, 3],
+  swing: [28, 29, 30, 31],
+};
+
+const keeperPresetPoseColumns = keeperAnimationRuntime.productionReady
+  ? authoredKeeperPoseColumns
+  : temporaryKeeperPoseColumns;
+const keeperPresetAnimationColumns = keeperAnimationRuntime.productionReady
+  ? authoredKeeperAnimationColumns
+  : temporaryKeeperAnimationColumns;
 
 const petPoseColumns: Record<PetPose, number> = {
   idle: 0,
@@ -322,8 +372,39 @@ const petPoseColumns: Record<PetPose, number> = {
 };
 
 const GAIT_FRAME_MS = 105;
-export const KEEPER_PRESET_ANIMATION_SHEET_PATH = "/game-assets/generated/keepers/preset-animation-sheet-v2.png";
-export const KEEPER_PRESET_FRAME_COLUMNS = 26;
+export const KEEPER_PRESET_ANIMATION_SHEET_PATH = keeperAnimationRuntime.sheetPath;
+export const KEEPER_PRESET_FRAME_COLUMNS = keeperAnimationRuntime.frameColumns;
+export const KEEPER_PRESET_FRAME_WIDTH = keeperAnimationRuntime.frameWidth;
+export const KEEPER_ANIMATION_ART_PRODUCTION_READY = keeperAnimationRuntime.productionReady;
+
+const authoredPreviewFrames: Partial<
+  Record<KeeperCharacterId, Partial<Record<KeeperAnimationId, string>>>
+> = {
+  "rose-waves": {
+    idle: "/game-assets/source/keeper-animations/rose-waves/idle/00.png",
+    walk: "/game-assets/source/keeper-animations/rose-waves/walkRight/00.png",
+    walkLeft: "/game-assets/source/keeper-animations/rose-waves/walkLeft/00.png",
+    walkRight: "/game-assets/source/keeper-animations/rose-waves/walkRight/00.png",
+    sit: "/game-assets/source/keeper-animations/rose-waves/sit/00.png",
+    wave: "/game-assets/source/keeper-animations/rose-waves/wave/00.png",
+  },
+};
+
+export function keeperAuthoredPreviewPath(characterId: KeeperCharacterId, animation: KeeperAnimationId) {
+  return authoredPreviewFrames[characterId]?.[animation] ?? null;
+}
+
+export function keeperWalkAnimationFromDelta(
+  deltaX: number,
+  deltaY: number,
+  fallbackFacing: "left" | "right" = "right",
+): KeeperAnimationId {
+  if (Math.abs(deltaY) > Math.abs(deltaX) * 1.15) {
+    return deltaY < 0 ? "walkUp" : "walkDown";
+  }
+  if (Math.abs(deltaX) > 0.01) return deltaX < 0 ? "walkLeft" : "walkRight";
+  return fallbackFacing === "left" ? "walkLeft" : "walkRight";
+}
 
 export function gaitPhase(timeMs: number) {
   return (timeMs % (GAIT_FRAME_MS * 4)) / (GAIT_FRAME_MS * 4);
