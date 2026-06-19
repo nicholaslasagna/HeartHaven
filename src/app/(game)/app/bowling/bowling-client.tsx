@@ -35,7 +35,7 @@ export function BowlingClient() {
   // Solo play seats one player; party play seats two. Drive the reducer's
   // turn order off however many are actually seated so solo doesn't wait
   // forever on a phantom seat 1.
-  const seatCount = Math.max(1, game.seats.length || (game.sessionId ? 2 : 1));
+  const seatCount = Math.max(1, game.seats.length);
   const state = useMemo(() => computeBowlingState(rolls, seatCount), [rolls, seatCount]);
 
   const mySeatIndex = game.mySeat?.seat_index ?? null;
@@ -61,10 +61,8 @@ export function BowlingClient() {
     return names;
   }, [game.seats]);
 
-  // Claim the validated reward once when the match ends. Bowling's server
-  // metadata doesn't carry gameOver (it uses the generic move-log path),
-  // so the client reducer is the source of truth for completion. Each
-  // player claims their own run with their own total (server caps it).
+  // The score is derived only from server-accepted move payloads. Reward
+  // claiming remains protected by the once-per-run server claim path.
   const claimedRef = useRef(false);
   useEffect(() => {
     if (!state.gameOver || claimedRef.current) return;
@@ -80,7 +78,7 @@ export function BowlingClient() {
     });
   }, [state.gameOver, state.players, mySeatIndex, game]);
 
-  const onRoll = async (pins: number, details: { aim: number; power: number }) => {
+  const onRoll = async (details: { aim: number; power: number }) => {
     if (pendingRoll) return { ok: false, reason: "Waiting for the shared lane to confirm your last roll." };
     if (state.gameOver) return { ok: false, reason: "This match is already over." };
     if (game.sessionId && mySeatIndex === null) {
@@ -89,15 +87,11 @@ export function BowlingClient() {
     if (mySeatIndex !== null && state.currentSeat !== mySeatIndex) {
       return { ok: false, reason: "Wait for your turn before bowling." };
     }
-    if (pins < 0 || pins > state.standingPins) {
-      return { ok: false, reason: "That roll does not match the standing pins." };
-    }
-    setSubmitStatus("Saving roll...");
+    setSubmitStatus("Sending aim and power to the shared lane...");
     const expectedRollCount = rolls.length + 1;
     pendingRollCountRef.current = expectedRollCount;
     setPendingRoll(true);
     const payload = {
-      pins,
       aim: Number(details.aim.toFixed(3)),
       power: Number(details.power.toFixed(3)),
       frame: state.currentFrame,
@@ -108,28 +102,28 @@ export function BowlingClient() {
       const supabase = getSupabaseBrowserClient();
       const { data, error } = await supabase.rpc("submit_bowling_roll", {
         p_session_id: game.sessionId,
-        p_pins: payload.pins,
+        // Compatibility argument retained by the RPC signature. Migration
+        // 0067 deliberately ignores this value and computes pins server-side.
+        p_pins: 0,
         p_aim: payload.aim,
         p_power: payload.power,
         p_frame: payload.frame,
         p_ball: payload.ball,
       });
       if (error) {
-        // Keep local/dev playable before migration 0064 is applied, but
-        // still use the server-enforced Bowling RPC as the primary path.
-        if (error.message.toLowerCase().includes("submit_bowling_roll")) {
-          const fallback = await game.submitMove("roll", payload);
-          result = fallback.ok ? { ok: true } : { ok: false, reason: fallback.reason };
-        } else {
-          result = { ok: false, reason: error.message };
-        }
+        console.error("[bowling] submit_bowling_roll failed", error);
+        result = {
+          ok: false,
+          reason: /submit_bowling_roll|schema cache/i.test(error.message)
+            ? "The shared bowling lane needs its latest server update before play can continue."
+            : error.message,
+        };
       } else {
         const row = Array.isArray(data) ? data[0] : null;
         result = row?.ok ? { ok: true } : { ok: false, reason: String(row?.error_message ?? "Move rejected.") };
       }
     } else {
-      const fallback = await game.submitMove("roll", payload);
-      result = fallback.ok ? { ok: true } : { ok: false, reason: fallback.reason };
+      result = { ok: false, reason: "Bowling needs an online game session so every roll stays authoritative." };
     }
     if (!result.ok) {
       setPendingRoll(false);
@@ -137,7 +131,8 @@ export function BowlingClient() {
       setSubmitStatus(result.reason);
       return { ok: false, reason: result.reason };
     }
-    setSubmitStatus("Roll saved. Waiting for the lane to sync.");
+    if (game.sessionId) await game.refresh(game.sessionId);
+    setSubmitStatus("Roll accepted. Playing the server-confirmed result.");
     return { ok: true };
   };
 

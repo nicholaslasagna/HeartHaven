@@ -6,7 +6,8 @@
  * the submitter's seat. Because this module derives the ENTIRE game
  * state (frames, scores, whose turn, game over) from that ordered list
  * of rolls, every client that replays the same log computes byte-for-byte
- * identical state — no server-side bowling logic, no divergence.
+ * identical state. The server owns accepted pin counts; this module owns
+ * deterministic replay, scoring, turn state, and exact visible rack state.
  *
  * Turn model: frame-major. Players alternate per frame —
  *   seat0 frame0, seat1 frame0, seat0 frame1, seat1 frame1, …
@@ -21,6 +22,20 @@
 
 export const BOWLING_FRAMES = 10;
 export const BOWLING_PINS = 10;
+export const BOWLING_PIN_IDS = Array.from({ length: BOWLING_PINS }, (_, index) => index);
+
+const BOWLING_PIN_LAYOUT = [
+  { x: 0, row: 0 },
+  { x: -0.18, row: 1 },
+  { x: 0.18, row: 1 },
+  { x: -0.35, row: 2 },
+  { x: 0, row: 2 },
+  { x: 0.35, row: 2 },
+  { x: -0.52, row: 3 },
+  { x: -0.18, row: 3 },
+  { x: 0.18, row: 3 },
+  { x: 0.52, row: 3 },
+] as const;
 
 export type BowlingRoll = {
   /** Seat index of the player who threw this ball (0 or 1). */
@@ -71,6 +86,92 @@ export type BowlingState = {
 function clampPins(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(BOWLING_PINS, Math.floor(value)));
+}
+
+function clampUnit(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-1, Math.min(1, value));
+}
+
+function clampPower(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+/**
+ * Resolve the number of pins from aim, power, and the authoritative rack.
+ * This formula is mirrored by `public.resolve_bowling_pins` in the database.
+ */
+export function resolveBowlingPins(aim: number, power: number, standing: number): number {
+  const safeStanding = Math.max(0, Math.min(BOWLING_PINS, Math.floor(standing)));
+  const safeAim = clampUnit(aim);
+  const safePower = clampPower(power);
+  const aimError = Math.abs(safeAim);
+  const powerError = Math.abs(safePower - 0.84);
+  const aimQuality = Math.max(0, Math.min(1, 1 - aimError / 0.92));
+  const powerQuality = Math.max(0, Math.min(1, 1 - powerError / 0.84));
+
+  if (safeStanding <= 0) return 0;
+  if (aimError > 0.78 || safePower < 0.14) return 0;
+  if (safeStanding === BOWLING_PINS && aimError <= 0.13 && safePower >= 0.72 && safePower <= 0.98) {
+    return BOWLING_PINS;
+  }
+  if (safeStanding < BOWLING_PINS && aimError <= 0.22 && safePower >= 0.55) return safeStanding;
+
+  const base = Math.round(safeStanding * (0.12 + aimQuality * 0.52 + powerQuality * 0.34));
+  const hookPenalty = Math.max(0, aimError - 0.42) * 3;
+  const powerPenalty = safePower < 0.35 ? 2 : safePower > 0.98 ? 1 : 0;
+  return Math.max(0, Math.min(safeStanding, base - Math.round(hookPenalty) - powerPenalty));
+}
+
+/** Pick the exact pins a canonical roll knocks down. */
+export function selectBowlingKnockedPinIds(
+  standingPinIds: readonly number[],
+  roll: Pick<BowlingRoll, "aim" | "power" | "pins">,
+): number[] {
+  const count = Math.max(0, Math.min(standingPinIds.length, Math.floor(roll.pins)));
+  if (count === 0) return [];
+  const impactX = clampUnit(roll.aim ?? 0) * 0.58;
+  const power = clampPower(roll.power ?? 0.7);
+
+  return [...standingPinIds]
+    .sort((leftId, rightId) => {
+      const left = BOWLING_PIN_LAYOUT[leftId] ?? BOWLING_PIN_LAYOUT[0];
+      const right = BOWLING_PIN_LAYOUT[rightId] ?? BOWLING_PIN_LAYOUT[0];
+      // Strong throws carry through the back rows; softer throws favor the head pins.
+      const rowWeight = 0.105 + power * 0.035;
+      const leftDistance = Math.abs(left.x - impactX) + left.row * rowWeight;
+      const rightDistance = Math.abs(right.x - impactX) + right.row * rowWeight;
+      return leftDistance - rightDistance || leftId - rightId;
+    })
+    .slice(0, count);
+}
+
+/**
+ * Replay canonical rolls and return the exact rack for the next ball.
+ * A new frame (or a 10th-frame bonus ball) resets the active rack to ten.
+ */
+export function computeBowlingStandingPinIds(rolls: BowlingRoll[], seatCount = 2): number[] {
+  const racks = new Map<number, number[]>();
+
+  rolls.forEach((roll, rollIndex) => {
+    const before = computeBowlingState(rolls.slice(0, rollIndex), seatCount);
+    let rack = racks.get(roll.seat) ?? [...BOWLING_PIN_IDS];
+    if (rack.length !== before.standingPins) {
+      rack = before.standingPins === BOWLING_PINS
+        ? [...BOWLING_PIN_IDS]
+        : [...BOWLING_PIN_IDS].slice(0, before.standingPins);
+    }
+    const knocked = new Set(selectBowlingKnockedPinIds(rack, roll));
+    racks.set(roll.seat, rack.filter((pinId) => !knocked.has(pinId)));
+  });
+
+  const state = computeBowlingState(rolls, seatCount);
+  if (state.gameOver || state.currentSeat < 0) return [];
+  const currentRack = racks.get(state.currentSeat) ?? [...BOWLING_PIN_IDS];
+  if (currentRack.length === state.standingPins) return currentRack;
+  if (state.standingPins === BOWLING_PINS) return [...BOWLING_PIN_IDS];
+  return [...BOWLING_PIN_IDS].slice(0, state.standingPins);
 }
 
 /**
@@ -149,8 +250,12 @@ function parseFrames(rolls: number[]): {
         if (remaining.length === 1) {
           standing = first === BOWLING_PINS ? BOWLING_PINS : BOWLING_PINS - first;
         } else if (remaining.length === 2) {
-          // Need a bonus ball (strike or spare) — pins reset.
-          standing = BOWLING_PINS;
+          // A spare resets for its one bonus ball. After a first-ball
+          // strike, however, a non-strike second bonus leaves only the
+          // pins it missed standing for ball three.
+          standing = first === BOWLING_PINS
+            ? second === BOWLING_PINS ? BOWLING_PINS : BOWLING_PINS - second
+            : BOWLING_PINS;
         }
         return { frames, currentFrame: f, ballInFrame: remaining.length, standingPins: standing };
       }

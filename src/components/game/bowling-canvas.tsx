@@ -1,70 +1,51 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, CircleDot } from "lucide-react";
 import type Phaser from "phaser";
+import { Button } from "@/components/ui/button";
 import { playCozyCue } from "@/lib/game/cozy-audio";
-import { BOWLING_PINS, computeBowlingState, type BowlingRoll } from "@/lib/game/bowling-scoring";
+import {
+  BOWLING_PIN_IDS,
+  computeBowlingStandingPinIds,
+  computeBowlingState,
+  selectBowlingKnockedPinIds,
+  type BowlingRoll,
+} from "@/lib/game/bowling-scoring";
 
 type BowlingCanvasProps = {
-  /** Ordered roll log (oldest first), derived from the game move log. */
   rolls: BowlingRoll[];
-  /** My seat (0/1) when online; null for local solo play. */
   mySeatIndex: number | null;
   seatCount: number;
-  /** Player display names by seat index. */
   seatNames: string[];
-  /** Submit one roll. Returns ok/reason; the canvas waits for the roll
-   *  to reflect back through `rolls` before clearing its busy state. */
-  onRoll: (pins: number, details: { aim: number; power: number }) => Promise<{ ok: boolean; reason?: string }>;
+  onRoll: (details: { aim: number; power: number }) => Promise<{ ok: boolean; reason?: string }>;
   rollLocked?: boolean;
   sessionId?: string | null;
 };
 
 const GAME_WIDTH = 920;
-const GAME_HEIGHT = 600;
-const BALL_START = { x: 460, y: 502 };
+const GAME_HEIGHT = 560;
+const BALL_START = { x: 460, y: 485 };
 const PIN_POSITIONS = [
-  [460, 128],
-  [430, 162],
-  [490, 162],
-  [400, 196],
-  [460, 196],
-  [520, 196],
-  [370, 230],
-  [430, 230],
-  [490, 230],
-  [550, 230],
+  [460, 128], [430, 162], [490, 162], [400, 196], [460, 196],
+  [520, 196], [370, 230], [430, 230], [490, 230], [550, 230],
 ] as const;
-
-const SEAT_COLORS = ["#D87E8C", "#8E70BD"];
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-/** Resolve a deterministic bowling result from direction + power. */
-function pinsFromAimPower(aim: number, power: number, standing: number): number {
-  const aimError = Math.abs(aim);
-  const powerError = Math.abs(power - 0.84);
-  const aimQuality = clamp(1 - aimError / 0.92, 0, 1);
-  const powerQuality = clamp(1 - powerError / 0.84, 0, 1);
-
-  if (standing <= 0) return 0;
-  if (aimError > 0.78 || power < 0.14) return 0;
-  if (standing === BOWLING_PINS && aimError <= 0.13 && power >= 0.72 && power <= 0.98) return BOWLING_PINS;
-  if (standing < BOWLING_PINS && aimError <= 0.22 && power >= 0.55) return standing;
-
-  const base = Math.round(standing * (0.12 + aimQuality * 0.52 + powerQuality * 0.34));
-  const hookPenalty = Math.max(0, aimError - 0.42) * 3;
-  const powerPenalty = power < 0.35 ? 2 : power > 0.98 ? 1 : 0;
-  return clamp(base - Math.round(hookPenalty) - powerPenalty, 0, standing);
-}
-
 function describeRoll(pins: number, standingBeforeRoll: number) {
-  if (standingBeforeRoll === BOWLING_PINS && pins === BOWLING_PINS) return "Strike!";
-  if (standingBeforeRoll < BOWLING_PINS && pins === standingBeforeRoll) return "Spare!";
+  if (standingBeforeRoll === 10 && pins === 10) return "Strike!";
+  if (standingBeforeRoll < 10 && pins === standingBeforeRoll) return "Spare!";
   if (pins === 0) return "Gutter ball";
   return `${pins} pin${pins === 1 ? "" : "s"}`;
+}
+
+function aimLabel(aim: number) {
+  if (aim < -0.12) return `${Math.round(Math.abs(aim) * 100)}% left`;
+  if (aim > 0.12) return `${Math.round(aim * 100)}% right`;
+  return "Center line";
 }
 
 export function BowlingCanvas({
@@ -78,26 +59,41 @@ export function BowlingCanvas({
 }: BowlingCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rollsRef = useRef(rolls);
-  const mySeatRef = useRef(mySeatIndex);
   const seatCountRef = useRef(seatCount);
   const seatNamesRef = useRef(seatNames);
-  const onRollRef = useRef(onRoll);
-  const rollLockedRef = useRef(rollLocked);
-  const sessionIdRef = useRef(sessionId);
-  const [status, setStatus] = useState("When it is your turn, tap to lock direction, then tap again to roll.");
+  const aimRef = useRef(0);
+  const powerRef = useRef(0.82);
+  const [aim, setAim] = useState(0);
+  const [power, setPower] = useState(0.82);
+  const [sceneBusy, setSceneBusy] = useState(false);
+  const [status, setStatus] = useState("Set your line and power, then roll when it is your turn.");
+
+  const state = useMemo(() => computeBowlingState(rolls, seatCount), [rolls, seatCount]);
+  const isMyTurn = !state.gameOver && (
+    mySeatIndex === null ? !sessionId : state.currentSeat === mySeatIndex
+  );
+  const canRoll = isMyTurn && !rollLocked && !sceneBusy;
 
   useEffect(() => {
     rollsRef.current = rolls;
-    mySeatRef.current = mySeatIndex;
     seatCountRef.current = seatCount;
     seatNamesRef.current = seatNames;
-    onRollRef.current = onRoll;
-    rollLockedRef.current = rollLocked;
-    sessionIdRef.current = sessionId;
-    // Tell the live scene that the roll log changed so it can re-render
-    // pins / turn / animate the newest roll.
     window.dispatchEvent(new CustomEvent("hearthaven:bowling-sync"));
-  }, [rolls, mySeatIndex, seatCount, seatNames, onRoll, rollLocked, sessionId]);
+  }, [rolls, seatCount, seatNames]);
+
+  useEffect(() => {
+    aimRef.current = aim;
+    powerRef.current = power;
+    window.dispatchEvent(new CustomEvent("hearthaven:bowling-controls"));
+  }, [aim, power]);
+
+  async function handleRoll() {
+    if (!canRoll) return;
+    setStatus("Sending your roll to the shared lane...");
+    const result = await onRoll({ aim, power });
+    if (!result.ok) setStatus(result.reason ?? "That roll could not be saved. Try again.");
+    else setStatus("Roll accepted. Waiting for the shared lane animation.");
+  }
 
   useEffect(() => {
     let destroyed = false;
@@ -112,21 +108,14 @@ export function BowlingCanvas({
         private ball!: Phaser.GameObjects.Container;
         private ballShadow!: Phaser.GameObjects.Ellipse;
         private laneGuide!: Phaser.GameObjects.Graphics;
-        private aimNeedle!: Phaser.GameObjects.Graphics;
-        private powerBar!: Phaser.GameObjects.Graphics;
-        private powerFill!: Phaser.GameObjects.Graphics;
         private bannerText!: Phaser.GameObjects.Text;
         private helpText!: Phaser.GameObjects.Text;
         private resultCallout?: Phaser.GameObjects.Text;
-        private aimPhase: "idle" | "aim" | "power" | "rolling" = "idle";
-        private aim = 0;
-        private aimDir = 1;
-        private power = 0;
-        private powerDir = 1;
         private renderedRollCount = 0;
-        private busy = false;
-        private awaitingRollCount: number | null = null;
+        private animating = false;
+        private syncQueued = false;
         private syncHandler?: () => void;
+        private controlsHandler?: () => void;
 
         preload() {
           this.load.image("moonberry-bowling-bg", "/game-assets/generated/moonberry-bowling-bg.png");
@@ -138,60 +127,50 @@ export function BowlingCanvas({
         }
 
         create() {
-          this.add
-            .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "moonberry-bowling-bg")
-            .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
-            .setDepth(-20);
-          this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfffcf3, 0.06).setDepth(-19);
+          this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "moonberry-bowling-bg")
+            .setDisplaySize(GAME_WIDTH, GAME_HEIGHT).setDepth(-20);
+          this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfffcf3, 0.08).setDepth(-19);
           this.drawLane();
-
-          // Casper mascot.
-          const mascot = this.add.container(GAME_WIDTH - 96, GAME_HEIGHT - 120).setDepth(6000);
-          mascot.add(this.add.image(0, 0, "casper-sprite").setDisplaySize(118, 118));
-          this.tweens.add({ targets: mascot, y: mascot.y - 10, duration: 1400, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+          const mascot = this.add.container(GAME_WIDTH - 92, GAME_HEIGHT - 104).setDepth(6000);
+          mascot.add(this.add.image(0, 0, "casper-sprite").setDisplaySize(108, 108));
+          this.tweens.add({ targets: mascot, y: mascot.y - 7, duration: 1650, yoyo: true, repeat: -1, ease: "Sine.inOut" });
 
           this.createPins();
           this.createBall();
-
-          this.bannerText = this.add
-            .text(GAME_WIDTH / 2, 40, "", {
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "22px",
-              fontStyle: "900",
-              color: "#5b3f3f",
-              align: "center",
-            })
-            .setOrigin(0.5)
-            .setDepth(7000);
-          this.helpText = this.add
-            .text(GAME_WIDTH / 2, GAME_HEIGHT - 92, "Tap to aim. Tap again to set power.", {
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "15px",
-              fontStyle: "900",
-              color: "#6c4d4d",
-              align: "center",
-            })
-            .setOrigin(0.5)
-            .setDepth(7000);
-
-          // Power meter (bottom).
+          this.bannerText = this.add.text(GAME_WIDTH / 2, 38, "", {
+            fontFamily: "Nunito, sans-serif", fontSize: "22px", fontStyle: "900", color: "#5b3f3f", align: "center",
+          }).setOrigin(0.5).setDepth(7000);
+          this.helpText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 34, "Set aim and power below, then roll.", {
+            fontFamily: "Nunito, sans-serif", fontSize: "15px", fontStyle: "900", color: "#6c4d4d", align: "center",
+          }).setOrigin(0.5).setDepth(7000);
           this.laneGuide = this.add.graphics().setDepth(6750);
-          this.aimNeedle = this.add.graphics().setDepth(6902);
-          this.powerBar = this.add.graphics().setDepth(6900);
-          this.powerFill = this.add.graphics().setDepth(6901);
-          this.drawAimGuide();
-          this.drawPowerMeter();
 
-          this.input.on("pointerdown", () => this.handleTap());
-
-          this.syncHandler = () => this.renderFromLog(true);
+          this.renderedRollCount = rollsRef.current.length;
+          this.syncHandler = () => this.syncFromCanonicalLog(true);
+          this.controlsHandler = () => this.drawAimGuide();
           window.addEventListener("hearthaven:bowling-sync", this.syncHandler);
-
-          this.renderFromLog(false);
+          window.addEventListener("hearthaven:bowling-controls", this.controlsHandler);
+          this.syncFromCanonicalLog(false);
         }
 
         shutdown() {
           if (this.syncHandler) window.removeEventListener("hearthaven:bowling-sync", this.syncHandler);
+          if (this.controlsHandler) window.removeEventListener("hearthaven:bowling-controls", this.controlsHandler);
+        }
+
+        private drawLane() {
+          const lane = this.add.graphics().setDepth(-10);
+          lane.fillStyle(0xf4dba6, 0.68);
+          lane.beginPath();
+          lane.moveTo(306, 510); lane.lineTo(694, 510); lane.lineTo(560, 105); lane.lineTo(420, 105);
+          lane.closePath(); lane.fillPath();
+          lane.lineStyle(5, 0xffffff, 0.52); lane.strokePath();
+          for (let i = 0; i < 9; i += 1) {
+            lane.lineStyle(1.5, 0xffffff, 0.24);
+            lane.lineBetween(330 + i * 42, 505, 425 + i * 16, 116);
+          }
+          this.add.rectangle(238, 310, 78, 390, 0x89b5d7, 0.34).setDepth(-11);
+          this.add.rectangle(722, 310, 78, 390, 0x89b5d7, 0.34).setDepth(-11);
         }
 
         private createPins() {
@@ -204,194 +183,128 @@ export function BowlingCanvas({
         }
 
         private createBall() {
-          this.ballShadow = this.add.ellipse(BALL_START.x, BALL_START.y + 30, 84, 24, 0x3a2a2a, 0.16).setDepth(500);
+          this.ballShadow = this.add.ellipse(BALL_START.x, BALL_START.y + 28, 84, 24, 0x3a2a2a, 0.16).setDepth(500);
           this.ball = this.add.container(BALL_START.x, BALL_START.y).setDepth(BALL_START.y);
           this.ball.add(this.add.image(0, 0, "minigame-props", 0).setDisplaySize(104, 138));
-        }
-
-        private drawLane() {
-          const lane = this.add.graphics().setDepth(-10);
-          lane.fillStyle(0xf4dba6, 0.58);
-          lane.beginPath();
-          lane.moveTo(316, 520);
-          lane.lineTo(684, 520);
-          lane.lineTo(560, 108);
-          lane.lineTo(420, 108);
-          lane.closePath();
-          lane.fillPath();
-          lane.lineStyle(5, 0xffffff, 0.42);
-          lane.strokePath();
-
-          for (let i = 0; i < 9; i += 1) {
-            const x = 342 + i * 46;
-            lane.lineStyle(1.5, 0xffffff, 0.22);
-            lane.lineBetween(x, 516, 430 + i * 15, 118);
-          }
-
-          this.add.rectangle(242, 324, 74, 398, 0x89b5d7, 0.26).setDepth(-11);
-          this.add.rectangle(718, 324, 74, 398, 0x89b5d7, 0.26).setDepth(-11);
-          this.add.text(178, 512, "gutter", {
-            fontFamily: "Nunito, sans-serif",
-            fontSize: "13px",
-            fontStyle: "900",
-            color: "#7d90a8",
-          }).setDepth(-9);
-          this.add.text(732, 512, "gutter", {
-            fontFamily: "Nunito, sans-serif",
-            fontSize: "13px",
-            fontStyle: "900",
-            color: "#7d90a8",
-          }).setDepth(-9);
-        }
-
-        /** Show `standing` pins upright (toppling the rest). */
-        private setStandingPins(standing: number) {
-          this.pins.forEach((pin, index) => {
-            const upright = index < standing;
-            pin.setAlpha(upright ? 1 : 0.18);
-            pin.setRotation(upright ? 0 : (index % 2 === 0 ? -1 : 1) * 0.9);
-            pin.setY(PIN_POSITIONS[index][1] + (upright ? 0 : 8));
-          });
         }
 
         private resetBallVisual() {
           this.tweens.killTweensOf(this.ball);
           this.tweens.killTweensOf(this.ballShadow);
           this.ball.setPosition(BALL_START.x, BALL_START.y).setAlpha(1).setRotation(0).setScale(1);
-          this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 30).setAlpha(1).setScale(1);
+          this.ballShadow.setPosition(BALL_START.x, BALL_START.y + 28).setAlpha(1).setScale(1);
         }
 
-        private isMyTurn(state: ReturnType<typeof computeBowlingState>) {
-          if (rollLockedRef.current || this.awaitingRollCount !== null) return false;
-          const seat = mySeatRef.current;
-          if (seat === null || seat === undefined) return !sessionIdRef.current && !state.gameOver; // local solo only
-          return !state.gameOver && state.currentSeat === seat;
+        private setStandingPinIds(ids: readonly number[]) {
+          const standing = new Set(ids);
+          this.pins.forEach((pin, index) => {
+            this.tweens.killTweensOf(pin);
+            const [x, y] = PIN_POSITIONS[index];
+            pin.setPosition(x, y).setRotation(0).setScale(1).setAlpha(standing.has(index) ? 1 : 0);
+          });
         }
 
-        private beginAiming() {
-          if (this.aimPhase !== "idle" || this.busy) return;
-          this.aimPhase = "aim";
-          this.aim = 0;
-          this.aimDir = 1;
-          this.helpText.setText("Direction sweeping. Tap to lock your line.");
+        private syncFromCanonicalLog(animateNewest: boolean) {
+          if (this.animating) {
+            this.syncQueued = true;
+            return;
+          }
+          const canonicalRolls = rollsRef.current;
+          const total = canonicalRolls.length;
+          if (animateNewest && total > this.renderedRollCount) {
+            this.animateCanonicalRoll(canonicalRolls, total - 1);
+            return;
+          }
+          this.renderedRollCount = total;
+          this.setStandingPinIds(computeBowlingStandingPinIds(canonicalRolls, seatCountRef.current));
+          this.resetBallVisual();
           this.drawAimGuide();
-          this.drawPowerMeter();
+          this.renderTurnText();
         }
 
-        private renderFromLog(animateNewest: boolean) {
+        private renderTurnText() {
           const state = computeBowlingState(rollsRef.current, seatCountRef.current);
           const names = seatNamesRef.current;
-
-          // Animate the newest roll (someone bowled) by rolling the ball
-          // and toppling pins to the new standing count — but ONLY when it
-          // was the OPPONENT's roll. My own rolls are already animated
-          // optimistically in commitRoll, so re-animating on the echoed
-          // log would double-roll the ball.
-          const total = rollsRef.current.length;
-          const grew = total > this.renderedRollCount;
-          this.renderedRollCount = total;
-          const newestSeat = total > 0 ? rollsRef.current[total - 1].seat : -1;
-          const newestRoll = total > 0 ? rollsRef.current[total - 1] : null;
-          const mine = mySeatRef.current;
-          const newestIsMine = mine !== null && mine !== undefined && newestSeat === mine;
-          const previousState = newestRoll ? computeBowlingState(rollsRef.current.slice(0, -1), seatCountRef.current) : null;
-          const rollLabel = newestRoll && previousState ? describeRoll(newestRoll.pins, previousState.standingPins) : null;
-          const bowlerName = newestSeat >= 0 ? (names[newestSeat] ?? `Player ${newestSeat + 1}`) : "Player";
-
-          if (this.awaitingRollCount !== null && total >= this.awaitingRollCount) {
-            this.awaitingRollCount = null;
-            this.busy = false;
-            this.aimPhase = "idle";
-            this.resetBallVisual();
-            this.drawAimGuide();
-            this.drawPowerMeter();
-          }
-
-          if (grew && animateNewest && !newestIsMine) {
-            this.animateRoll(state.standingPins, newestRoll?.aim ?? 0, rollLabel ?? undefined);
-            if (rollLabel) setStatus(`${bowlerName} rolled: ${rollLabel}`);
-          } else {
-            this.setStandingPins(state.standingPins);
-          }
-
-          // Banner.
           if (state.gameOver) {
-            const winners = state.winnerSeats.map((s) => names[s] ?? `Player ${s + 1}`);
-            this.bannerText.setText(state.winnerSeats.length > 1 ? "It's a tie!" : `${winners[0]} wins the lane!`);
-            this.aimPhase = "idle";
+            const winners = state.winnerSeats.map((seat) => names[seat] ?? `Player ${seat + 1}`);
+            this.bannerText.setText(winners.length > 1 ? "Friendly tie!" : `${winners[0]} wins the lane!`);
             this.helpText.setText("Match complete.");
-            this.drawAimGuide();
-            this.drawPowerMeter();
-            setStatus(state.winnerSeats.length > 1 ? "A friendly tie." : `${winners[0]} takes the lane.`);
+            setStatus(winners.length > 1 ? "The match ended in a tie." : `${winners[0]} won the match.`);
             return;
           }
-
           const turnName = names[state.currentSeat] ?? `Player ${state.currentSeat + 1}`;
-          const frameLabel = `Frame ${state.currentFrame + 1}/10`;
-          if (rollLockedRef.current) {
-            this.bannerText.setText("Confirming your roll on the shared lane");
-            this.helpText.setText("Waiting for the online lane to catch up.");
-            setStatus("Waiting for the shared lane to confirm your last roll.");
-            return;
-          }
-          if (this.isMyTurn(state)) {
-            this.bannerText.setText(`Your roll — ${frameLabel}, ball ${state.ballInFrame + 1}`);
-            if (!this.busy) {
-              this.beginAiming();
-              if (this.aimPhase === "aim") {
-                this.helpText.setText("Direction sweeping. Tap to lock your line.");
-                setStatus("Tap once to lock direction, then tap again to roll.");
-              } else if (this.aimPhase === "power") {
-                this.helpText.setText("Power meter running. Tap to roll.");
-                setStatus("Tap again to roll.");
-              }
-            }
-          } else {
-            if (!this.busy && this.aimPhase !== "rolling") {
-              this.aimPhase = "idle";
-              this.drawAimGuide();
-              this.drawPowerMeter();
-            }
-            this.bannerText.setText(`${turnName} is bowling — ${frameLabel}`);
-            this.helpText.setText("Watch the lane while your friend bowls.");
-            setStatus(`Waiting for ${turnName}…`);
-          }
+          this.bannerText.setText(`${turnName} · frame ${state.currentFrame + 1}, ball ${state.ballInFrame + 1}`);
+          this.helpText.setText("Aim → choose power → roll → score → next ball.");
         }
 
-        private animateRoll(finalStanding: number, aim = 0, label?: string) {
-          this.aimPhase = "rolling";
+        private animateCanonicalRoll(canonicalRolls: BowlingRoll[], newestIndex: number) {
+          const newestRoll = canonicalRolls[newestIndex];
+          const beforeRolls = canonicalRolls.slice(0, newestIndex);
+          const beforeState = computeBowlingState(beforeRolls, seatCountRef.current);
+          const beforeIds = computeBowlingStandingPinIds(beforeRolls, seatCountRef.current);
+          const knockedIds = selectBowlingKnockedPinIds(beforeIds, newestRoll);
+          const afterIds = computeBowlingStandingPinIds(canonicalRolls, seatCountRef.current);
+          const label = describeRoll(newestRoll.pins, beforeState.standingPins);
+          const bowler = seatNamesRef.current[newestRoll.seat] ?? `Player ${newestRoll.seat + 1}`;
+          const endX = clamp(460 + (newestRoll.aim ?? 0) * 170, 260, 660);
+          const duration = Math.round(1080 - clamp(newestRoll.power ?? 0.7, 0, 1) * 260);
+
+          this.animating = true;
+          setSceneBusy(true);
+          this.setStandingPinIds(beforeIds);
           this.resetBallVisual();
-          playCozyCue("move");
-          const endX = clamp(460 + aim * 170, 260, 660);
+          this.bannerText.setText(`${bowler} is rolling...`);
+          this.helpText.setText("The shared lane is resolving the pins.");
+          playCozyCue("roll");
+
+          const travel = { progress: 0 };
           this.tweens.add({
-            targets: [this.ball],
-            x: endX,
-            y: 168,
-            rotation: aim * 0.32 + Math.PI * 2.6,
-            scaleX: 0.82,
-            scaleY: 0.82,
-            duration: 620,
+            targets: travel,
+            progress: 1,
+            duration,
             ease: "Sine.in",
-            onComplete: () => {
-              playCozyCue("place");
-              this.setStandingPins(finalStanding);
-              if (label) this.showRollCallout(label);
-              this.tweens.add({ targets: this.ball, alpha: 0, duration: 260, onComplete: () => {
-                this.resetBallVisual();
-                this.aimPhase = "idle";
-                this.renderFromLog(false);
-              } });
+            onUpdate: () => {
+              const t = travel.progress;
+              const curve = Math.sin(t * Math.PI) * (newestRoll.aim ?? 0) * 28;
+              const x = PhaserModule.Math.Linear(BALL_START.x, endX, t) + curve;
+              const y = PhaserModule.Math.Linear(BALL_START.y, 166, t);
+              const scale = PhaserModule.Math.Linear(1, 0.78, t);
+              this.ball.setPosition(x, y).setScale(scale).setRotation(t * Math.PI * 5);
+              this.ballShadow.setPosition(x, y + 27).setScale(scale).setAlpha(0.16 - t * 0.09);
             },
-          });
-          this.tweens.add({
-            targets: [this.ballShadow],
-            x: endX,
-            y: 198,
-            scaleX: 0.62,
-            scaleY: 0.62,
-            alpha: 0.08,
-            duration: 620,
-            ease: "Sine.in",
+            onComplete: () => {
+              playCozyCue(label === "Strike!" ? "strike" : label === "Spare!" ? "spare" : label === "Gutter ball" ? "gutter" : "pin");
+              knockedIds.forEach((pinId, order) => {
+                const pin = this.pins[pinId];
+                const direction = (PIN_POSITIONS[pinId][0] - endX) >= 0 ? 1 : -1;
+                this.tweens.add({
+                  targets: pin,
+                  x: pin.x + direction * (30 + (pinId % 3) * 8),
+                  y: pin.y + 28 + (pinId % 2) * 7,
+                  rotation: direction * (1.05 + (pinId % 3) * 0.18),
+                  alpha: 0,
+                  delay: order * 24,
+                  duration: 470,
+                  ease: "Cubic.out",
+                });
+              });
+              this.showRollCallout(label);
+              setStatus(`${bowler} rolled: ${label}`);
+              this.tweens.add({ targets: this.ball, alpha: 0, duration: 240 });
+              this.time.delayedCall(920, () => {
+                this.renderedRollCount = canonicalRolls.length;
+                this.setStandingPinIds(afterIds);
+                this.resetBallVisual();
+                this.animating = false;
+                setSceneBusy(false);
+                this.renderTurnText();
+                this.drawAimGuide();
+                if (this.syncQueued || rollsRef.current.length > this.renderedRollCount) {
+                  this.syncQueued = false;
+                  this.syncFromCanonicalLog(true);
+                }
+              });
+            },
           });
         }
 
@@ -399,203 +312,25 @@ export function BowlingCanvas({
           this.resultCallout?.destroy();
           const isBig = label === "Strike!" || label === "Spare!";
           const color = label === "Strike!" ? "#D9A53E" : label === "Spare!" ? "#8E70BD" : "#5B3F3F";
-          this.resultCallout = this.add
-            .text(GAME_WIDTH / 2, 94, label, {
-              fontFamily: "Caprasimo, Georgia, serif",
-              fontSize: isBig ? "35px" : "25px",
-              color,
-              align: "center",
-              stroke: "#fffdf6",
-              strokeThickness: 8,
-            })
-            .setOrigin(0.5)
-            .setDepth(7600)
-            .setAlpha(0)
-            .setScale(0.84);
+          this.resultCallout = this.add.text(GAME_WIDTH / 2, 92, label, {
+            fontFamily: "Caprasimo, Georgia, serif", fontSize: isBig ? "37px" : "26px", color,
+            align: "center", stroke: "#fffdf6", strokeThickness: 8,
+          }).setOrigin(0.5).setDepth(7600).setAlpha(0).setScale(0.84);
+          this.tweens.add({ targets: this.resultCallout, alpha: 1, scale: 1, y: 80, duration: 180, ease: "Back.out" });
           this.tweens.add({
-            targets: this.resultCallout,
-            alpha: 1,
-            scale: 1,
-            y: 82,
-            duration: 180,
-            ease: "Back.out",
+            targets: this.resultCallout, alpha: 0, y: 62, delay: 1050, duration: 380,
+            onComplete: () => { this.resultCallout?.destroy(); this.resultCallout = undefined; },
           });
-          this.tweens.add({
-            targets: this.resultCallout,
-            alpha: 0,
-            y: 62,
-            delay: 980,
-            duration: 420,
-            ease: "Sine.in",
-            onComplete: () => {
-              this.resultCallout?.destroy();
-              this.resultCallout = undefined;
-            },
-          });
-        }
-
-        private handleTap() {
-          const state = computeBowlingState(rollsRef.current, seatCountRef.current);
-          if (state.gameOver || this.busy || this.aimPhase === "rolling") return;
-          if (!this.isMyTurn(state)) {
-            playCozyCue("miss");
-            return;
-          }
-          if (this.aimPhase === "idle") {
-            this.beginAiming();
-            return;
-          }
-          if (this.aimPhase === "aim") {
-            this.aimPhase = "power";
-            this.power = 0;
-            this.powerDir = 1;
-            this.helpText.setText("Power meter running. Tap to release the ball.");
-            this.drawAimGuide();
-            return;
-          }
-          // Lock power → resolve the roll.
-          this.aimPhase = "rolling";
-          const standing = state.standingPins;
-          const pins = pinsFromAimPower(this.aim, this.power, standing);
-          const aim = this.aim;
-          const power = this.power;
-          this.drawAimGuide();
-          this.drawPowerMeter();
-          void this.commitRoll(pins, standing, aim, power);
-        }
-
-        private async commitRoll(pins: number, standing: number, aim: number, power: number) {
-          // Animate my own roll immediately for responsiveness, then submit.
-          const expectedRollCount = rollsRef.current.length + 1;
-          this.busy = true;
-          this.awaitingRollCount = expectedRollCount;
-          setStatus("Rolling…");
-          this.resetBallVisual();
-          const endX = clamp(460 + aim * 170, 260, 660);
-          this.tweens.add({
-            targets: this.ball,
-            x: endX,
-            y: 168,
-            rotation: aim * 0.32 + Math.PI * 2.6,
-            scaleX: 0.82,
-            scaleY: 0.82,
-            duration: 600,
-            ease: "Sine.in",
-            onComplete: () => {
-              this.setStandingPins(standing - pins);
-              playCozyCue(pins >= standing ? "score" : "place");
-              const label = describeRoll(pins, standing);
-              this.showRollCallout(label);
-              setStatus(`You rolled: ${label}`);
-              this.time.delayedCall(220, () => {
-                this.resetBallVisual();
-              });
-            },
-          });
-          this.tweens.add({
-            targets: [this.ballShadow],
-            x: endX,
-            y: 198,
-            scaleX: 0.62,
-            scaleY: 0.62,
-            alpha: 0.08,
-            duration: 600,
-            ease: "Sine.in",
-          });
-
-          const result = await onRollRef.current(pins, { aim, power });
-          if (!result.ok) {
-            this.awaitingRollCount = null;
-            this.busy = false;
-            this.aimPhase = "idle";
-            this.resetBallVisual();
-            setStatus(result.reason ?? "Roll could not be saved — try again.");
-            this.renderFromLog(false);
-            return;
-          }
-          // Success: the updated log must arrive before the player can
-          // roll again. This prevents a fast client from taking a second
-          // turn off stale local state while the server has already moved
-          // the lane to the next bowler.
-          if (rollsRef.current.length >= expectedRollCount) {
-            this.awaitingRollCount = null;
-            this.busy = false;
-            this.aimPhase = "idle";
-            this.resetBallVisual();
-            this.renderFromLog(false);
-          } else {
-            setStatus("Roll saved. Waiting for the shared lane to sync.");
-          }
         }
 
         private drawAimGuide() {
-          if (!this.laneGuide || !this.aimNeedle) return;
+          if (!this.laneGuide) return;
           this.laneGuide.clear();
-          this.aimNeedle.clear();
-
-          const activeAim = this.aimPhase === "aim" || this.aimPhase === "power" ? this.aim : 0;
-          const endX = clamp(460 + activeAim * 170, 260, 660);
-          this.laneGuide.lineStyle(5, 0x8e70bd, this.aimPhase === "idle" ? 0.18 : 0.66);
-          this.laneGuide.lineBetween(BALL_START.x, BALL_START.y - 22, endX, 142);
-          this.laneGuide.fillStyle(0xffffff, 0.82);
-          this.laneGuide.fillCircle(endX, 142, 11);
-          this.laneGuide.lineStyle(2, 0x8e70bd, 0.8);
-          this.laneGuide.strokeCircle(endX, 142, 11);
-
-          const meterX = 500;
-          const meterY = GAME_HEIGHT - 54;
-          const meterW = 360;
-          this.aimNeedle.fillStyle(0xffffff, 0.72);
-          this.aimNeedle.fillRoundedRect(meterX, meterY, meterW, 26, 13);
-          this.aimNeedle.lineStyle(2, 0x8e70bd, 0.5);
-          this.aimNeedle.strokeRoundedRect(meterX, meterY, meterW, 26, 13);
-          this.aimNeedle.fillStyle(0x8e70bd, this.aimPhase === "aim" ? 0.95 : 0.55);
-          const markerX = meterX + meterW / 2 + activeAim * (meterW / 2 - 16);
-          this.aimNeedle.fillCircle(markerX, meterY + 13, 10);
-          this.aimNeedle.lineStyle(1, 0x5b3f3f, 0.24);
-          this.aimNeedle.lineBetween(meterX + meterW / 2, meterY + 3, meterX + meterW / 2, meterY + 23);
-        }
-
-        private drawPowerMeter() {
-          const x = 60;
-          const y = GAME_HEIGHT - 54;
-          const w = 360;
-          const h = 26;
-          this.powerBar.clear();
-          this.powerBar.fillStyle(0xffffff, 0.7);
-          this.powerBar.fillRoundedRect(x, y, w, h, 13);
-          this.powerBar.lineStyle(2, 0xd87e8c, 0.6);
-          this.powerBar.strokeRoundedRect(x, y, w, h, 13);
-          this.powerFill.clear();
-          if (this.aimPhase === "power") {
-            this.powerFill.fillStyle(0xd87e8c, 0.9);
-            this.powerFill.fillRoundedRect(x + 2, y + 2, Math.max(0, (w - 4) * this.power), h - 4, 11);
-          }
-        }
-
-        update(_time: number, delta: number) {
-          if (this.aimPhase === "aim") {
-            this.aim += this.aimDir * (delta / 820);
-            if (this.aim >= 1) {
-              this.aim = 1;
-              this.aimDir = -1;
-            } else if (this.aim <= -1) {
-              this.aim = -1;
-              this.aimDir = 1;
-            }
-            this.drawAimGuide();
-          }
-          if (this.aimPhase === "power") {
-            this.power += this.powerDir * (delta / 900);
-            if (this.power >= 1) {
-              this.power = 1;
-              this.powerDir = -1;
-            } else if (this.power <= 0) {
-              this.power = 0;
-              this.powerDir = 1;
-            }
-            this.drawPowerMeter();
-          }
+          const endX = clamp(460 + aimRef.current * 170, 260, 660);
+          this.laneGuide.lineStyle(5, 0x8e70bd, this.animating ? 0.14 : 0.68);
+          this.laneGuide.lineBetween(BALL_START.x, BALL_START.y - 20, endX, 142);
+          this.laneGuide.fillStyle(0xffffff, 0.88); this.laneGuide.fillCircle(endX, 142, 11);
+          this.laneGuide.lineStyle(2, 0x8e70bd, 0.86); this.laneGuide.strokeCircle(endX, 142, 11);
         }
       }
 
@@ -611,19 +346,37 @@ export function BowlingCanvas({
     }
 
     void boot();
-
-    return () => {
-      destroyed = true;
-      game?.destroy(true);
-    };
+    return () => { destroyed = true; game?.destroy(true); };
   }, []);
 
   return (
     <div className="grid gap-3">
-      <div className="overflow-hidden rounded-2xl border border-cream-300 bg-cream-50 shadow-sm">
-        <div ref={mountRef} className="aspect-[920/600] w-full" />
+      <div className="overflow-hidden rounded-lg border border-cream-300 bg-cream-50 shadow-sm">
+        <div ref={mountRef} className="aspect-[920/560] w-full" />
       </div>
-      <p className="rounded-lg border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-sm font-bold text-ink-700">
+
+      <div className="grid gap-4 rounded-lg border border-lavender-300/45 bg-white/88 p-4 shadow-sm md:grid-cols-[1fr_1fr_auto] md:items-end">
+        <label className="grid gap-2 text-sm font-extrabold text-ink-800">
+          <span className="flex items-center justify-between gap-2"><span>Aim</span><span className="text-xs text-lavender-600">{aimLabel(aim)}</span></span>
+          <span className="grid grid-cols-[40px_1fr_40px] items-center gap-2">
+            <Button type="button" size="icon" variant="outline" aria-label="Aim left" disabled={!canRoll} onClick={() => setAim((value) => clamp(value - 0.1, -1, 1))}><ChevronLeft /></Button>
+            <input aria-label="Bowling aim" type="range" min={-1} max={1} step={0.02} value={aim} disabled={!canRoll} onChange={(event) => setAim(Number(event.target.value))} className="h-10 w-full accent-[#8E70BD]" />
+            <Button type="button" size="icon" variant="outline" aria-label="Aim right" disabled={!canRoll} onClick={() => setAim((value) => clamp(value + 0.1, -1, 1))}><ChevronRight /></Button>
+          </span>
+        </label>
+
+        <label className="grid gap-2 text-sm font-extrabold text-ink-800">
+          <span className="flex items-center justify-between gap-2"><span>Power</span><span className="text-xs text-blush-600">{Math.round(power * 100)}%</span></span>
+          <input aria-label="Bowling power" type="range" min={0.15} max={1} step={0.01} value={power} disabled={!canRoll} onChange={(event) => setPower(Number(event.target.value))} className="h-10 w-full accent-[#D87E8C]" />
+          <span className="text-[11px] font-bold text-ink-500">The sweet spot is around 75–95%.</span>
+        </label>
+
+        <Button type="button" size="lg" disabled={!canRoll} onClick={() => void handleRoll()} className="w-full md:w-auto">
+          <CircleDot /> {sceneBusy ? "Pins falling..." : rollLocked ? "Confirming..." : isMyTurn ? "Roll ball" : "Friend's turn"}
+        </Button>
+      </div>
+
+      <p aria-live="polite" className="rounded-lg border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-sm font-bold text-ink-700">
         {status}
       </p>
     </div>

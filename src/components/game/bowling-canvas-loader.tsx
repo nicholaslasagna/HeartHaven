@@ -20,7 +20,7 @@ type BowlingCanvasLoaderProps = {
   mySeatIndex: number | null;
   seatCount: number;
   seatNames: string[];
-  onRoll: (pins: number, details: { aim: number; power: number }) => Promise<{ ok: boolean; reason?: string }>;
+  onRoll: (details: { aim: number; power: number }) => Promise<{ ok: boolean; reason?: string }>;
   rollLocked?: boolean;
   sessionId?: string | null;
 };
