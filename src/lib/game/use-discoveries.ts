@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   DISCOVERIES_EVENT,
-  ZONE_DISCOVERIES,
+  getZoneDiscoveries,
   listFound,
   listHidden,
   readDiscoveriesState,
@@ -27,15 +27,18 @@ export function useDiscoveries(zone: DiscoveryZone) {
     const sync = () => setState(readDiscoveriesState());
     window.addEventListener(DISCOVERIES_EVENT, sync);
     window.addEventListener("storage", sync);
+    const dailyCheck = window.setInterval(sync, 30_000);
     return () => {
+      window.clearInterval(dailyCheck);
       window.removeEventListener(DISCOVERIES_EVENT, sync);
       window.removeEventListener("storage", sync);
     };
   }, []);
 
   return useMemo(() => {
+    const dailyItems = getZoneDiscoveries(zone, state.dayKey);
     const foundRows: DiscoveryRow[] = listFound(zone, state).map((entry) => {
-      const definition = ZONE_DISCOVERIES[zone].find((item) => item.id === entry.id);
+      const definition = dailyItems.find((item) => item.id === entry.id);
       // Defensive: an unknown id slipped in somehow — keep it visible.
       if (!definition) {
         return {
@@ -58,7 +61,7 @@ export function useDiscoveries(zone: DiscoveryZone) {
     }));
     return {
       zone,
-      total: ZONE_DISCOVERIES[zone].length,
+      total: dailyItems.length,
       foundCount: foundRows.length,
       hiddenCount: hiddenRows.length,
       found: foundRows,

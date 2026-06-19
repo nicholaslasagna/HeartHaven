@@ -43,6 +43,7 @@ import { recordActivity } from "@/lib/game/activity";
 import { playCozyCue, setHeroicCompanionTheme } from "@/lib/game/cozy-audio";
 import {
   PET_VITALS_EVENT,
+  cancelPetNap,
   getPetBehavior,
   getPetMood,
   getPetVitals,
@@ -50,7 +51,14 @@ import {
   type PetBehavior,
   type PetMood,
 } from "@/lib/game/pet-state";
-import { ZONE_DISCOVERIES, isItemFound, markDiscoveryFound, nearestHidden } from "@/lib/game/discoveries-store";
+import {
+  getDiscoveryDayKey,
+  getZoneDiscoveries,
+  isItemFound,
+  markDiscoveryFound,
+  nearestHidden,
+  readDiscoveriesState,
+} from "@/lib/game/discoveries-store";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import { getGardenDecorArt } from "@/lib/game/item-art";
 import {
@@ -550,6 +558,9 @@ export function GardenCanvas({
         private swapRequestHandler?: (event: Event) => void;
         private positionBroadcastTimer = 0;
         private sniffCooldownUntil = 0;
+        private discoveryDayKey = getDiscoveryDayKey();
+        private discoveryDayCheckTimer = 0;
+        private discoveryPatchGroups = new Map<string, Phaser.GameObjects.Container>();
         /**
          * Track whether the keyboard-bound sniff handler has been wired.
          * Phaser's `input.keyboard.on("keydown-Q", …)` does NOT dedupe — and
@@ -649,6 +660,7 @@ export function GardenCanvas({
           this.updatePet(delta);
           this.updateRemoteAvatarAnimation();
           this.updateNavigationDebugOverlay();
+          this.refreshDailyDiscoveries(delta);
           this.remotePlayersRefreshTimer += delta;
           if (this.remotePlayersRefreshTimer > 250) {
             this.remotePlayersRefreshTimer = 0;
@@ -1386,8 +1398,49 @@ export function GardenCanvas({
          * mechanic discovers itself.
          */
         private drawDiscoveryGlowPatches() {
+          this.renderDiscoveryGlowPatches();
+
+          // When a sniff reveals an item, fade out and destroy the matching
+          // patch. Stop infinite child tweens before destroying the group.
+          const reveal = (event: Event) => {
+            const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+            if (!id) return;
+            const patch = this.discoveryPatchGroups.get(id);
+            if (!patch) return;
+            const childTargets = (patch.list as Phaser.GameObjects.GameObject[]) ?? [];
+            this.tweens.killTweensOf(patch);
+            childTargets.forEach((child) => this.tweens.killTweensOf(child));
+            this.tweens.add({
+              targets: patch,
+              alpha: 0,
+              duration: 700,
+              ease: "Sine.out",
+              onComplete: () => {
+                this.tweens.killTweensOf(patch);
+                childTargets.forEach((child) => this.tweens.killTweensOf(child));
+                this.discoveryPatchGroups.delete(id);
+                patch.destroy(true);
+              },
+            });
+          };
+          window.addEventListener("hearthaven:discovery-revealed", reveal);
+          this.events.once("shutdown", () => window.removeEventListener("hearthaven:discovery-revealed", reveal));
+          this.events.once("destroy", () => window.removeEventListener("hearthaven:discovery-revealed", reveal));
+        }
+
+        private clearDiscoveryGlowPatches() {
+          this.discoveryPatchGroups.forEach((patch) => {
+            this.tweens.killTweensOf(patch);
+            ((patch.list as Phaser.GameObjects.GameObject[]) ?? []).forEach((child) => this.tweens.killTweensOf(child));
+            patch.destroy(true);
+          });
+          this.discoveryPatchGroups.clear();
+        }
+
+        private renderDiscoveryGlowPatches() {
+          this.clearDiscoveryGlowPatches();
           const zone = variant === "park" ? "park" : "garden";
-          ZONE_DISCOVERIES[zone].forEach((item) => {
+          getZoneDiscoveries(zone, this.discoveryDayKey).forEach((item) => {
             if (isItemFound(zone, item.id)) return;
             const worldX = (item.x / 100) * GARDEN_WORLD_WIDTH;
             const worldY = (item.y / 100) * GARDEN_WORLD_HEIGHT;
@@ -1395,6 +1448,7 @@ export function GardenCanvas({
             // we can fade-and-destroy them together when sniff succeeds.
             const patchGroup = this.add.container(0, 0).setDepth(2);
             patchGroup.setName(`discovery-patch-${item.id}`);
+            this.discoveryPatchGroups.set(item.id, patchGroup);
             const glow = this.add.circle(worldX, worldY, worldRadius(36), 0xfae3a8, 0.32);
             this.tweens.add({
               targets: glow,
@@ -1427,45 +1481,18 @@ export function GardenCanvas({
               .setOrigin(0.5, 0);
             patchGroup.add([glow, halo, tag]);
           });
+        }
 
-          // When a sniff reveals an item, fade out and destroy the matching
-          // patch. The previous version kicked off the destroy tween but
-          // never killed the two yoyo:-1 child tweens (glow radius pulse
-          // + halo scale pulse) — those kept running for one more frame
-          // AFTER the container destroyed its children, touching freed
-          // objects and stalling the input loop (the sniff softlock).
-          // Now we kill all child tweens BEFORE the destroy lands.
-          const reveal = (event: Event) => {
-            const id = (event as CustomEvent<{ id?: string }>).detail?.id;
-            if (!id) return;
-            const patch = this.children.getByName(`discovery-patch-${id}`) as Phaser.GameObjects.Container | null;
-            if (!patch) return;
-            // Stop any in-flight tweens that target the patch OR its
-            // children. `killTweensOf` is recursive-safe for arrays.
-            this.tweens.killTweensOf(patch);
-            const childTargets = (patch.list as Phaser.GameObjects.GameObject[]) ?? [];
-            for (const child of childTargets) {
-              this.tweens.killTweensOf(child);
-            }
-            this.tweens.add({
-              targets: patch,
-              alpha: 0,
-              duration: 700,
-              ease: "Sine.out",
-              onComplete: () => {
-                // Defensive: double-kill in case onComplete races with a
-                // late-arriving yoyo iteration we couldn't predict.
-                this.tweens.killTweensOf(patch);
-                for (const child of childTargets) {
-                  this.tweens.killTweensOf(child);
-                }
-                patch.destroy(true);
-              },
-            });
-          };
-          window.addEventListener("hearthaven:discovery-revealed", reveal);
-          this.events.once("shutdown", () => window.removeEventListener("hearthaven:discovery-revealed", reveal));
-          this.events.once("destroy", () => window.removeEventListener("hearthaven:discovery-revealed", reveal));
+        private refreshDailyDiscoveries(delta: number) {
+          this.discoveryDayCheckTimer += delta;
+          if (this.discoveryDayCheckTimer < 30_000) return;
+          this.discoveryDayCheckTimer = 0;
+          const nextDay = getDiscoveryDayKey();
+          if (nextDay === this.discoveryDayKey) return;
+          this.discoveryDayKey = nextDay;
+          readDiscoveriesState();
+          this.renderDiscoveryGlowPatches();
+          setStatus("A new day began — fresh sniff spots are hidden around the map.");
         }
 
         private drawFireflies() {
@@ -1926,6 +1953,8 @@ export function GardenCanvas({
           this.playMode = this.playMode === "keeper" ? "companion" : "keeper";
           this.target = undefined;
           if (this.playMode === "companion") {
+            cancelPetNap();
+            this.petBehavior = getPetBehavior();
             this.petMood = "idle";
             this.petWasNapping = false;
             this.petFleeing = false;

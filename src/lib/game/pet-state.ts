@@ -466,8 +466,9 @@ export function startPetNap(): number {
   return napUntil;
 }
 
-/** Cancel an in-progress nap without crediting energy. Used by dev/reset
- *  flows; the keeper-facing app doesn't currently call it. */
+/** Cancel an in-progress nap without crediting energy. Direct companion
+ *  control calls this because a player-driven pet must be awake and able
+ *  to use its abilities even if it had entered an automatic nap. */
 export function cancelPetNap(): void {
   const stored = rawRead();
   if (!stored.napUntil) return;

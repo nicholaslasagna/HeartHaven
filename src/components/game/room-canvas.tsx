@@ -41,6 +41,7 @@ import { playCozyCue, setHeroicCompanionTheme } from "@/lib/game/cozy-audio";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import {
   PET_VITALS_EVENT,
+  cancelPetNap,
   getPetBehavior,
   getPetMood,
   getPetVitals,
@@ -1186,6 +1187,8 @@ export function RoomCanvas({
           this.playMode = this.playMode === "keeper" ? "companion" : "keeper";
           this.target = undefined;
           if (this.playMode === "companion") {
+            cancelPetNap();
+            this.petBehavior = getPetBehavior();
             this.petMood = "idle";
             this.petWasNapping = false;
             this.petFleeing = false;
