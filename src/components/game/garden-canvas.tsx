@@ -55,10 +55,12 @@ import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import { getGardenDecorArt } from "@/lib/game/item-art";
 import {
   GARDEN_NAVIGATION_WORLD_SCALE,
+  clampToWalkable,
   getNavigationBlockedZones,
-  isStaticNavigationPointValid,
-  resolveStaticNavigationPoint,
-  type NavigationBlockedZone,
+  getNavigationWalkableZones,
+  isPointWalkable,
+  navigationMapIdFromVariant,
+  type NavigationZone,
 } from "@/lib/game/garden-navigation";
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
@@ -366,6 +368,8 @@ export function GardenCanvas({
   variant,
   plots,
 }: GardenCanvasProps) {
+  const navigationMapId = navigationMapIdFromVariant(variant);
+  const navigationDebugActive = NAVIGATION_DEBUG_ENABLED;
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotePlayersRef = useRef(remotePlayers);
   const decorRef = useRef<GardenDecorPlacement[]>(decor ?? readGardenDecor(variant));
@@ -680,26 +684,21 @@ export function GardenCanvas({
         }
 
         private drawRoadNetwork() {
-          const debugPaths = NAVIGATION_DEBUG_ENABLED ||
-            (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug-paths"));
-
-          if (debugPaths) {
+          if (navigationDebugActive) {
             const overlay = this.add.graphics().setDepth(-3);
-            overlay.fillStyle(0x7fb56a, 0.12);
-            overlay.fillRect(
-              WORLD_EDGE_INSET,
-              WORLD_EDGE_INSET,
-              GARDEN_WORLD_WIDTH - WORLD_EDGE_INSET * 2,
-              GARDEN_WORLD_HEIGHT - WORLD_EDGE_INSET * 2,
-            );
-            overlay.lineStyle(4, 0x4f7f38, 0.35);
+            overlay.lineStyle(4, 0x5b3f76, 0.45);
             overlay.strokeRect(
               WORLD_EDGE_INSET,
               WORLD_EDGE_INSET,
               GARDEN_WORLD_WIDTH - WORLD_EDGE_INSET * 2,
               GARDEN_WORLD_HEIGHT - WORLD_EDGE_INSET * 2,
             );
-            getNavigationBlockedZones(variant).forEach((zone) => this.drawNavigationZone(overlay, zone));
+            getNavigationWalkableZones(navigationMapId).forEach((zone) => {
+              this.drawNavigationZone(overlay, zone, "walkable");
+            });
+            getNavigationBlockedZones(navigationMapId).forEach((zone) => {
+              this.drawNavigationZone(overlay, zone, "blocked");
+            });
           }
 
           // 2. Ambient star glints — the original cozy magic — kept on top
@@ -734,20 +733,28 @@ export function GardenCanvas({
           });
         }
 
-        private drawNavigationZone(graphics: Phaser.GameObjects.Graphics, zone: NavigationBlockedZone) {
-          graphics.fillStyle(zone.label.toLowerCase().includes("stream") || zone.label.toLowerCase().includes("lake")
-            ? 0x4b9bc4
-            : 0xd65f6d, 0.24);
-          graphics.lineStyle(3, 0x9e3244, 0.52);
+        private drawNavigationZone(
+          graphics: Phaser.GameObjects.Graphics,
+          zone: NavigationZone,
+          mode: "walkable" | "blocked",
+        ) {
+          const isWater = zone.label.toLowerCase().includes("water") || zone.label.toLowerCase().includes("pond");
+          const fillColor = mode === "walkable" ? 0x65b96f : isWater ? 0x4b9bc4 : 0xd65f6d;
+          const lineColor = mode === "walkable" ? 0x267541 : isWater ? 0x236b99 : 0x9e3244;
+          const fillAlpha = mode === "walkable" ? 0.13 : 0.28;
+          graphics.fillStyle(fillColor, fillAlpha);
+          graphics.lineStyle(3, lineColor, 0.62);
           if (zone.kind === "ellipse") {
             graphics.fillEllipse(zone.x, zone.y, zone.radiusX * 2, zone.radiusY * 2);
             graphics.strokeEllipse(zone.x, zone.y, zone.radiusX * 2, zone.radiusY * 2);
             return;
           }
           if (zone.kind === "capsule") {
-            graphics.lineStyle(zone.radius * 2, 0xd65f6d, 0.2);
+            graphics.lineStyle(zone.radius * 2, fillColor, fillAlpha);
             graphics.lineBetween(zone.x1, zone.y1, zone.x2, zone.y2);
-            graphics.lineStyle(3, 0x9e3244, 0.52);
+            graphics.fillCircle(zone.x1, zone.y1, zone.radius);
+            graphics.fillCircle(zone.x2, zone.y2, zone.radius);
+            graphics.lineStyle(3, lineColor, 0.62);
             graphics.strokeCircle(zone.x1, zone.y1, zone.radius);
             graphics.strokeCircle(zone.x2, zone.y2, zone.radius);
             return;
@@ -763,7 +770,7 @@ export function GardenCanvas({
         }
 
         private createNavigationDebugOverlay() {
-          if (!NAVIGATION_DEBUG_ENABLED) return;
+          if (!navigationDebugActive) return;
           this.navigationDebugGraphics = this.add.graphics().setDepth(9995);
           this.navigationDebugLabel = this.add
             .text(14, 128, "", {
@@ -781,7 +788,7 @@ export function GardenCanvas({
           if (!this.navigationDebugGraphics || !this.navigationDebugLabel || !this.avatar) return;
           const active = this.playMode === "companion" ? this.pet : this.avatar;
           const position = { x: active.x, y: active.y };
-          const valid = isStaticNavigationPointValid(position, variant) && !this.isInsideDecorFootprint(position.x, position.y);
+          const valid = this.isNavigationPointWalkable(position.x, position.y);
           this.navigationDebugGraphics.clear();
           this.navigationDebugGraphics.lineStyle(2, 0xe9a23b, 0.75);
           this.decorObjects.forEach((container) => {
@@ -792,6 +799,14 @@ export function GardenCanvas({
             const radiusY = Math.max(46, spriteConfig.height * 0.18) + 18;
             this.navigationDebugGraphics?.strokeEllipse(container.x, container.y + 22, radiusX * 2, radiusY * 2);
           });
+          if (variant !== "park") {
+            this.navigationDebugGraphics.lineStyle(2, 0xb7791f, 0.8);
+            getPlotPositions(variant)
+              .slice(0, plotsRef.current.length)
+              .forEach(([x, y]) => {
+                this.navigationDebugGraphics?.strokeEllipse(x, y + 8, 140, 64);
+              });
+          }
           this.navigationDebugGraphics.fillStyle(valid ? 0x2d8a55 : 0xd3344b, 0.95);
           this.navigationDebugGraphics.fillCircle(position.x, position.y, 10);
           if (this.navigationRequestedTarget) {
@@ -819,11 +834,32 @@ export function GardenCanvas({
             }
           }
           this.navigationDebugLabel.setText([
-            `navigation: ${variant}`,
+            `navigation: ${navigationMapId}`,
             `position: ${Math.round(position.x)}, ${Math.round(position.y)}`,
             `valid: ${valid ? "yes" : "NO"}`,
-            `blocked zones: ${getNavigationBlockedZones(variant).length}`,
+            `walkable zones: ${getNavigationWalkableZones(navigationMapId).length}`,
+            `blocked zones: ${getNavigationBlockedZones(navigationMapId).length}`,
           ]);
+          const debugWindow = window as Window & {
+            __HEARTHAVEN_NAVIGATION_DEBUG__?: {
+              clampedTarget?: { x: number; y: number };
+              mapId: typeof navigationMapId;
+              position: { x: number; y: number };
+              requestedTarget?: { x: number; y: number };
+              valid: boolean;
+            };
+          };
+          const debugState = {
+            clampedTarget: this.navigationClampedTarget,
+            mapId: navigationMapId,
+            position,
+            requestedTarget: this.navigationRequestedTarget,
+            valid,
+          };
+          debugWindow.__HEARTHAVEN_NAVIGATION_DEBUG__ = debugState;
+          if (mountRef.current) {
+            mountRef.current.dataset.navigationDebug = JSON.stringify(debugState);
+          }
         }
 
         private drawParkDistrict() {
@@ -2441,25 +2477,33 @@ export function GardenCanvas({
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
             this.target = undefined;
-            const next = this.constrainAvatarToWalkable(this.avatar.x + keyboard.x * speed, this.avatar.y + keyboard.y * speed);
+            const next = this.resolveMovementStep(
+              this.avatar.x,
+              this.avatar.y,
+              this.avatar.x + keyboard.x * speed,
+              this.avatar.y + keyboard.y * speed,
+            );
             moveDx = next.x - this.avatar.x;
             moveDy = next.y - this.avatar.y;
             this.avatar.setPosition(next.x, next.y);
-            moving = true;
+            moving = Math.hypot(moveDx, moveDy) > 0.05;
           } else if (this.target) {
             const distance = PhaserModule.Math.Distance.Between(this.avatar.x, this.avatar.y, this.target.x, this.target.y);
             if (distance < 5) {
               this.target = undefined;
             } else {
               const angle = PhaserModule.Math.Angle.Between(this.avatar.x, this.avatar.y, this.target.x, this.target.y);
-              const next = this.constrainAvatarToWalkable(
+              const next = this.resolveMovementStep(
+                this.avatar.x,
+                this.avatar.y,
                 this.avatar.x + Math.cos(angle) * speed,
                 this.avatar.y + Math.sin(angle) * speed,
               );
               moveDx = next.x - this.avatar.x;
               moveDy = next.y - this.avatar.y;
               this.avatar.setPosition(next.x, next.y);
-              moving = true;
+              moving = Math.hypot(moveDx, moveDy) > 0.05;
+              if (!moving) this.target = undefined;
             }
           }
 
@@ -2531,25 +2575,36 @@ export function GardenCanvas({
           const prevPetX = this.pet.x;
           let petMoving = false;
           let petMoveDx = 0;
+          let petMoveDy = 0;
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
-            const next = this.constrainAvatarToWalkable(this.pet.x + keyboard.x * speed, this.pet.y + keyboard.y * speed);
+            const next = this.resolveMovementStep(
+              this.pet.x,
+              this.pet.y,
+              this.pet.x + keyboard.x * speed,
+              this.pet.y + keyboard.y * speed,
+            );
             petMoveDx = next.x - this.pet.x;
+            petMoveDy = next.y - this.pet.y;
             this.pet.setPosition(next.x, next.y);
-            petMoving = true;
+            petMoving = Math.hypot(petMoveDx, petMoveDy) > 0.05;
           } else if (this.target) {
             const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, this.target.x, this.target.y);
             if (distance < 5) {
               this.target = undefined;
             } else {
               const angle = PhaserModule.Math.Angle.Between(this.pet.x, this.pet.y, this.target.x, this.target.y);
-              const next = this.constrainAvatarToWalkable(
+              const next = this.resolveMovementStep(
+                this.pet.x,
+                this.pet.y,
                 this.pet.x + Math.cos(angle) * speed,
                 this.pet.y + Math.sin(angle) * speed,
               );
               petMoveDx = next.x - this.pet.x;
+              petMoveDy = next.y - this.pet.y;
               this.pet.setPosition(next.x, next.y);
-              petMoving = true;
+              petMoving = Math.hypot(petMoveDx, petMoveDy) > 0.05;
+              if (!petMoving) this.target = undefined;
             }
           }
 
@@ -2611,7 +2666,9 @@ export function GardenCanvas({
             this.petFleeing = false;
             this.petFleeTarget = undefined;
             const follow = this.companionFollowTarget();
-            const next = this.constrainAvatarToWalkable(
+            const next = this.resolveMovementStep(
+              this.pet.x,
+              this.pet.y,
               PhaserModule.Math.Linear(this.pet.x, follow.x, 0.08),
               PhaserModule.Math.Linear(this.pet.y, follow.y, 0.08),
             );
@@ -2724,17 +2781,20 @@ export function GardenCanvas({
           const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, targetX, targetY);
           let petMoving = false;
           const prevPetX = this.pet.x;
+          const prevPetY = this.pet.y;
           if (distance > 8) {
             // Joy still matters, but the baseline is high enough that the
             // companion follows across both axes instead of feeling stuck.
             const lerp = 0.105 * this.petBehavior.speedMultiplier;
-            const next = this.constrainAvatarToWalkable(
+            const next = this.resolveMovementStep(
+              this.pet.x,
+              this.pet.y,
               PhaserModule.Math.Linear(this.pet.x, targetX, lerp),
               PhaserModule.Math.Linear(this.pet.y, targetY, lerp),
             );
             this.pet.setPosition(next.x, next.y);
             this.petMood = "follow";
-            petMoving = true;
+            petMoving = Math.hypot(next.x - prevPetX, next.y - prevPetY) > 0.05;
           } else if (this.petMood === "follow") {
             this.petMood = "happy";
             this.petMoodTimer = 0;
@@ -2819,6 +2879,43 @@ export function GardenCanvas({
           };
         }
 
+        private isNavigationPointWalkable(x: number, y: number) {
+          const insideWorld =
+            x >= WORLD_EDGE_INSET
+            && x <= GARDEN_WORLD_WIDTH - WORLD_EDGE_INSET
+            && y >= WORLD_EDGE_INSET
+            && y <= GARDEN_WORLD_HEIGHT - WORLD_EDGE_INSET;
+          return insideWorld
+            && isPointWalkable(navigationMapId, x, y)
+            && !this.isInsideDecorFootprint(x, y)
+            && !this.isInsidePlotFootprint(x, y);
+        }
+
+        /**
+         * Resolve one movement frame without teleporting through scenery.
+         * Diagonal movement may slide along one valid axis; if both axes are
+         * blocked the actor stays planted instead of jittering at the edge.
+         */
+        private resolveMovementStep(fromX: number, fromY: number, toX: number, toY: number) {
+          const origin = this.isNavigationPointWalkable(fromX, fromY)
+            ? { x: fromX, y: fromY }
+            : this.constrainAvatarToWalkable(fromX, fromY);
+          const desired = this.constrainToWorldBounds(toX, toY);
+          if (this.isNavigationPointWalkable(desired.x, desired.y)) return desired;
+
+          const xOnly = { x: desired.x, y: origin.y };
+          const yOnly = { x: origin.x, y: desired.y };
+          const candidates = [xOnly, yOnly]
+            .filter((candidate) => this.isNavigationPointWalkable(candidate.x, candidate.y))
+            .sort(
+              (left, right) =>
+                PhaserModule.Math.Distance.Between(left.x, left.y, desired.x, desired.y)
+                - PhaserModule.Math.Distance.Between(right.x, right.y, desired.x, desired.y),
+            );
+
+          return candidates[0] ?? origin;
+        }
+
         private clampTargetToReachable(startX: number, startY: number, targetX: number, targetY: number) {
           const desired = this.constrainAvatarToWalkable(targetX, targetY);
           const distance = PhaserModule.Math.Distance.Between(startX, startY, desired.x, desired.y);
@@ -2831,34 +2928,44 @@ export function GardenCanvas({
               x: PhaserModule.Math.Linear(startX, desired.x, progress),
               y: PhaserModule.Math.Linear(startY, desired.y, progress),
             };
-            const resolved = this.constrainAvatarToWalkable(sample.x, sample.y);
-            if (PhaserModule.Math.Distance.Between(sample.x, sample.y, resolved.x, resolved.y) > 10) {
+            if (!this.isNavigationPointWalkable(sample.x, sample.y)) {
               return lastReachable;
             }
-            lastReachable = resolved;
+            lastReachable = sample;
           }
 
           return desired;
         }
 
         private constrainAvatarToWalkable(x: number, y: number) {
-          let point = this.constrainToWorldBounds(x, y);
+          const bounded = this.constrainToWorldBounds(x, y);
+          if (this.isNavigationPointWalkable(bounded.x, bounded.y)) return bounded;
 
-          // Static map blockers and dynamic decor use one resolver for
-          // click-to-move, keyboard movement, companions, and remote peers.
-          // Loop because resolving one overlapping footprint can enter the
-          // edge of a neighbouring footprint.
-          for (let attempts = 0; attempts < 5; attempts += 1) {
-            const before = { ...point };
-            point = this.constrainToWorldBounds(point.x, point.y);
-            point = resolveStaticNavigationPoint(point, variant);
-            point = this.constrainToWorldBounds(point.x, point.y);
-            point = this.pushOutOfDecorFootprints(point.x, point.y);
-            point = this.constrainToWorldBounds(point.x, point.y);
-            if (PhaserModule.Math.Distance.Between(before.x, before.y, point.x, point.y) < 0.5) break;
+          const authoredGround = clampToWalkable(navigationMapId, bounded.x, bounded.y);
+          const decorResolved = this.pushOutOfDecorFootprints(authoredGround.x, authoredGround.y);
+          const pushed = this.constrainToWorldBounds(
+            decorResolved.x,
+            decorResolved.y,
+          );
+          if (this.isNavigationPointWalkable(pushed.x, pushed.y)) return pushed;
+
+          // A nearest authored point can still overlap movable decor. Search
+          // outward for the closest point that satisfies both static and
+          // dynamic blockers. This is recovery for spawn/remote packets, not
+          // normal per-frame movement.
+          for (let radius = 12; radius <= 480; radius += 12) {
+            const sampleCount = Math.max(16, Math.ceil((Math.PI * 2 * radius) / 24));
+            for (let index = 0; index < sampleCount; index += 1) {
+              const angle = (index / sampleCount) * Math.PI * 2;
+              const candidate = {
+                x: authoredGround.x + Math.cos(angle) * radius,
+                y: authoredGround.y + Math.sin(angle) * radius,
+              };
+              if (this.isNavigationPointWalkable(candidate.x, candidate.y)) return candidate;
+            }
           }
 
-          return point;
+          return authoredGround;
         }
 
         private pushOutOfDecorFootprints(x: number, y: number) {
@@ -2901,6 +3008,16 @@ export function GardenCanvas({
             if (dx * dx + dy * dy < 1) return true;
           }
           return false;
+        }
+
+        private isInsidePlotFootprint(x: number, y: number) {
+          if (variant === "park") return false;
+          const positions = getPlotPositions(variant).slice(0, plotsRef.current.length);
+          return positions.some(([plotX, plotY]) => {
+            const dx = (x - plotX) / 70;
+            const dy = (y - (plotY + 8)) / 32;
+            return dx * dx + dy * dy < 1;
+          });
         }
 
         private applyRemotePetTone(sprite: Phaser.GameObjects.Sprite, toneId: PetToneId) {
