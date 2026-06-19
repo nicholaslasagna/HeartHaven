@@ -56,8 +56,10 @@ import { getGardenDecorArt } from "@/lib/game/item-art";
 import {
   GARDEN_NAVIGATION_WORLD_SCALE,
   clampToWalkable,
+  getNearestWalkablePoint,
   getNavigationBlockedZones,
   getNavigationWalkableZones,
+  isPointInNavigationZone,
   isPointWalkable,
   navigationMapIdFromVariant,
   type NavigationZone,
@@ -187,6 +189,7 @@ const BASE_GARDEN_WORLD_HEIGHT = 1133;
 const GARDEN_WORLD_WIDTH = Math.round(BASE_GARDEN_WORLD_WIDTH * WORLD_SCALE);
 const GARDEN_WORLD_HEIGHT = Math.round(BASE_GARDEN_WORLD_HEIGHT * WORLD_SCALE);
 const WORLD_EDGE_INSET = 80;
+const MAX_CLICK_SNAP_DISTANCE = 130;
 const GARDEN_STORAGE_PREFIX = "hearthaven:garden-decor:v3:";
 const NAVIGATION_DEBUG_ENABLED =
   process.env.NODE_ENV !== "production" ||
@@ -308,6 +311,26 @@ const worldObjectSprites: Record<GardenDecorKind, { frame: number; width: number
   greenhouse: { frame: 9, width: 268, height: 248, yOffset: -72 },
   memoryTree: { frame: 10, width: 286, height: 254, yOffset: -78 },
   flowerStand: { frame: 11, width: 226, height: 210, yOffset: -58 },
+};
+
+type DecorCollisionFootprint = { offsetY: number; radiusX: number; radiusY: number };
+
+/**
+ * Collision follows the perceived solid base, not the sprite frame or its
+ * shadow. Decorative flower stands stay non-solid; the lantern arch remains
+ * passable because blocking its full frame would close the visible doorway.
+ */
+const decorCollisionFootprints: Partial<Record<GardenDecorKind, DecorCollisionFootprint>> = {
+  arcadeKiosk: { offsetY: 20, radiusX: 48, radiusY: 28 },
+  bbq: { offsetY: 22, radiusX: 38, radiusY: 24 },
+  bowlingKiosk: { offsetY: 20, radiusX: 52, radiusY: 30 },
+  fashionStage: { offsetY: 22, radiusX: 112, radiusY: 34 },
+  fountain: { offsetY: 20, radiusX: 72, radiusY: 36 },
+  gazebo: { offsetY: 22, radiusX: 92, radiusY: 40 },
+  greenhouse: { offsetY: 22, radiusX: 105, radiusY: 42 },
+  memoryTree: { offsetY: 20, radiusX: 68, radiusY: 34 },
+  picnic: { offsetY: 20, radiusX: 68, radiusY: 26 },
+  swing: { offsetY: 20, radiusX: 92, radiusY: 30 },
 };
 
 const decorInteractionCopy: Record<GardenDecorKind, string> = {
@@ -482,6 +505,7 @@ export function GardenCanvas({
         private navigationDebugLabel?: Phaser.GameObjects.Text;
         private navigationRequestedTarget?: { x: number; y: number };
         private navigationClampedTarget?: { x: number; y: number };
+        private navigationPointerPosition?: { x: number; y: number };
         private moveBroadcastTimer = 0;
         private lastSentPetPosition: { x: number; y: number } | null = null;
         private footstepTimer = 0;
@@ -794,10 +818,14 @@ export function GardenCanvas({
           this.decorObjects.forEach((container) => {
             const placement = container.getData("placement") as GardenDecorPlacement | undefined;
             if (!placement) return;
-            const spriteConfig = worldObjectSprites[placement.kind];
-            const radiusX = spriteConfig.width * 0.48 + 22;
-            const radiusY = Math.max(46, spriteConfig.height * 0.18) + 18;
-            this.navigationDebugGraphics?.strokeEllipse(container.x, container.y + 22, radiusX * 2, radiusY * 2);
+            const footprint = decorCollisionFootprints[placement.kind];
+            if (!footprint) return;
+            this.navigationDebugGraphics?.strokeEllipse(
+              container.x,
+              container.y + footprint.offsetY,
+              footprint.radiusX * 2,
+              footprint.radiusY * 2,
+            );
           });
           if (variant !== "park") {
             this.navigationDebugGraphics.lineStyle(2, 0xb7791f, 0.8);
@@ -833,10 +861,23 @@ export function GardenCanvas({
               );
             }
           }
+          if (this.navigationPointerPosition) {
+            this.navigationDebugGraphics.lineStyle(2, 0x8556b8, 0.85);
+            this.navigationDebugGraphics.strokeCircle(
+              this.navigationPointerPosition.x,
+              this.navigationPointerPosition.y,
+              7,
+            );
+          }
+          const pointerZones = this.navigationZoneIdsAt(this.navigationPointerPosition);
           this.navigationDebugLabel.setText([
             `navigation: ${navigationMapId}`,
             `position: ${Math.round(position.x)}, ${Math.round(position.y)}`,
             `valid: ${valid ? "yes" : "NO"}`,
+            `pointer: ${this.formatNavigationPoint(this.navigationPointerPosition)}`,
+            `clicked: ${this.formatNavigationPoint(this.navigationRequestedTarget)}`,
+            `clamped: ${this.formatNavigationPoint(this.navigationClampedTarget)}`,
+            `pointer zones: ${pointerZones.join(", ") || "none"}`,
             `walkable zones: ${getNavigationWalkableZones(navigationMapId).length}`,
             `blocked zones: ${getNavigationBlockedZones(navigationMapId).length}`,
           ]);
@@ -844,6 +885,8 @@ export function GardenCanvas({
             __HEARTHAVEN_NAVIGATION_DEBUG__?: {
               clampedTarget?: { x: number; y: number };
               mapId: typeof navigationMapId;
+              pointer?: { x: number; y: number };
+              pointerZones: string[];
               position: { x: number; y: number };
               requestedTarget?: { x: number; y: number };
               valid: boolean;
@@ -852,6 +895,8 @@ export function GardenCanvas({
           const debugState = {
             clampedTarget: this.navigationClampedTarget,
             mapId: navigationMapId,
+            pointer: this.navigationPointerPosition,
+            pointerZones,
             position,
             requestedTarget: this.navigationRequestedTarget,
             valid,
@@ -860,6 +905,42 @@ export function GardenCanvas({
           if (mountRef.current) {
             mountRef.current.dataset.navigationDebug = JSON.stringify(debugState);
           }
+        }
+
+        private formatNavigationPoint(point?: { x: number; y: number }) {
+          return point ? `${Math.round(point.x)}, ${Math.round(point.y)}` : "-";
+        }
+
+        private navigationZoneIdsAt(point?: { x: number; y: number }) {
+          if (!point) return [];
+          const walkable = getNavigationWalkableZones(navigationMapId)
+            .filter((zone) => isPointInNavigationZone(point, zone))
+            .map((zone) => `+${zone.id}`);
+          const blocked = getNavigationBlockedZones(navigationMapId)
+            .filter((zone) => isPointInNavigationZone(point, zone))
+            .map((zone) => `-${zone.id}`);
+          const decor: string[] = [];
+          this.decorObjects.forEach((container, id) => {
+            const placement = container.getData("placement") as GardenDecorPlacement | undefined;
+            if (!placement) return;
+            const footprint = decorCollisionFootprints[placement.kind];
+            if (!footprint) return;
+            const dx = (point.x - container.x) / footprint.radiusX;
+            const dy = (point.y - (container.y + footprint.offsetY)) / footprint.radiusY;
+            if (dx * dx + dy * dy < 1) decor.push(`-decor:${placement.kind}:${id}`);
+          });
+          const plots = variant === "park"
+            ? []
+            : getPlotPositions(variant)
+                .slice(0, plotsRef.current.length)
+                .flatMap(([plotX, plotY], index) => {
+                  const dx = (point.x - plotX) / 70;
+                  const dy = (point.y - (plotY + 8)) / 32;
+                  return dx * dx + dy * dy < 1
+                    ? [`-plot:${plotsRef.current[index]?.id ?? index}`]
+                    : [];
+                });
+          return [...walkable, ...blocked, ...decor, ...plots];
         }
 
         private drawParkDistrict() {
@@ -1520,6 +1601,11 @@ export function GardenCanvas({
           };
           this.input.keyboard?.on("keydown-BACKSPACE", this.backspaceKeyHandler);
 
+          this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+            if (!navigationDebugActive) return;
+            this.navigationPointerPosition = { x: pointer.worldX, y: pointer.worldY };
+          });
+
           this.input.on(
             "pointerdown",
             (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
@@ -1553,12 +1639,35 @@ export function GardenCanvas({
                 pointer.worldY,
               );
               this.navigationClampedTarget = target;
+              if (!target) {
+                this.target = undefined;
+                setStatus("That spot is too deep inside blocked scenery. Try a nearby path edge.");
+                if (navigationDebugActive) {
+                  console.info("[HeartHaven navigation]", {
+                    clampedTarget: null,
+                    mapId: navigationMapId,
+                    outcome: "ignored-blocked-click",
+                    requestedTarget: this.navigationRequestedTarget,
+                    zones: this.navigationZoneIdsAt(this.navigationRequestedTarget),
+                  });
+                }
+                return;
+              }
               this.target = new PhaserModule.Math.Vector2(target.x, target.y);
               playCozyCue("move");
               const wasClamped = PhaserModule.Math.Distance.Between(pointer.worldX, pointer.worldY, target.x, target.y) > 12;
               setStatus(wasClamped
                 ? "That spot is blocked. Moving to the nearest reachable edge."
                 : `Walking to x ${Math.round(target.x)}, y ${Math.round(target.y)}.`);
+              if (navigationDebugActive) {
+                console.info("[HeartHaven navigation]", {
+                  clampedTarget: target,
+                  mapId: navigationMapId,
+                  outcome: wasClamped ? "clamped" : "accepted",
+                  requestedTarget: this.navigationRequestedTarget,
+                  zones: this.navigationZoneIdsAt(this.navigationRequestedTarget),
+                });
+              }
             },
           );
 
@@ -2917,7 +3026,30 @@ export function GardenCanvas({
         }
 
         private clampTargetToReachable(startX: number, startY: number, targetX: number, targetY: number) {
-          const desired = this.constrainAvatarToWalkable(targetX, targetY);
+          const boundedTarget = this.constrainToWorldBounds(targetX, targetY);
+          const targetWasWalkable = this.isNavigationPointWalkable(
+            boundedTarget.x,
+            boundedTarget.y,
+          );
+          const nearestStatic = targetWasWalkable
+            ? boundedTarget
+            : getNearestWalkablePoint(
+                navigationMapId,
+                boundedTarget.x,
+                boundedTarget.y,
+                MAX_CLICK_SNAP_DISTANCE,
+              );
+          if (!nearestStatic) return undefined;
+
+          const desired = this.constrainAvatarToWalkable(nearestStatic.x, nearestStatic.y);
+          const snapDistance = PhaserModule.Math.Distance.Between(
+            boundedTarget.x,
+            boundedTarget.y,
+            desired.x,
+            desired.y,
+          );
+          if (!targetWasWalkable && snapDistance > MAX_CLICK_SNAP_DISTANCE) return undefined;
+
           const distance = PhaserModule.Math.Distance.Between(startX, startY, desired.x, desired.y);
           const steps = Math.max(1, Math.ceil(distance / 18));
           let lastReachable = this.constrainAvatarToWalkable(startX, startY);
@@ -2929,7 +3061,16 @@ export function GardenCanvas({
               y: PhaserModule.Math.Linear(startY, desired.y, progress),
             };
             if (!this.isNavigationPointWalkable(sample.x, sample.y)) {
-              return lastReachable;
+              // An open target across water or scenery is not a valid direct
+              // route. Dynamic furniture is different: stopping at its near
+              // edge is predictable and feels more forgiving than ignoring
+              // the click completely.
+              const staticMapBlocked = !isPointWalkable(
+                navigationMapId,
+                sample.x,
+                sample.y,
+              );
+              return staticMapBlocked && targetWasWalkable ? undefined : lastReachable;
             }
             lastReachable = sample;
           }
@@ -2974,22 +3115,24 @@ export function GardenCanvas({
             const placement = container.getData("placement") as GardenDecorPlacement | undefined;
             if (!placement) return;
             if (this.selectedDecor?.id === placement.id && this.decorDragging) return;
-            const spriteConfig = worldObjectSprites[placement.kind];
-            const radiusX = spriteConfig.width * 0.48 + 22;
-            const radiusY = Math.max(46, spriteConfig.height * 0.18) + 18;
+            const footprint = decorCollisionFootprints[placement.kind];
+            if (!footprint) return;
             const centerX = container.x;
-            const centerY = container.y + 22;
+            const centerY = container.y + footprint.offsetY;
             const dx = point.x - centerX;
             const dy = point.y - centerY;
-            const normalized = (dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY);
+            const normalized =
+              (dx * dx) / (footprint.radiusX * footprint.radiusX)
+              + (dy * dy) / (footprint.radiusY * footprint.radiusY);
             if (normalized >= 1) return;
 
-            const length = Math.hypot(dx / radiusX, dy / radiusY) || 1;
-            const nx = (dx / radiusX) / length;
-            const ny = (dy / radiusY) / length || 0.2;
+            const length =
+              Math.hypot(dx / footprint.radiusX, dy / footprint.radiusY) || 1;
+            const nx = (dx / footprint.radiusX) / length;
+            const ny = (dy / footprint.radiusY) / length || 0.2;
             point = {
-              x: centerX + nx * radiusX,
-              y: centerY + ny * radiusY,
+              x: centerX + nx * footprint.radiusX,
+              y: centerY + ny * footprint.radiusY,
             };
           });
           return point;
@@ -3000,11 +3143,10 @@ export function GardenCanvas({
             const placement = container.getData("placement") as GardenDecorPlacement | undefined;
             if (!placement) continue;
             if (this.selectedDecor?.id === placement.id && this.decorDragging) continue;
-            const spriteConfig = worldObjectSprites[placement.kind];
-            const radiusX = spriteConfig.width * 0.48 + 22;
-            const radiusY = Math.max(46, spriteConfig.height * 0.18) + 18;
-            const dx = (x - container.x) / radiusX;
-            const dy = (y - (container.y + 22)) / radiusY;
+            const footprint = decorCollisionFootprints[placement.kind];
+            if (!footprint) continue;
+            const dx = (x - container.x) / footprint.radiusX;
+            const dy = (y - (container.y + footprint.offsetY)) / footprint.radiusY;
             if (dx * dx + dy * dy < 1) return true;
           }
           return false;

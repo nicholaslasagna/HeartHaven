@@ -41,15 +41,6 @@ const polygon = (id: string, label: string, points: NavigationPoint[]): Navigati
   points,
 });
 
-const ellipse = (
-  id: string,
-  label: string,
-  x: number,
-  y: number,
-  radiusX: number,
-  radiusY: number,
-): NavigationEllipseZone => ({ id, kind: "ellipse", label, x, y, radiusX, radiusY });
-
 const capsule = (
   id: string,
   label: string,
@@ -66,241 +57,313 @@ const capsule = (
  * Keep each named zone small and intentional: extending one zone should not
  * silently make a neighbouring flower bed or water bank walkable.
  */
-const gardenWalkableZones: NavigationZone[] = [
-  // Main path: left entrance, center bridge approach, and east garden road.
-  capsule("garden-main-path-a", "Main path - west entrance", 90, 700, 500, 575, 82),
-  capsule("garden-main-path-b", "Main path - west bend", 500, 575, 920, 470, 82),
-  capsule("garden-main-path-c", "Main path - central approach", 920, 470, 1510, 590, 84),
-  capsule("garden-main-path-d", "Main path - bridge approach", 1510, 590, 1815, 625, 78),
-  capsule("garden-main-path-e", "Main path - bridge crossing", 1780, 625, 2025, 625, 54),
-  capsule("garden-main-path-f", "Main path - east bend", 2000, 625, 2480, 565, 84),
-  capsule("garden-main-path-g", "Main path - east exit", 2480, 565, 3290, 650, 88),
-
-  // Upper garden road and plot approach lanes.
-  capsule("garden-upper-path-a", "Upper path - west plots", 390, 390, 1080, 355, 78),
-  capsule("garden-upper-path-b", "Upper path - central plots", 1080, 355, 1750, 430, 78),
-  capsule("garden-upper-path-c", "Upper path - east plots", 2050, 430, 2820, 365, 80),
-  capsule("garden-west-approach", "Plot approach lane - west", 430, 345, 430, 930, 72),
-  capsule("garden-center-approach", "Plot approach lane - center", 1020, 340, 1020, 930, 74),
-  capsule("garden-east-approach", "Plot approach lane - east", 2380, 350, 2380, 950, 76),
-  capsule("garden-far-east-approach", "Plot approach lane - far east", 2950, 320, 2950, 930, 76),
-  capsule("garden-lower-path-west", "Lower path - west", 620, 805, 1510, 810, 86),
-  capsule("garden-lower-path-east", "Lower path - east", 1940, 810, 3040, 810, 86),
-
-  // Open ground intentionally available around paths and placement pads.
-  ellipse("garden-west-round-plaza", "West round plaza", 820, 185, 330, 145),
-  polygon("garden-west-court", "West placement court", [
-    { x: 95, y: 300 },
-    { x: 720, y: 260 },
-    { x: 835, y: 485 },
-    { x: 510, y: 610 },
-    { x: 90, y: 530 },
-  ]),
-  ellipse("garden-west-lower-pad", "West lower clearing", 250, 720, 235, 125),
-  ellipse("garden-southwest-soil", "Southwest garden beds", 720, 955, 365, 150),
-  polygon("garden-central-upper-lawn", "Central upper lawn", [
-    { x: 1030, y: 105 },
-    { x: 1850, y: 90 },
-    { x: 1880, y: 470 },
-    { x: 1650, y: 585 },
-    { x: 1120, y: 520 },
-    { x: 920, y: 320 },
-  ]),
-  polygon("garden-central-lower-lawn", "Central lower clearing", [
-    { x: 520, y: 585 },
-    { x: 1680, y: 575 },
-    { x: 1690, y: 980 },
-    { x: 900, y: 1045 },
-    { x: 420, y: 825 },
-  ]),
-  polygon("garden-east-upper-lawn", "East upper clearing", [
-    { x: 2240, y: 85 },
-    { x: 3280, y: 80 },
-    { x: 3270, y: 355 },
-    { x: 2460, y: 430 },
-    { x: 2130, y: 330 },
-  ]),
-  polygon("garden-east-middle-lawn", "East middle clearing", [
-    { x: 2070, y: 380 },
-    { x: 3260, y: 340 },
-    { x: 3260, y: 750 },
-    { x: 2110, y: 750 },
-  ]),
-  polygon("garden-east-lower-lawn", "East lower clearing", [
-    { x: 1950, y: 700 },
-    { x: 3260, y: 670 },
-    { x: 3260, y: 1035 },
-    { x: 1900, y: 1035 },
+// GARDEN: one continuous ground silhouette prevents random seams between
+// paths and lawns. Water and dense border art are subtracted below.
+const gardenWalkableClearings: NavigationZone[] = [
+  polygon("garden-open-terrain", "Open paths, lawns, and placement ground", [
+    { x: 70, y: 820 },
+    { x: 80, y: 330 },
+    { x: 200, y: 250 },
+    { x: 450, y: 130 },
+    { x: 720, y: 100 },
+    { x: 1050, y: 70 },
+    { x: 1350, y: 65 },
+    { x: 1650, y: 75 },
+    { x: 1900, y: 90 },
+    { x: 2150, y: 100 },
+    { x: 2450, y: 100 },
+    { x: 2750, y: 110 },
+    { x: 3050, y: 120 },
+    { x: 3320, y: 180 },
+    { x: 3340, y: 880 },
+    { x: 3220, y: 930 },
+    { x: 3000, y: 980 },
+    { x: 2700, y: 1010 },
+    { x: 2400, y: 1030 },
+    { x: 2100, y: 1040 },
+    { x: 1850, y: 1060 },
+    { x: 1650, y: 1060 },
+    { x: 1450, y: 1040 },
+    { x: 1200, y: 1030 },
+    { x: 900, y: 1020 },
+    { x: 650, y: 1000 },
+    { x: 400, y: 980 },
+    { x: 180, y: 920 },
   ]),
 ];
 
-const gardenBlockedZones: NavigationZone[] = [
-  // The stream is split at the visible bridge so the bridge remains usable.
-  polygon("garden-stream-upper", "Pond/water block - upper stream", [
+// The bridge is intentionally named separately in debug views. It overlaps
+// the broad ground silhouette and lines up with the gap between water masks.
+const gardenWalkablePaths: NavigationZone[] = [
+  capsule("garden-bridge-deck", "Main path - stone bridge", 1730, 640, 2000, 640, 58),
+];
+
+// Plot approach areas are already part of open terrain. They remain named so
+// future plot layouts can be tuned without changing the world silhouette.
+const gardenPlotApproachAreas: NavigationZone[] = [];
+
+const gardenBlockedWater: NavigationZone[] = [
+  // x 1770-2300, y 0-615: upper stream. Ends before the visible bridge deck.
+  polygon("garden-stream-upper", "Water - upper stream", [
     { x: 2100, y: 0 },
-    { x: 2350, y: 0 },
-    { x: 2310, y: 105 },
-    { x: 2260, y: 190 },
-    { x: 2190, y: 270 },
-    { x: 2130, y: 350 },
-    { x: 2070, y: 425 },
-    { x: 2020, y: 505 },
-    { x: 1980, y: 585 },
-    { x: 1815, y: 585 },
-    { x: 1850, y: 500 },
-    { x: 1890, y: 420 },
-    { x: 1950, y: 340 },
-    { x: 2010, y: 255 },
-    { x: 2060, y: 155 },
+    { x: 2300, y: 0 },
+    { x: 2280, y: 120 },
+    { x: 2240, y: 180 },
+    { x: 2190, y: 250 },
+    { x: 2130, y: 330 },
+    { x: 2070, y: 400 },
+    { x: 2010, y: 480 },
+    { x: 1970, y: 560 },
+    { x: 1900, y: 615 },
+    { x: 1770, y: 615 },
+    { x: 1830, y: 550 },
+    { x: 1870, y: 470 },
+    { x: 1920, y: 390 },
+    { x: 1980, y: 310 },
+    { x: 2040, y: 230 },
+    { x: 2090, y: 140 },
   ]),
-  polygon("garden-stream-lower", "Pond/water block - lower stream", [
-    { x: 1785, y: 675 },
-    { x: 1970, y: 675 },
-    { x: 1925, y: 760 },
-    { x: 1860, y: 835 },
-    { x: 1785, y: 910 },
-    { x: 1730, y: 995 },
-    { x: 1690, y: 1133 },
-    { x: 1400, y: 1133 },
-    { x: 1470, y: 1010 },
-    { x: 1535, y: 925 },
-    { x: 1610, y: 850 },
-    { x: 1690, y: 770 },
+  // x 1420-1950, y 700-1133: lower stream. Starts after the bridge deck.
+  polygon("garden-stream-lower", "Water - lower stream", [
+    { x: 1770, y: 700 },
+    { x: 1950, y: 700 },
+    { x: 1910, y: 760 },
+    { x: 1850, y: 820 },
+    { x: 1790, y: 880 },
+    { x: 1740, y: 950 },
+    { x: 1690, y: 1050 },
+    { x: 1660, y: 1133 },
+    { x: 1420, y: 1133 },
+    { x: 1460, y: 1070 },
+    { x: 1510, y: 1000 },
+    { x: 1570, y: 920 },
+    { x: 1640, y: 850 },
+    { x: 1700, y: 780 },
   ]),
-
-  // Tree trunks and dense tree clusters inside otherwise walkable lawns.
-  ellipse("garden-tree-northwest-a", "Tree cluster block - northwest", 350, 165, 78, 48),
-  ellipse("garden-tree-northwest-b", "Tree cluster block - northwest", 505, 172, 72, 44),
-  ellipse("garden-tree-north-a", "Tree cluster block - north", 1270, 115, 74, 46),
-  ellipse("garden-tree-north-b", "Tree cluster block - north", 1490, 105, 74, 46),
-  ellipse("garden-tree-northeast-a", "Tree cluster block - northeast", 2820, 125, 80, 48),
-  ellipse("garden-tree-northeast-b", "Tree cluster block - northeast", 3040, 140, 84, 52),
-  ellipse("garden-tree-west", "Tree cluster block - west", 120, 650, 76, 48),
-  ellipse("garden-tree-southwest-a", "Tree cluster block - southwest", 330, 965, 82, 52),
-  ellipse("garden-tree-southwest-b", "Tree cluster block - southwest", 720, 1050, 90, 54),
-  ellipse("garden-tree-southeast-a", "Tree cluster block - southeast", 2820, 1055, 88, 52),
-  ellipse("garden-tree-southeast-b", "Tree cluster block - southeast", 3090, 1010, 94, 58),
-
-  // Background foliage is excluded even where it overlaps a broad clearing.
-  capsule("garden-north-border", "Map border block - north foliage", 80, 38, 3320, 38, 42),
-  capsule("garden-south-border", "Map border block - south foliage", 80, 1100, 3320, 1100, 46),
 ];
 
-const parkWalkableZones: NavigationZone[] = [
-  // Main park walkway and the branches leading to every activity clearing.
-  capsule("park-main-path-a", "Main walkway - west", 70, 650, 420, 645, 92),
-  capsule("park-main-path-b", "Main walkway - west bend", 420, 645, 760, 515, 88),
-  capsule("park-main-path-c", "Main walkway - central west", 760, 515, 1320, 385, 86),
-  capsule("park-main-path-d", "Main walkway - central", 1320, 385, 1660, 520, 86),
-  capsule("park-main-path-e", "Main walkway - pond approach", 1660, 520, 2060, 420, 88),
-  capsule("park-main-path-f", "Main walkway - east", 2060, 420, 2620, 600, 92),
-  capsule("park-main-path-g", "Main walkway - far east", 2620, 600, 3290, 515, 92),
-  capsule("park-lower-walkway", "Lower walkway", 680, 755, 3000, 755, 92),
-  capsule("park-upper-west-walkway", "Upper walkway - west", 400, 290, 1220, 220, 88),
-  capsule("park-upper-center-walkway", "Upper walkway - center", 1250, 245, 1910, 250, 90),
-  capsule("park-upper-east-walkway", "Upper walkway - east", 2490, 250, 3230, 300, 88),
-  capsule("park-west-approach", "Activity approach - west", 540, 220, 540, 910, 76),
-  capsule("park-center-approach", "Activity approach - center", 1120, 210, 1120, 910, 76),
-  capsule("park-pond-approach", "Activity approach - pond", 1510, 440, 1510, 930, 78),
-  capsule("park-east-approach", "Activity approach - east", 2730, 250, 2730, 930, 78),
+// Baked trees sit in the outer scenery silhouette; no guessed interior tree
+// ellipses remain. This deliberately removes invisible walls from open grass.
+const gardenBlockedTrees: NavigationZone[] = [];
 
-  // Open lawns and paved pads where keepers are meant to gather.
-  ellipse("park-west-round-pad", "West round plaza", 760, 210, 330, 150),
-  ellipse("park-west-small-pad", "West small plaza", 220, 600, 230, 125),
-  polygon("park-west-lawn", "Grass clearing - west", [
-    { x: 100, y: 200 },
-    { x: 820, y: 160 },
-    { x: 930, y: 610 },
-    { x: 660, y: 790 },
-    { x: 170, y: 760 },
+const gardenBlockedFoliage: NavigationZone[] = [
+  polygon("garden-north-scenery", "Dense foliage and trees - north border", [
+    { x: 0, y: 0 },
+    { x: 3400, y: 0 },
+    { x: 3400, y: 180 },
+    { x: 3320, y: 180 },
+    { x: 3050, y: 120 },
+    { x: 2750, y: 110 },
+    { x: 2450, y: 100 },
+    { x: 2150, y: 100 },
+    { x: 1900, y: 90 },
+    { x: 1650, y: 75 },
+    { x: 1350, y: 65 },
+    { x: 1050, y: 70 },
+    { x: 720, y: 100 },
+    { x: 450, y: 130 },
+    { x: 200, y: 250 },
+    { x: 80, y: 330 },
+    { x: 0, y: 350 },
   ]),
-  polygon("park-center-lawn", "Grass clearing - center", [
-    { x: 760, y: 250 },
-    { x: 1540, y: 190 },
-    { x: 1650, y: 850 },
-    { x: 930, y: 930 },
-    { x: 700, y: 650 },
+  polygon("garden-south-scenery", "Dense foliage and trees - south border", [
+    { x: 0, y: 900 },
+    { x: 180, y: 920 },
+    { x: 400, y: 980 },
+    { x: 650, y: 1000 },
+    { x: 900, y: 1020 },
+    { x: 1200, y: 1030 },
+    { x: 1450, y: 1040 },
+    { x: 1650, y: 1060 },
+    { x: 1850, y: 1060 },
+    { x: 2100, y: 1040 },
+    { x: 2400, y: 1030 },
+    { x: 2700, y: 1010 },
+    { x: 3000, y: 980 },
+    { x: 3220, y: 930 },
+    { x: 3400, y: 880 },
+    { x: 3400, y: 1133 },
+    { x: 0, y: 1133 },
   ]),
-  ellipse("park-center-upper-pad", "Center upper plaza", 1350, 135, 300, 125),
-  ellipse("park-center-small-pad", "Center activity pad", 1120, 380, 180, 110),
-  polygon("park-east-upper-lawn", "Grass clearing - east upper", [
-    { x: 2520, y: 160 },
-    { x: 3290, y: 150 },
-    { x: 3280, y: 620 },
-    { x: 2470, y: 580 },
-  ]),
-  polygon("park-east-lower-lawn", "Grass clearing - east lower", [
-    { x: 1770, y: 470 },
-    { x: 3200, y: 430 },
-    { x: 3220, y: 1015 },
-    { x: 1710, y: 1025 },
-  ]),
-  ellipse("park-east-upper-pad", "East upper plaza", 2860, 210, 320, 145),
-  ellipse("park-east-middle-pad", "East middle plaza", 2320, 470, 240, 135),
-  ellipse("park-east-lower-pad", "East lower plaza", 2520, 855, 320, 150),
-  ellipse("park-far-east-lower-pad", "Far east lower plaza", 3110, 790, 250, 135),
 ];
 
-const parkBlockedZones: NavigationZone[] = [
-  // Pond and creek polygons follow the visible banks; gaps preserve bridges.
-  polygon("park-lake", "Pond/water block - lake", [
-    { x: 1570, y: 0 },
-    { x: 1780, y: 0 },
-    { x: 1805, y: 70 },
-    { x: 1890, y: 118 },
-    { x: 2020, y: 135 },
-    { x: 2140, y: 100 },
-    { x: 2260, y: 85 },
-    { x: 2410, y: 120 },
-    { x: 2520, y: 205 },
-    { x: 2570, y: 310 },
-    { x: 2530, y: 400 },
-    { x: 2410, y: 455 },
-    { x: 2260, y: 445 },
-    { x: 2120, y: 405 },
-    { x: 1980, y: 395 },
-    { x: 1850, y: 420 },
-    { x: 1730, y: 385 },
-    { x: 1640, y: 315 },
-    { x: 1590, y: 225 },
-    { x: 1560, y: 120 },
-  ]),
-  polygon("park-creek-upper", "Pond/water block - upper creek", [
-    { x: 570, y: 700 },
-    { x: 745, y: 700 },
-    { x: 710, y: 770 },
-    { x: 650, y: 835 },
-    { x: 565, y: 880 },
-    { x: 450, y: 875 },
-    { x: 505, y: 810 },
-  ]),
-  polygon("park-creek-lower", "Pond/water block - lower creek", [
-    { x: 400, y: 915 },
-    { x: 585, y: 920 },
-    { x: 535, y: 1000 },
-    { x: 470, y: 1080 },
-    { x: 430, y: 1133 },
-    { x: 115, y: 1133 },
-    { x: 210, y: 1060 },
-    { x: 300, y: 995 },
-  ]),
+const gardenBlockedBorders: NavigationZone[] = [];
+const gardenBlockedLargeDecor: NavigationZone[] = [];
 
-  // Tree and rock clearances prevent keepers disappearing into scenery.
-  ellipse("park-tree-northwest-a", "Tree cluster block - northwest", 125, 185, 78, 48),
-  ellipse("park-tree-northwest-b", "Tree cluster block - northwest", 395, 118, 86, 52),
-  ellipse("park-tree-north-a", "Tree cluster block - north", 920, 100, 88, 54),
-  ellipse("park-tree-north-b", "Tree cluster block - north", 1240, 84, 78, 48),
-  ellipse("park-tree-northeast-a", "Tree cluster block - northeast", 2710, 100, 84, 52),
-  ellipse("park-tree-northeast-b", "Tree cluster block - northeast", 3090, 205, 92, 56),
-  ellipse("park-tree-west", "Tree cluster block - west", 105, 610, 82, 50),
-  ellipse("park-tree-east", "Tree cluster block - east", 3270, 610, 84, 52),
-  ellipse("park-tree-southeast-a", "Tree cluster block - southeast", 2780, 1050, 94, 58),
-  ellipse("park-tree-southeast-b", "Tree cluster block - southeast", 3100, 1030, 94, 58),
-  ellipse("park-rock-island-center", "Rock and foliage block - center", 1510, 360, 105, 55),
-  ellipse("park-rock-island-east", "Rock and foliage block - east", 2590, 430, 110, 58),
+const gardenWalkableZones = [
+  ...gardenWalkableClearings,
+  ...gardenWalkablePaths,
+  ...gardenPlotApproachAreas,
+];
+const gardenBlockedZones = [
+  ...gardenBlockedWater,
+  ...gardenBlockedTrees,
+  ...gardenBlockedFoliage,
+  ...gardenBlockedBorders,
+  ...gardenBlockedLargeDecor,
+];
 
-  capsule("park-north-border", "Map border block - north foliage", 80, 38, 3320, 38, 42),
-  capsule("park-south-border", "Map border block - south foliage", 80, 1100, 3320, 1100, 46),
+// PARK: paths and grass are one continuous playable silhouette. Water and
+// dense edge scenery are the only baked static obstacles in the bare map.
+const parkWalkableGrass: NavigationZone[] = [
+  polygon("park-open-terrain", "Open paths, grass, and activity pads", [
+    { x: 60, y: 880 },
+    { x: 60, y: 220 },
+    { x: 180, y: 170 },
+    { x: 400, y: 130 },
+    { x: 650, y: 100 },
+    { x: 900, y: 90 },
+    { x: 1200, y: 80 },
+    { x: 1500, y: 70 },
+    { x: 1700, y: 80 },
+    { x: 1900, y: 90 },
+    { x: 2100, y: 100 },
+    { x: 2400, y: 100 },
+    { x: 2700, y: 100 },
+    { x: 3000, y: 90 },
+    { x: 3280, y: 140 },
+    { x: 3340, y: 240 },
+    { x: 3340, y: 850 },
+    { x: 3250, y: 920 },
+    { x: 3100, y: 970 },
+    { x: 2900, y: 1000 },
+    { x: 2650, y: 1020 },
+    { x: 2400, y: 1020 },
+    { x: 2100, y: 1030 },
+    { x: 1800, y: 1040 },
+    { x: 1500, y: 1040 },
+    { x: 1200, y: 1030 },
+    { x: 900, y: 1020 },
+    { x: 650, y: 1000 },
+    { x: 400, y: 980 },
+    { x: 180, y: 950 },
+  ]),
+];
+
+// Paths are already included in the continuous terrain silhouette. Keeping a
+// second approximate capsule here created a misleading debug stripe and made
+// tuning feel disconnected from the painted roads.
+const parkWalkablePaths: NavigationZone[] = [];
+
+const parkBlockedWater: NavigationZone[] = [
+  // x 1700-2630, y 0-450: waterfall and pond, tightened to the visible bank.
+  polygon("park-lake", "Water - north pond and waterfall", [
+    { x: 1730, y: 0 },
+    { x: 2010, y: 0 },
+    { x: 2020, y: 80 },
+    { x: 2100, y: 130 },
+    { x: 2250, y: 135 },
+    { x: 2380, y: 125 },
+    { x: 2500, y: 150 },
+    { x: 2600, y: 220 },
+    { x: 2630, y: 330 },
+    { x: 2580, y: 400 },
+    { x: 2460, y: 450 },
+    { x: 2280, y: 445 },
+    { x: 2140, y: 410 },
+    { x: 1980, y: 390 },
+    { x: 1850, y: 360 },
+    { x: 1770, y: 300 },
+    { x: 1750, y: 220 },
+    { x: 1700, y: 180 },
+  ]),
+  // x 0-1100, y 730-900: west creek before the visible bridge.
+  polygon("park-creek-upper", "Water - west creek before bridge", [
+    { x: 0, y: 735 },
+    { x: 180, y: 730 },
+    { x: 350, y: 740 },
+    { x: 520, y: 760 },
+    { x: 700, y: 780 },
+    { x: 860, y: 805 },
+    { x: 1010, y: 830 },
+    { x: 1100, y: 860 },
+    { x: 1070, y: 900 },
+    { x: 990, y: 900 },
+    { x: 900, y: 870 },
+    { x: 760, y: 840 },
+    { x: 600, y: 820 },
+    { x: 420, y: 805 },
+    { x: 220, y: 790 },
+    { x: 0, y: 790 },
+  ]),
+  // x 260-1050, y 920-1133: creek outlet after the bridge.
+  polygon("park-creek-lower", "Water - west creek after bridge", [
+    { x: 900, y: 930 },
+    { x: 1030, y: 930 },
+    { x: 960, y: 970 },
+    { x: 880, y: 1000 },
+    { x: 790, y: 1030 },
+    { x: 700, y: 1070 },
+    { x: 620, y: 1110 },
+    { x: 570, y: 1133 },
+    { x: 340, y: 1133 },
+    { x: 400, y: 1090 },
+    { x: 480, y: 1050 },
+    { x: 560, y: 1010 },
+    { x: 640, y: 980 },
+    { x: 730, y: 950 },
+    { x: 820, y: 935 },
+  ]),
+];
+
+// No guessed interior ellipses: baked park trees, rocks, and dense bushes are
+// on the outer silhouette or pond bank. Runtime props use per-item footprints.
+const parkBlockedTrees: NavigationZone[] = [];
+const parkBlockedBenches: NavigationZone[] = [];
+const parkBlockedRocks: NavigationZone[] = [];
+const parkBlockedDenseBushes: NavigationZone[] = [];
+
+const parkBlockedBorders: NavigationZone[] = [
+  polygon("park-north-scenery", "Dense trees and scenery - north border", [
+    { x: 0, y: 0 },
+    { x: 3400, y: 0 },
+    { x: 3400, y: 240 },
+    { x: 3340, y: 240 },
+    { x: 3280, y: 140 },
+    { x: 3000, y: 90 },
+    { x: 2700, y: 100 },
+    { x: 2400, y: 100 },
+    { x: 2100, y: 100 },
+    { x: 1900, y: 90 },
+    { x: 1700, y: 80 },
+    { x: 1500, y: 70 },
+    { x: 1200, y: 80 },
+    { x: 900, y: 90 },
+    { x: 650, y: 100 },
+    { x: 400, y: 130 },
+    { x: 180, y: 170 },
+    { x: 60, y: 220 },
+    { x: 0, y: 220 },
+  ]),
+  polygon("park-south-scenery", "Dense trees and scenery - south border", [
+    { x: 0, y: 900 },
+    { x: 180, y: 950 },
+    { x: 400, y: 980 },
+    { x: 650, y: 1000 },
+    { x: 900, y: 1020 },
+    { x: 1200, y: 1030 },
+    { x: 1500, y: 1040 },
+    { x: 1800, y: 1040 },
+    { x: 2100, y: 1030 },
+    { x: 2400, y: 1020 },
+    { x: 2650, y: 1020 },
+    { x: 2900, y: 1000 },
+    { x: 3100, y: 970 },
+    { x: 3250, y: 920 },
+    { x: 3400, y: 850 },
+    { x: 3400, y: 1133 },
+    { x: 0, y: 1133 },
+  ]),
+];
+
+const parkWalkableZones = [...parkWalkableGrass, ...parkWalkablePaths];
+const parkBlockedZones = [
+  ...parkBlockedWater,
+  ...parkBlockedTrees,
+  ...parkBlockedBenches,
+  ...parkBlockedRocks,
+  ...parkBlockedBorders,
+  ...parkBlockedDenseBushes,
 ];
 
 function scalePoint(point: NavigationPoint): NavigationPoint {
@@ -457,12 +520,14 @@ export function getNearestWalkablePoint(
   mapId: NavigationMapId,
   x: number,
   y: number,
+  maxDistance = Number.POSITIVE_INFINITY,
 ): NavigationPoint | null {
   if (isPointWalkable(mapId, x, y)) return { x, y };
   const point = { x, y };
   // Search outward first so a click in water/foliage resolves to the nearby
   // bank instead of a mathematically convenient but distant path shape.
-  for (let radius = 16; radius <= 720; radius += 16) {
+  const radialSearchLimit = Math.min(720, maxDistance);
+  for (let radius = 16; radius <= radialSearchLimit; radius += 16) {
     const sampleCount = Math.max(16, Math.ceil((Math.PI * 2 * radius) / 28));
     for (let index = 0; index < sampleCount; index += 1) {
       const angle = (index / sampleCount) * Math.PI * 2;
@@ -474,6 +539,7 @@ export function getNearestWalkablePoint(
   const directCandidates = getNavigationWalkableZones(mapId)
     .map((zone) => nearestPointInZone(point, zone))
     .filter((candidate) => isPointWalkable(mapId, candidate.x, candidate.y))
+    .filter((candidate) => Math.hypot(candidate.x - x, candidate.y - y) <= maxDistance)
     .sort(
       (left, right) =>
         Math.hypot(left.x - x, left.y - y) - Math.hypot(right.x - x, right.y - y),
