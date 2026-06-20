@@ -6,11 +6,9 @@ import {
   Cookie,
   Footprints,
   Hand,
-  PawPrint,
   PenTool,
   Search,
   Send,
-  Shovel,
   Sparkles,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -44,7 +42,7 @@ export function ParkHud({ playerName, companionName }: { playerName: string; com
   const [mode, setMode] = useState<ParkPlayMode>("keeper");
   const [keeperHint, setKeeperHint] = useState("Plot 4 · fountain");
   const [companionHint, setCompanionHint] = useState("Plot 9 · brook edge");
-  const [upNext, setUpNext] = useState("Walk over to the lantern arch — your companion can squeeze through it.");
+  const [upNext, setUpNext] = useState("Swap to your companion and sniff the glowing discovery patches.");
 
   useEffect(() => {
     const sync = (event: Event) => {
@@ -78,22 +76,6 @@ export function ParkHud({ playerName, companionName }: { playerName: string; com
       icon: Search,
       tint: tint("bg-lavender-100", "border-lavender-300/70", "text-lavender-500"),
       fire: () => CONFIRM("sniff"),
-    },
-    {
-      id: "squeeze",
-      label: "Squeeze",
-      hotkey: "E",
-      icon: PawPrint,
-      tint: tint("bg-lavender-100", "border-lavender-300/70", "text-lavender-500"),
-      fire: () => CONFIRM("squeeze"),
-    },
-    {
-      id: "dig",
-      label: "Dig",
-      hotkey: "F",
-      icon: Shovel,
-      tint: tint("bg-honey-100", "border-honey-500/40", "text-honey-700"),
-      fire: () => CONFIRM("dig"),
     },
     {
       id: "fetch",

@@ -8,6 +8,7 @@ import { CozyCard } from "@/components/cozy/cozy-card";
 import { FriendInviteCard } from "@/components/cozy/friend-invite-card";
 import { getDefaultGardenDecor, readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
+import { GardenAbilityButtons } from "@/components/game/garden-ability-buttons";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
@@ -374,6 +375,7 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
           <p className="rounded-md border border-blush-300/40 bg-white/70 px-3 py-2 text-xs font-extrabold text-blush-700">
             {decorSaveStatus}
           </p>
+          <GardenAbilityButtons compact />
           <CompanionMiniCard />
         </div>
         <GardenSocialPanel

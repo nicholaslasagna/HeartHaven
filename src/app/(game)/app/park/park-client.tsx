@@ -251,8 +251,8 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
             <p className="hh-eyebrow text-garden-700">World · the park</p>
             <h1 className="hh-display mt-1 text-4xl text-ink-900">Honeyheart Park</h1>
             <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-              Twelve walkable plots, a fountain, a swing set, and three companion-only shortcuts. Right-click anywhere
-              to swap who you control — your companion is faster and can sniff up rare drops.
+              Twelve walkable plots, a fountain, and a swing set. Right-click anywhere to swap who you control — your
+              companion is faster and can sniff up rare drops.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -287,14 +287,6 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
               <li className="flex items-center justify-between rounded-md bg-lavender-100/60 px-2 py-1">
                 <span>Sniff hidden items</span>
                 <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-black">Q</span>
-              </li>
-              <li className="flex items-center justify-between rounded-md bg-lavender-100/60 px-2 py-1">
-                <span>Squeeze through gaps</span>
-                <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-black">E</span>
-              </li>
-              <li className="flex items-center justify-between rounded-md bg-honey-100/70 px-2 py-1">
-                <span>Dig fresh dirt</span>
-                <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-black">F</span>
               </li>
               <li className="flex items-center justify-between rounded-md bg-blush-100/70 px-2 py-1">
                 <span>Recall to keeper</span>

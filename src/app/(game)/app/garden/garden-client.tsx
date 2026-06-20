@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { MiniGameCard } from "@/components/cozy/mini-game-card";
 import { getDefaultGardenDecor, readGardenDecor, writeGardenDecor, type GardenDecorPlacement } from "@/components/game/garden-canvas";
 import { GardenCanvasLoader } from "@/components/game/garden-canvas-loader";
+import { GardenAbilityButtons } from "@/components/game/garden-ability-buttons";
 import { GardenSocialPanel } from "@/components/game/garden-social-panel";
 import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
 import { ParkControlCard } from "@/components/game/park/park-control-card";
@@ -291,6 +292,9 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
                 <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-black">Delete</span>
               </li>
             </ul>
+            <div className="mt-3 border-t border-cream-200 pt-3">
+              <GardenAbilityButtons />
+            </div>
           </section>
         </div>
         <div className="grid min-w-0 gap-3 overflow-hidden">

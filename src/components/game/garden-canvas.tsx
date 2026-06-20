@@ -42,6 +42,13 @@ import {
 import { recordActivity } from "@/lib/game/activity";
 import { playCozyCue, setHeroicCompanionTheme } from "@/lib/game/cozy-audio";
 import {
+  getDailyDigSpots,
+  getGardenSqueezeGaps,
+  isDigSpotDug,
+  markDigSpotDug,
+  type DigSpot,
+} from "@/lib/game/garden-abilities";
+import {
   PET_VITALS_EVENT,
   cancelPetNap,
   getPetBehavior,
@@ -74,6 +81,7 @@ import {
 } from "@/lib/game/garden-navigation";
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
+import { creditWallet } from "@/lib/game/wallet-store";
 
 type GardenPlotState = {
   id: string;
@@ -569,8 +577,14 @@ export function GardenCanvas({
          * dozens of times per key press until the browser hung.
          */
         private sniffKeyHandler?: () => void;
+        private squeezeKeyHandler?: () => void;
+        private digKeyHandler?: () => void;
         private deleteKeyHandler?: () => void;
         private backspaceKeyHandler?: () => void;
+        private companionActionBusyUntil = 0;
+        private digSpots: DigSpot[] = getDailyDigSpots(variant);
+        private abilitySpotObjects: Phaser.GameObjects.Container[] = [];
+        private digSpotObjects = new Map<string, Phaser.GameObjects.Container>();
 
         constructor() {
           super("HeartHavenGarden");
@@ -640,6 +654,7 @@ export function GardenCanvas({
           // while in companion mode but drawn in either, so the player
           // knows what they're aiming for after swapping.
           this.drawDiscoveryGlowPatches();
+          this.drawCompanionAbilitySpots();
           this.createDecorations(initialDecor);
           this.createAvatar();
           this.createPet();
@@ -1492,7 +1507,70 @@ export function GardenCanvas({
           this.discoveryDayKey = nextDay;
           readDiscoveriesState();
           this.renderDiscoveryGlowPatches();
+          this.digSpots = getDailyDigSpots(variant, nextDay);
+          this.drawCompanionAbilitySpots();
           setStatus("A new day began — fresh sniff spots are hidden around the map.");
+        }
+
+        private clearCompanionAbilitySpots() {
+          this.abilitySpotObjects.forEach((object) => {
+            this.tweens.killTweensOf(object);
+            ((object.list as Phaser.GameObjects.GameObject[]) ?? []).forEach((child) => this.tweens.killTweensOf(child));
+            object.destroy(true);
+          });
+          this.abilitySpotObjects = [];
+          this.digSpotObjects.clear();
+        }
+
+        private drawCompanionAbilitySpots() {
+          this.clearCompanionAbilitySpots();
+          if (variant === "park") return;
+
+          getGardenSqueezeGaps(variant).forEach((gap) => {
+            ([gap.a, gap.b] as const).forEach((point, endpointIndex) => {
+              const x = point.x / 100 * GARDEN_WORLD_WIDTH;
+              const y = point.y / 100 * GARDEN_WORLD_HEIGHT;
+              const marker = this.add.container(x, y).setDepth(3);
+              const halo = this.add.ellipse(0, 0, worldRadius(70), worldRadius(32), 0xc0a8dc, 0.2)
+                .setStrokeStyle(3, 0x8e70bd, 0.58);
+              const paw = this.add.text(0, -3, "🐾", { fontSize: "20px" }).setOrigin(0.5);
+              const label = this.add.text(0, worldRadius(24), `${gap.label} · E`, {
+                color: "#5B3F76",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "11px",
+                fontStyle: "900",
+                backgroundColor: "#EFE6F7",
+                padding: { x: 7, y: 3 },
+              }).setOrigin(0.5, 0);
+              marker.setName(`${gap.id}-${endpointIndex}`);
+              marker.add([halo, paw, label]);
+              this.tweens.add({ targets: halo, alpha: 0.34, scaleX: 1.08, duration: 1500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+              this.abilitySpotObjects.push(marker);
+            });
+          });
+
+          this.digSpots.forEach((spot) => {
+            const x = spot.x / 100 * GARDEN_WORLD_WIDTH;
+            const y = spot.y / 100 * GARDEN_WORLD_HEIGHT;
+            const dug = isDigSpotDug(spot.id);
+            const marker = this.add.container(x, y).setDepth(3).setAlpha(dug ? 0.42 : 1);
+            const soil = this.add.ellipse(0, 0, worldRadius(76), worldRadius(34), dug ? 0xb89a74 : 0x9d6f4d, dug ? 0.24 : 0.48)
+              .setStrokeStyle(2, 0x6f4b36, 0.42);
+            const paw = this.add.text(0, -4, dug ? "✓" : "🐾", {
+              color: "#fffaf0", fontFamily: "Nunito, sans-serif", fontSize: dug ? "16px" : "20px", fontStyle: "900",
+            }).setOrigin(0.5);
+            const label = this.add.text(0, worldRadius(25), dug ? "Dug today" : "Fresh dirt · F", {
+              color: "#5B3F3F",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "11px",
+              fontStyle: "900",
+              backgroundColor: "#FFF3D2",
+              padding: { x: 7, y: 3 },
+            }).setOrigin(0.5, 0);
+            marker.add([soil, paw, label]);
+            this.abilitySpotObjects.push(marker);
+            this.digSpotObjects.set(spot.id, marker);
+          });
         }
 
         private drawFireflies() {
@@ -1615,6 +1693,18 @@ export function GardenCanvas({
             if (this.playMode === "companion") this.trySniff();
           };
           this.input.keyboard?.on("keydown-Q", this.sniffKeyHandler);
+          if (this.squeezeKeyHandler) this.input.keyboard?.off("keydown-E", this.squeezeKeyHandler);
+          this.squeezeKeyHandler = () => {
+            if (this.textInputFocused || isTextInputFocused()) return;
+            this.trySqueeze();
+          };
+          this.input.keyboard?.on("keydown-E", this.squeezeKeyHandler);
+          if (this.digKeyHandler) this.input.keyboard?.off("keydown-F", this.digKeyHandler);
+          this.digKeyHandler = () => {
+            if (this.textInputFocused || isTextInputFocused()) return;
+            this.tryDig();
+          };
+          this.input.keyboard?.on("keydown-F", this.digKeyHandler);
           if (this.deleteKeyHandler) this.input.keyboard?.off("keydown-DELETE", this.deleteKeyHandler);
           this.deleteKeyHandler = () => {
             if (this.textInputFocused || isTextInputFocused()) return;
@@ -1754,13 +1844,188 @@ export function GardenCanvas({
             setStatus("Note dropped — friends in the park can pick it up.");
             return;
           }
-          if (action === "squeeze" || action === "dig") {
-            playCozyCue("petChirp");
-            setStatus(action === "squeeze"
-              ? "Snuck through the squeeze gap — only your companion fits."
-              : "Pawed at the dirt — nothing buried here yet.");
+          if (action === "squeeze") { this.trySqueeze(); return; }
+          if (action === "dig") { this.tryDig(); return; }
+        }
+
+        private canUseGardenCompanionAbility(label: string) {
+          if (variant === "park") {
+            setStatus(`${label} is a garden companion ability.`);
+            return false;
+          }
+          if (this.playMode !== "companion") {
+            setStatus(`Swap to your companion before using ${label.toLowerCase()}.`);
+            return false;
+          }
+          if (this.time.now < this.companionActionBusyUntil) return false;
+          return true;
+        }
+
+        private trySqueeze() {
+          if (!this.canUseGardenCompanionAbility("Squeeze")) return;
+          const endpoints = getGardenSqueezeGaps(variant).flatMap((gap) => [
+            { gap, from: gap.a, to: gap.b },
+            { gap, from: gap.b, to: gap.a },
+          ]);
+          const nearest = endpoints
+            .map((entry) => ({
+              ...entry,
+              distance: PhaserModule.Math.Distance.Between(
+                this.pet.x,
+                this.pet.y,
+                entry.from.x / 100 * GARDEN_WORLD_WIDTH,
+                entry.from.y / 100 * GARDEN_WORLD_HEIGHT,
+              ),
+            }))
+            .sort((left, right) => left.distance - right.distance)[0];
+          if (!nearest || nearest.distance > worldRadius(180)) {
+            setStatus("Move beside a lavender paw tunnel, then press E to squeeze through.");
+            playCozyCue("miss");
             return;
           }
+
+          const destination = this.constrainAvatarToWalkable(
+            nearest.to.x / 100 * GARDEN_WORLD_WIDTH,
+            nearest.to.y / 100 * GARDEN_WORLD_HEIGHT,
+          );
+          this.target = undefined;
+          this.companionActionBusyUntil = this.time.now + 950;
+          this.petFacing = destination.x < this.pet.x ? "left" : "right";
+          this.petSprite.setFlipX(petFlipX(this.petFacing));
+          this.petAccessorySprite?.setFlipX(petFlipX(this.petFacing));
+          this.spawnSparkleBurst(this.pet.x, this.pet.y - 28, 0xc0a8dc, 14);
+          playCozyCue("petChirp");
+          setStatus(`${nearest.gap.label}: squeezing through...`);
+
+          this.tweens.add({
+            targets: this.pet,
+            scaleX: 0.48,
+            scaleY: 1.08,
+            alpha: 0.72,
+            duration: 180,
+            ease: "Sine.in",
+            onComplete: () => {
+              this.petShadow?.setVisible(false);
+              this.tweens.add({
+                targets: this.pet,
+                x: destination.x,
+                y: destination.y,
+                scaleX: 0.64,
+                scaleY: 0.76,
+                rotation: this.petFacing === "left" ? -0.08 : 0.08,
+                duration: 440,
+                ease: "Sine.inOut",
+                onComplete: () => {
+                  this.tweens.add({
+                    targets: this.pet,
+                    scaleX: 1,
+                    scaleY: 1,
+                    rotation: 0,
+                    alpha: 1,
+                    duration: 180,
+                    ease: "Back.out",
+                    onComplete: () => {
+                      this.petShadow?.setVisible(true).setPosition(this.pet.x, this.pet.y + 18);
+                      this.petMood = "happy";
+                      this.petMoodTimer = 0;
+                      this.applyPetLocomotion(false, "happy");
+                      this.spawnSparkleBurst(this.pet.x, this.pet.y - 28, 0xfaebc2, 16);
+                      playCozyCue("score");
+                      setStatus(`${nearest.gap.label}: your companion popped out on the other side.`);
+                      onAvatarMove?.({
+                        x: this.avatar.x,
+                        y: this.avatar.y,
+                        facing: this.avatarFacing,
+                        petX: this.pet.x,
+                        petY: this.pet.y,
+                        petFacing: this.petFacing,
+                        controlMode: "companion",
+                      });
+                    },
+                  });
+                },
+              });
+            },
+          });
+        }
+
+        private tryDig() {
+          if (!this.canUseGardenCompanionAbility("Dig")) return;
+          const nearest = this.digSpots
+            .map((spot) => ({
+              spot,
+              distance: PhaserModule.Math.Distance.Between(
+                this.pet.x,
+                this.pet.y,
+                spot.x / 100 * GARDEN_WORLD_WIDTH,
+                spot.y / 100 * GARDEN_WORLD_HEIGHT,
+              ),
+            }))
+            .sort((left, right) => left.distance - right.distance)[0];
+          if (!nearest || nearest.distance > worldRadius(175)) {
+            setStatus("Move onto a Fresh dirt marker, then press F to dig.");
+            playCozyCue("miss");
+            return;
+          }
+          if (isDigSpotDug(nearest.spot.id)) {
+            setStatus("Your companion already dug here today. Try another fresh patch.");
+            return;
+          }
+          const result = markDigSpotDug(nearest.spot.id);
+          if (!result.ok) return;
+
+          this.target = undefined;
+          this.companionActionBusyUntil = this.time.now + 1150;
+          this.petMood = "happy";
+          this.applyPetLocomotion(false, "walk1");
+          playCozyCue("pet");
+          setStatus("Digging through the soft garden soil...");
+          for (let index = 0; index < 12; index += 1) {
+            const angle = Math.PI * (0.15 + index / 11 * 0.7);
+            const particle = this.add.circle(this.pet.x, this.pet.y + 4, 5 + index % 3, 0x9d6f4d, 0.82).setDepth(this.pet.y + 3);
+            this.tweens.add({
+              targets: particle,
+              x: this.pet.x + Math.cos(angle) * (42 + index * 3),
+              y: this.pet.y - Math.sin(angle) * (38 + index * 2),
+              alpha: 0,
+              scale: 0.35,
+              delay: index * 32,
+              duration: 620,
+              ease: "Cubic.out",
+              onComplete: () => particle.destroy(),
+            });
+          }
+          const digStartY = this.pet.y;
+          this.tweens.add({
+            targets: this.pet,
+            scaleX: 1.08,
+            scaleY: 0.88,
+            y: digStartY + 7,
+            duration: 110,
+            yoyo: true,
+            repeat: 4,
+            ease: "Sine.inOut",
+            onYoyo: () => this.setPetPose("walk2"),
+            onRepeat: () => this.setPetPose("walk1"),
+            onComplete: () => {
+              this.pet.setY(digStartY).setScale(1).setRotation(0);
+              this.petMood = "happy";
+              this.petMoodTimer = 0;
+              this.applyPetLocomotion(false, "happy");
+              this.drawCompanionAbilitySpots();
+              creditWallet({
+                gameId: `garden-dig-${nearest.spot.id}`,
+                label: "Garden digging find",
+                score: result.coins,
+                coins: result.coins,
+                hearts: 0,
+              });
+              recordActivity("coins-earned", result.coins, { source: "garden-dig", spotId: nearest.spot.id });
+              this.spawnSparkleBurst(this.pet.x, this.pet.y - 34, 0xd9a53e, 14);
+              playCozyCue("reward");
+              setStatus(`Your companion uncovered ${result.coins} coins! This patch refreshes tomorrow.`);
+            },
+          });
         }
 
         private applySunshinePulse() {
@@ -1950,6 +2215,10 @@ export function GardenCanvas({
          * active character.
          */
         private togglePlayMode() {
+          if (this.time.now < this.companionActionBusyUntil) {
+            setStatus("Let your companion finish the current garden action first.");
+            return;
+          }
           this.playMode = this.playMode === "keeper" ? "companion" : "keeper";
           this.target = undefined;
           if (this.playMode === "companion") {
@@ -2156,9 +2425,13 @@ export function GardenCanvas({
             // closures on every keypress — that stacking was the sniff
             // softlock root cause.
             if (this.sniffKeyHandler) this.input.keyboard?.off("keydown-Q", this.sniffKeyHandler);
+            if (this.squeezeKeyHandler) this.input.keyboard?.off("keydown-E", this.squeezeKeyHandler);
+            if (this.digKeyHandler) this.input.keyboard?.off("keydown-F", this.digKeyHandler);
             if (this.deleteKeyHandler) this.input.keyboard?.off("keydown-DELETE", this.deleteKeyHandler);
             if (this.backspaceKeyHandler) this.input.keyboard?.off("keydown-BACKSPACE", this.backspaceKeyHandler);
             this.sniffKeyHandler = undefined;
+            this.squeezeKeyHandler = undefined;
+            this.digKeyHandler = undefined;
             this.deleteKeyHandler = undefined;
             this.backspaceKeyHandler = undefined;
             // Stop the breathing tween so the GC can collect the pet sprite
@@ -2706,6 +2979,10 @@ export function GardenCanvas({
          */
         private updatePetController(delta: number) {
           if (!this.pet) return;
+          if (this.time.now < this.companionActionBusyUntil) {
+            this.petShadow.setPosition(this.pet.x, this.pet.y + 18).setDepth(this.pet.y - 1);
+            return;
+          }
           const keyboard = this.readKeyboard();
           // Direct control should feel as reliable as keeper control. Vitals
           // still drive mood/poses, but never throttle the player's input.

@@ -10,6 +10,7 @@ const USER_SCOPED_KEYS = [
   "hearthaven:daily-wish",
   "hearthaven:discoveries-state",
   "hearthaven:guest-player-id",
+  "hearthaven:garden-abilities-state",
   "hearthaven:inventory-state",
   "hearthaven:keeper-body-id",
   "hearthaven:keeper-character-id",
