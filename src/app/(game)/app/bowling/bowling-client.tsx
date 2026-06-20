@@ -28,6 +28,7 @@ export function BowlingClient() {
           pins: Number((move.payload as { pins?: number })?.pins ?? 0),
           aim: Number((move.payload as { aim?: number })?.aim ?? 0),
           power: Number((move.payload as { power?: number })?.power ?? 0),
+          rollSeed: Number((move.payload as { rollSeed?: number })?.rollSeed ?? 0),
         })),
     [game.moves],
   );

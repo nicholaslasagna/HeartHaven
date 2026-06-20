@@ -2,9 +2,10 @@
 -- Run against the HeartHaven project after migration 0067 is applied.
 
 select
-  public.resolve_bowling_pins(0, 0.84, 10) as centered_strike,
+  public.resolve_bowling_pins(0.18, 0.84, 10) as pocket_result,
+  public.resolve_bowling_pins(0, 0.84, 10) as flat_center_result,
   public.resolve_bowling_pins(1, 0.84, 10) as gutter_by_aim,
-  public.resolve_bowling_pins(0, 0.70, 4) as centered_spare;
+  public.resolve_bowling_pins(0.18, 0.70, 4) as pocket_spare_attempt;
 
 select
   (public.bowling_player_state('[10,10,10,10,10,10,10,10,10,10,6]'::jsonb)->>'standingPins')::integer as tenth_strike_then_six_standing,
@@ -24,19 +25,20 @@ where n.nspname = 'public'
   and p.proname = 'submit_bowling_roll';
 
 select
-  not has_function_privilege(
+  has_function_privilege(
     'authenticated',
     'public.submit_bowling_roll(uuid, integer, numeric, numeric, integer, integer)',
     'execute'
   ) as authenticated_can_submit,
-  has_function_privilege(
+  not has_function_privilege(
     'anon',
     'public.submit_bowling_roll(uuid, integer, numeric, numeric, integer, integer)',
     'execute'
   ) as anonymous_cannot_submit;
 
 -- Expected:
--- centered_strike = 10, gutter_by_aim = 0, centered_spare = 4.
+-- Pocket result should outperform flat center without guaranteeing a strike;
+-- gutter_by_aim = 0. Spare attempts are resolved by quality, not auto-granted.
 -- tenth_strike_then_six_standing = 4; tenth_spare_bonus_standing = 10.
 -- submit_bowling_roll is SECURITY DEFINER and all four booleans are true.
 -- authenticated_can_submit = true; anonymous_cannot_submit = false.

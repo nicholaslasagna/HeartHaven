@@ -46,6 +46,26 @@ export type BowlingRoll = {
   aim?: number;
   /** Optional locked power, 0–1. */
   power?: number;
+  /** Server-generated seed used for repeatable lane drift and pin reactions. */
+  rollSeed?: number;
+};
+
+export type BowlingImpact = {
+  effectiveAim: number;
+  laneDrift: number;
+  pocketError: number;
+  pocketQuality: number;
+  powerQuality: number;
+  force: number;
+  varianceUnit: number;
+};
+
+export type BowlingPinReaction = {
+  id: number;
+  strength: number;
+  directionX: number;
+  directionY: number;
+  delay: number;
 };
 
 export type BowlingFrame = {
@@ -98,53 +118,137 @@ function clampPower(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+function normalizedModulo(value: number, divisor: number): number {
+  const whole = Number.isFinite(value) ? Math.trunc(value) : 0;
+  return ((whole % divisor) + divisor) % divisor;
+}
+
 /**
- * Resolve the number of pins from aim, power, and the authoritative rack.
- * This formula is mirrored by `public.resolve_bowling_pins` in the database.
+ * Convert the chosen line and power into repeatable lane-impact metrics.
+ * A good roll aims for either side of the head pin rather than a hidden exact
+ * number. The seed adds a very small shared lane drift, never client-only RNG.
  */
-export function resolveBowlingPins(aim: number, power: number, standing: number): number {
-  const safeStanding = Math.max(0, Math.min(BOWLING_PINS, Math.floor(standing)));
+export function getBowlingImpact(aim: number, power: number, seed = 0): BowlingImpact {
   const safeAim = clampUnit(aim);
   const safePower = clampPower(power);
-  const aimError = Math.abs(safeAim);
-  const powerError = Math.abs(safePower - 0.84);
-  const aimQuality = Math.max(0, Math.min(1, 1 - aimError / 0.92));
-  const powerQuality = Math.max(0, Math.min(1, 1 - powerError / 0.84));
+  const seedBucket = Math.abs(Math.trunc(Number.isFinite(seed) ? seed : 0)) % 1009;
+  const laneUnit = normalizedModulo(seedBucket * 53 + 29, 101) / 100;
+  const varianceUnit = normalizedModulo(seedBucket * 37 + 17, 101) / 100;
+  const laneDrift = (laneUnit - 0.5) * 0.09;
+  const effectiveAim = clampUnit(safeAim + laneDrift);
+  const pocketError = Math.abs(Math.abs(effectiveAim) - 0.18);
+  const pocketQuality = Math.max(0, Math.min(1, 1 - pocketError / 0.52));
+  const powerQuality = safePower < 0.76
+    ? safePower / 0.76
+    : safePower <= 0.92
+      ? 1
+      : Math.max(0, Math.min(1, 1 - (safePower - 0.92) / 0.22));
+  const force = Math.max(0, Math.min(1, (safePower - 0.08) / 0.68));
+
+  return {
+    effectiveAim,
+    laneDrift,
+    pocketError,
+    pocketQuality,
+    powerQuality,
+    force,
+    varianceUnit,
+  };
+}
+
+/**
+ * Resolve the number of pins from aim, power, and the authoritative rack.
+ * This formula is mirrored by `public.resolve_bowling_pins_v2` in the database.
+ */
+export function resolveBowlingPins(aim: number, power: number, standing: number, seed = 0): number {
+  const safeStanding = Math.max(0, Math.min(BOWLING_PINS, Math.floor(standing)));
+  const safePower = clampPower(power);
+  const impact = getBowlingImpact(aim, safePower, seed);
 
   if (safeStanding <= 0) return 0;
-  if (aimError > 0.78 || safePower < 0.14) return 0;
-  if (safeStanding === BOWLING_PINS && aimError <= 0.13 && safePower >= 0.72 && safePower <= 0.98) {
-    return BOWLING_PINS;
-  }
-  if (safeStanding < BOWLING_PINS && aimError <= 0.22 && safePower >= 0.55) return safeStanding;
+  if (Math.abs(impact.effectiveAim) > 0.9 || safePower < 0.12) return 0;
 
-  const base = Math.round(safeStanding * (0.12 + aimQuality * 0.52 + powerQuality * 0.34));
-  const hookPenalty = Math.max(0, aimError - 0.42) * 3;
-  const powerPenalty = safePower < 0.35 ? 2 : safePower > 0.98 ? 1 : 0;
-  return Math.max(0, Math.min(safeStanding, base - Math.round(hookPenalty) - powerPenalty));
+  const quality = impact.pocketQuality * 0.58 + impact.powerQuality * 0.42;
+  let expectedRatio = 0.06 + 0.82 * impact.force * quality;
+  if (impact.pocketError <= 0.08 && safePower >= 0.74 && safePower <= 0.95) expectedRatio += 0.08;
+  // A flat hit on the head pin carries less energy through the rack than a pocket hit.
+  if (Math.abs(impact.effectiveAim) < 0.055) expectedRatio -= 0.055;
+  expectedRatio = Math.max(0, Math.min(0.98, expectedRatio));
+
+  const naturalPinVariance = impact.varianceUnit < 0.18 ? -1 : impact.varianceUnit > 0.9 ? 1 : 0;
+  let pins = Math.round(safeStanding * expectedRatio) + naturalPinVariance;
+  pins = Math.max(0, Math.min(safeStanding, pins));
+
+  // A strike requires a solid pocket and a good release, but is never granted
+  // solely for choosing one magic slider value.
+  if (safeStanding === BOWLING_PINS && pins >= BOWLING_PINS) {
+    const strikeQuality = impact.pocketError <= 0.105
+      && safePower >= 0.68
+      && safePower <= 0.97
+      && impact.varianceUnit >= 0.48;
+    if (!strikeQuality) pins = BOWLING_PINS - 1;
+  }
+  return pins;
+}
+
+/** Pin-body reactions used to choose and animate the canonical knocked pins. */
+export function getBowlingPinReactions(
+  standingPinIds: readonly number[],
+  roll: Pick<BowlingRoll, "aim" | "power" | "pins" | "rollSeed">,
+): BowlingPinReaction[] {
+  const power = clampPower(roll.power ?? 0);
+  const seed = roll.rollSeed ?? 0;
+  const impact = getBowlingImpact(roll.aim ?? 0, power, seed);
+  const impactX = impact.effectiveAim * 0.58;
+  const direct = new Map<number, number>();
+
+  standingPinIds.forEach((pinId) => {
+    const pin = BOWLING_PIN_LAYOUT[pinId] ?? BOWLING_PIN_LAYOUT[0];
+    const contactWidth = 0.16 + impact.force * 0.13;
+    const pathContact = Math.max(0, 1 - Math.abs(pin.x - impactX) / contactWidth);
+    direct.set(pinId, pathContact * impact.force * (1 - pin.row * 0.035));
+  });
+
+  return standingPinIds.map((pinId) => {
+    const pin = BOWLING_PIN_LAYOUT[pinId] ?? BOWLING_PIN_LAYOUT[0];
+    let chain = 0;
+    standingPinIds.forEach((sourceId) => {
+      if (sourceId === pinId) return;
+      const source = BOWLING_PIN_LAYOUT[sourceId] ?? BOWLING_PIN_LAYOUT[0];
+      const dx = pin.x - source.x;
+      const dy = (pin.row - source.row) * 0.18;
+      const distance = Math.hypot(dx, dy);
+      const transfer = Math.max(0, 1 - distance / 0.43)
+        * (direct.get(sourceId) ?? 0)
+        * (0.36 + impact.force * 0.32);
+      chain = Math.max(chain, transfer);
+    });
+    const jitter = normalizedModulo(Math.abs(seed) + pinId * 31 + 7, 19) / 190;
+    const strength = Math.max(0, Math.min(1.35, (direct.get(pinId) ?? 0) + chain + jitter));
+    const side = pin.x - impactX;
+    const fallbackSide = impact.effectiveAim === 0 ? (pinId % 2 === 0 ? 1 : -1) : Math.sign(impact.effectiveAim);
+    const directionX = Math.max(-1, Math.min(1, side * 2.2 + fallbackSide * 0.24));
+    return {
+      id: pinId,
+      strength,
+      directionX,
+      directionY: Math.max(0.35, Math.min(1, 0.45 + strength * 0.5)),
+      delay: Math.round(pin.row * 34 + Math.abs(side) * 75),
+    };
+  });
 }
 
 /** Pick the exact pins a canonical roll knocks down. */
 export function selectBowlingKnockedPinIds(
   standingPinIds: readonly number[],
-  roll: Pick<BowlingRoll, "aim" | "power" | "pins">,
+  roll: Pick<BowlingRoll, "aim" | "power" | "pins" | "rollSeed">,
 ): number[] {
   const count = Math.max(0, Math.min(standingPinIds.length, Math.floor(roll.pins)));
   if (count === 0) return [];
-  const impactX = clampUnit(roll.aim ?? 0) * 0.58;
-  const power = clampPower(roll.power ?? 0.7);
-
-  return [...standingPinIds]
-    .sort((leftId, rightId) => {
-      const left = BOWLING_PIN_LAYOUT[leftId] ?? BOWLING_PIN_LAYOUT[0];
-      const right = BOWLING_PIN_LAYOUT[rightId] ?? BOWLING_PIN_LAYOUT[0];
-      // Strong throws carry through the back rows; softer throws favor the head pins.
-      const rowWeight = 0.105 + power * 0.035;
-      const leftDistance = Math.abs(left.x - impactX) + left.row * rowWeight;
-      const rightDistance = Math.abs(right.x - impactX) + right.row * rowWeight;
-      return leftDistance - rightDistance || leftId - rightId;
-    })
-    .slice(0, count);
+  return getBowlingPinReactions(standingPinIds, roll)
+    .sort((left, right) => right.strength - left.strength || left.delay - right.delay || left.id - right.id)
+    .slice(0, count)
+    .map((reaction) => reaction.id);
 }
 
 /**

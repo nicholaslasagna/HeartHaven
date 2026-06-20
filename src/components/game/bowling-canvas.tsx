@@ -9,6 +9,8 @@ import {
   BOWLING_PIN_IDS,
   computeBowlingStandingPinIds,
   computeBowlingState,
+  getBowlingImpact,
+  getBowlingPinReactions,
   selectBowlingKnockedPinIds,
   type BowlingRoll,
 } from "@/lib/game/bowling-scoring";
@@ -35,10 +37,17 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function describeRoll(pins: number, standingBeforeRoll: number) {
+function describeRoll(pins: number, standingBeforeRoll: number, roll: BowlingRoll) {
   if (standingBeforeRoll === 10 && pins === 10) return "Strike!";
   if (standingBeforeRoll < 10 && pins === standingBeforeRoll) return "Spare!";
   if (pins === 0) return "Gutter ball";
+  const impact = getBowlingImpact(roll.aim ?? 0, roll.power ?? 0, roll.rollSeed ?? 0);
+  if ((roll.power ?? 0) < 0.4) return `Too soft · ${pins} pin${pins === 1 ? "" : "s"}`;
+  if (Math.abs(impact.effectiveAim) > 0.58) return `A little wide · ${pins} pin${pins === 1 ? "" : "s"}`;
+  if (impact.pocketError <= 0.11 && (roll.power ?? 0) >= 0.68 && (roll.power ?? 0) <= 0.97) {
+    return `Great pocket hit · ${pins} pins`;
+  }
+  if (standingBeforeRoll === 10 && pins >= 7) return `Spare chance · ${pins} pins`;
   return `${pins} pin${pins === 1 ? "" : "s"}`;
 }
 
@@ -62,17 +71,19 @@ export function BowlingCanvas({
   const seatCountRef = useRef(seatCount);
   const seatNamesRef = useRef(seatNames);
   const aimRef = useRef(0);
-  const powerRef = useRef(0.82);
+  const powerRef = useRef(0);
   const [aim, setAim] = useState(0);
-  const [power, setPower] = useState(0.82);
+  const [power, setPower] = useState(0);
+  const [powerTouched, setPowerTouched] = useState(false);
   const [sceneBusy, setSceneBusy] = useState(false);
-  const [status, setStatus] = useState("Set your line and power, then roll when it is your turn.");
+  const [status, setStatus] = useState("Aim for the pocket and release with steady power.");
 
   const state = useMemo(() => computeBowlingState(rolls, seatCount), [rolls, seatCount]);
   const isMyTurn = !state.gameOver && (
     mySeatIndex === null ? !sessionId : state.currentSeat === mySeatIndex
   );
-  const canRoll = isMyTurn && !rollLocked && !sceneBusy;
+  const canAdjust = isMyTurn && !rollLocked && !sceneBusy;
+  const canRoll = canAdjust && powerTouched && power >= 0.12;
 
   useEffect(() => {
     rollsRef.current = rolls;
@@ -92,7 +103,11 @@ export function BowlingCanvas({
     setStatus("Sending your roll to the shared lane...");
     const result = await onRoll({ aim, power });
     if (!result.ok) setStatus(result.reason ?? "That roll could not be saved. Try again.");
-    else setStatus("Roll accepted. Waiting for the shared lane animation.");
+    else {
+      setPower(0);
+      setPowerTouched(false);
+      setStatus("Roll accepted. Waiting for the shared lane animation.");
+    }
   }
 
   useEffect(() => {
@@ -243,10 +258,13 @@ export function BowlingCanvas({
           const beforeState = computeBowlingState(beforeRolls, seatCountRef.current);
           const beforeIds = computeBowlingStandingPinIds(beforeRolls, seatCountRef.current);
           const knockedIds = selectBowlingKnockedPinIds(beforeIds, newestRoll);
+          const reactions = getBowlingPinReactions(beforeIds, newestRoll);
+          const reactionById = new Map(reactions.map((reaction) => [reaction.id, reaction]));
           const afterIds = computeBowlingStandingPinIds(canonicalRolls, seatCountRef.current);
-          const label = describeRoll(newestRoll.pins, beforeState.standingPins);
+          const label = describeRoll(newestRoll.pins, beforeState.standingPins, newestRoll);
           const bowler = seatNamesRef.current[newestRoll.seat] ?? `Player ${newestRoll.seat + 1}`;
-          const endX = clamp(460 + (newestRoll.aim ?? 0) * 170, 260, 660);
+          const impact = getBowlingImpact(newestRoll.aim ?? 0, newestRoll.power ?? 0, newestRoll.rollSeed ?? 0);
+          const endX = clamp(460 + impact.effectiveAim * 170, 260, 660);
           const duration = Math.round(1080 - clamp(newestRoll.power ?? 0.7, 0, 1) * 260);
 
           this.animating = true;
@@ -276,18 +294,34 @@ export function BowlingCanvas({
               playCozyCue(label === "Strike!" ? "strike" : label === "Spare!" ? "spare" : label === "Gutter ball" ? "gutter" : "pin");
               knockedIds.forEach((pinId, order) => {
                 const pin = this.pins[pinId];
-                const direction = (PIN_POSITIONS[pinId][0] - endX) >= 0 ? 1 : -1;
+                const reaction = reactionById.get(pinId);
+                const direction = reaction?.directionX || ((PIN_POSITIONS[pinId][0] - endX) >= 0 ? 1 : -1);
+                const strength = reaction?.strength ?? 0.55;
                 this.tweens.add({
                   targets: pin,
-                  x: pin.x + direction * (30 + (pinId % 3) * 8),
-                  y: pin.y + 28 + (pinId % 2) * 7,
-                  rotation: direction * (1.05 + (pinId % 3) * 0.18),
+                  x: pin.x + direction * (24 + strength * 38),
+                  y: pin.y + 18 + (reaction?.directionY ?? 0.6) * 32,
+                  rotation: direction * (0.72 + strength * 0.72),
                   alpha: 0,
-                  delay: order * 24,
-                  duration: 470,
+                  delay: Math.max(order * 18, reaction?.delay ?? 0),
+                  duration: 430 + Math.round(strength * 120),
                   ease: "Cubic.out",
                 });
               });
+              reactions
+                .filter((reaction) => !knockedIds.includes(reaction.id) && reaction.strength > 0.28)
+                .forEach((reaction) => {
+                  const pin = this.pins[reaction.id];
+                  this.tweens.add({
+                    targets: pin,
+                    x: pin.x + reaction.directionX * 5,
+                    rotation: reaction.directionX * 0.055,
+                    duration: 110,
+                    yoyo: true,
+                    repeat: 1,
+                    delay: reaction.delay,
+                  });
+                });
               this.showRollCallout(label);
               setStatus(`${bowler} rolled: ${label}`);
               this.tweens.add({ targets: this.ball, alpha: 0, duration: 240 });
@@ -359,20 +393,34 @@ export function BowlingCanvas({
         <label className="grid gap-2 text-sm font-extrabold text-ink-800">
           <span className="flex items-center justify-between gap-2"><span>Aim</span><span className="text-xs text-lavender-600">{aimLabel(aim)}</span></span>
           <span className="grid grid-cols-[40px_1fr_40px] items-center gap-2">
-            <Button type="button" size="icon" variant="outline" aria-label="Aim left" disabled={!canRoll} onClick={() => setAim((value) => clamp(value - 0.1, -1, 1))}><ChevronLeft /></Button>
-            <input aria-label="Bowling aim" type="range" min={-1} max={1} step={0.02} value={aim} disabled={!canRoll} onChange={(event) => setAim(Number(event.target.value))} className="h-10 w-full accent-[#8E70BD]" />
-            <Button type="button" size="icon" variant="outline" aria-label="Aim right" disabled={!canRoll} onClick={() => setAim((value) => clamp(value + 0.1, -1, 1))}><ChevronRight /></Button>
+            <Button type="button" size="icon" variant="outline" aria-label="Aim left" disabled={!canAdjust} onClick={() => setAim((value) => clamp(value - 0.1, -1, 1))}><ChevronLeft /></Button>
+            <input aria-label="Bowling aim" type="range" min={-1} max={1} step={0.02} value={aim} disabled={!canAdjust} onChange={(event) => setAim(Number(event.target.value))} className="h-10 w-full accent-[#8E70BD]" />
+            <Button type="button" size="icon" variant="outline" aria-label="Aim right" disabled={!canAdjust} onClick={() => setAim((value) => clamp(value + 0.1, -1, 1))}><ChevronRight /></Button>
           </span>
+          <span className="text-[11px] font-bold text-ink-500">Aim just beside the head pin to find either pocket.</span>
         </label>
 
         <label className="grid gap-2 text-sm font-extrabold text-ink-800">
           <span className="flex items-center justify-between gap-2"><span>Power</span><span className="text-xs text-blush-600">{Math.round(power * 100)}%</span></span>
-          <input aria-label="Bowling power" type="range" min={0.15} max={1} step={0.01} value={power} disabled={!canRoll} onChange={(event) => setPower(Number(event.target.value))} className="h-10 w-full accent-[#D87E8C]" />
-          <span className="text-[11px] font-bold text-ink-500">The sweet spot is around 75–95%.</span>
+          <input
+            aria-label="Bowling power"
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={power}
+            disabled={!canAdjust}
+            onChange={(event) => {
+              setPower(Number(event.target.value));
+              setPowerTouched(true);
+            }}
+            className="h-10 w-full accent-[#D87E8C]"
+          />
+          <span className="flex justify-between text-[11px] font-bold text-ink-500"><span>Soft</span><span>Balanced</span><span>Full</span></span>
         </label>
 
         <Button type="button" size="lg" disabled={!canRoll} onClick={() => void handleRoll()} className="w-full md:w-auto">
-          <CircleDot /> {sceneBusy ? "Pins falling..." : rollLocked ? "Confirming..." : isMyTurn ? "Roll ball" : "Friend's turn"}
+          <CircleDot /> {sceneBusy ? "Pins falling..." : rollLocked ? "Confirming..." : !isMyTurn ? "Friend's turn" : !powerTouched || power < 0.12 ? "Choose power" : "Roll ball"}
         </Button>
       </div>
 
