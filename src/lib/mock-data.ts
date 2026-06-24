@@ -110,6 +110,14 @@ export const miniGames = [
     href: "/app/bowling",
   },
   {
+    id: "moonberry-pool",
+    title: "Moonberry Pool",
+    reward: "Coins + hearts",
+    description: "Aim, pull back, and pocket cozy moonberry balls on a soft garden arcade table.",
+    status: "Playable solo",
+    href: "/app/pool",
+  },
+  {
     id: "garden-four",
     title: "Garden Four",
     reward: "Coins + hearts",
@@ -172,6 +180,13 @@ export const partyGames = [
     description: "A cozy two-player bowling lane with alternating turns, frame scoring, pin collisions, and Casper cheering each round.",
   },
   {
+    id: "moonberry-pool-party",
+    title: "Moonberry Pool",
+    mode: "solo arcade table",
+    href: "/app/pool",
+    description: "A date-night garden table with drag-to-aim pool shots. Shared table sync is planned for a later phase.",
+  },
+  {
     id: "lantern-relay",
     title: "Lantern Relay",
     mode: "solo arcade",
@@ -208,6 +223,13 @@ export const parkGames = [
     mode: "two-player lane",
     href: "/app/bowling",
     description: "A cozy party lane tucked next to Casper's snack stand.",
+  },
+  {
+    id: "park-pool",
+    title: "Moonberry Pool Table",
+    mode: "solo arcade",
+    href: "/app/pool",
+    description: "A soft felt table for date-night bank shots and cozy pocket combos.",
   },
   {
     id: "park-garden-four",

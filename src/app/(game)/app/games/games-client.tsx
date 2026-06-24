@@ -31,7 +31,13 @@ import { cn } from "@/lib/utils";
 
 const partySizes = [2, 4, 6, 8] as const;
 const joinCodePattern = /^HH-[A-Z]{5,6}-[0-9]{3,4}$/;
-const soloPartyGameIds = new Set(["petal-catch-party", "lantern-relay", "heart-hunt", "fashion-show-party"]);
+const soloPartyGameIds = new Set([
+  "petal-catch-party",
+  "moonberry-pool-party",
+  "lantern-relay",
+  "heart-hunt",
+  "fashion-show-party",
+]);
 
 function isSoloPartyGame(game: (typeof partyGames)[number]) {
   return soloPartyGameIds.has(game.id);
