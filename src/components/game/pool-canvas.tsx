@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { CircleDot, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +10,7 @@ import {
   POOL_MAX_SHOTS,
   POOL_POCKETS,
   POOL_TABLE,
+  clonePoolBalls,
   countRemainingObjectBalls,
   createInitialPoolBalls,
   getCueBall,
@@ -18,6 +19,8 @@ import {
   scorePoolShot,
   stepPoolPhysics,
   type PoolBall,
+  type PoolSessionMetadata,
+  type PoolShotSummary,
 } from "@/lib/game/pool-physics";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +43,11 @@ type DragState = {
   direction: { x: number; y: number };
 };
 
+type ActiveShot = {
+  angle: number;
+  power: number;
+} | null;
+
 type SparkleEffect = {
   id: number;
   x: number;
@@ -50,8 +58,21 @@ type SparkleEffect = {
   label?: string;
 };
 
+export type PoolSubmittedShot = {
+  angle: number;
+  power: number;
+  settledBalls: PoolBall[];
+  summary: PoolShotSummary;
+};
+
 type PoolCanvasProps = {
   roundKey: number;
+  mode?: "solo" | "multiplayer";
+  sessionState?: PoolSessionMetadata | null;
+  mySeatIndex?: number | null;
+  currentPlayerName?: string;
+  submittingShot?: boolean;
+  onSubmitShot?: (shot: PoolSubmittedShot) => Promise<{ ok: true } | { ok: false; reason: string }>;
   onRoundStart?: () => void;
   onGameOver?: (result: { score: number; shotsTaken: number; cleared: boolean }) => void;
 };
@@ -75,6 +96,25 @@ const EMPTY_DRAG: DragState = {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function canonicalStateKey(state?: PoolSessionMetadata | null) {
+  if (!state) return "solo";
+  return JSON.stringify({
+    balls: state.balls.map((ball) => ({
+      id: ball.id,
+      x: Math.round(ball.x * 10) / 10,
+      y: Math.round(ball.y * 10) / 10,
+      potted: ball.potted,
+    })),
+    currentSeat: state.currentSeat,
+    scores: state.scores,
+    shotNumber: state.shotNumber,
+    shotsRemaining: state.shotsRemaining,
+    gameOver: state.gameOver,
+    finalScore: state.finalScore,
+    lastShot: state.lastShot?.submittedAt ?? state.lastShot?.message ?? "",
+  });
 }
 
 function canvasPoint(event: PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement) {
@@ -317,30 +357,59 @@ function drawSparkles(ctx: CanvasRenderingContext2D, effects: SparkleEffect[]) {
   }
 }
 
-function drawFrame(ctx: CanvasRenderingContext2D, balls: PoolBall[], drag: DragState, effects: SparkleEffect[], phase: PoolPhase) {
+function drawFrame(
+  ctx: CanvasRenderingContext2D,
+  balls: PoolBall[],
+  drag: DragState,
+  effects: SparkleEffect[],
+  phase: PoolPhase,
+  canAim: boolean,
+) {
   drawPoolTable(ctx);
   const cue = getCueBall(balls);
-  if (cue && !cue.potted && phase !== "resolving" && phase !== "game-over") {
+  if (canAim && cue && !cue.potted && phase !== "resolving" && phase !== "game-over") {
     drawAimGuide(ctx, cue, drag);
   }
   balls.forEach((ball) => drawBall(ctx, ball));
   drawSparkles(ctx, effects);
 }
 
-export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasProps) {
+export function PoolCanvas({
+  roundKey,
+  mode = "solo",
+  sessionState,
+  mySeatIndex = null,
+  currentPlayerName = "partner",
+  submittingShot = false,
+  onSubmitShot,
+  onGameOver,
+  onRoundStart,
+}: PoolCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ballsRef = useRef<PoolBall[]>(createInitialPoolBalls());
   const dragRef = useRef<DragState>(EMPTY_DRAG);
+  const activeShotRef = useRef<ActiveShot>(null);
   const pottedThisShotRef = useRef<Set<string>>(new Set());
   const scratchedThisShotRef = useRef(false);
   const settleFramesRef = useRef(0);
   const sparkleIdRef = useRef(0);
   const effectsRef = useRef<SparkleEffect[]>([]);
   const reportedGameOverRef = useRef(false);
+  const lastCanonicalKeyRef = useRef<string | null>(null);
   const [hud, setHud] = useState<HudState>(INITIAL_HUD);
   const hudRef = useRef<HudState>(INITIAL_HUD);
   const [remainingBalls, setRemainingBalls] = useState(9);
   const [powerPreview, setPowerPreview] = useState(0);
+  const isMultiplayer = mode === "multiplayer";
+  const canonicalKey = useMemo(() => canonicalStateKey(sessionState), [sessionState]);
+  const isMyTurn = Boolean(
+    isMultiplayer && sessionState && mySeatIndex !== null && sessionState.currentSeat === mySeatIndex,
+  );
+  const canShoot =
+    !submittingShot &&
+    hud.phase !== "resolving" &&
+    hud.phase !== "game-over" &&
+    (!isMultiplayer || (isMyTurn && !sessionState?.gameOver));
 
   const commitHud = useCallback((next: HudState) => {
     hudRef.current = next;
@@ -348,8 +417,10 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
   }, []);
 
   const resetRound = useCallback(() => {
+    if (isMultiplayer) return;
     ballsRef.current = createInitialPoolBalls();
     dragRef.current = EMPTY_DRAG;
+    activeShotRef.current = null;
     pottedThisShotRef.current = new Set();
     scratchedThisShotRef.current = false;
     settleFramesRef.current = 0;
@@ -359,11 +430,41 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
     setPowerPreview(0);
     commitHud(INITIAL_HUD);
     onRoundStart?.();
-  }, [commitHud, onRoundStart]);
+  }, [commitHud, isMultiplayer, onRoundStart]);
 
   useEffect(() => {
-    resetRound();
-  }, [roundKey, resetRound]);
+    if (!isMultiplayer) resetRound();
+  }, [isMultiplayer, roundKey, resetRound]);
+
+  useEffect(() => {
+    if (!isMultiplayer || !sessionState) return;
+    if (lastCanonicalKeyRef.current === canonicalKey) return;
+    lastCanonicalKeyRef.current = canonicalKey;
+
+    ballsRef.current = clonePoolBalls(sessionState.balls);
+    dragRef.current = EMPTY_DRAG;
+    activeShotRef.current = null;
+    pottedThisShotRef.current = new Set();
+    scratchedThisShotRef.current = false;
+    settleFramesRef.current = 0;
+    setPowerPreview(0);
+    setRemainingBalls(countRemainingObjectBalls(ballsRef.current));
+
+    const score = mySeatIndex === null ? Math.max(...sessionState.scores, 0) : (sessionState.scores[mySeatIndex] ?? 0);
+    const lastShot = sessionState.lastShot?.message
+      || (isMyTurn ? "Your turn. Drag from the cue ball to shoot." : `Waiting for ${currentPlayerName}.`);
+    commitHud({
+      phase: sessionState.gameOver ? "game-over" : "ready",
+      score,
+      shotsTaken: sessionState.shotNumber,
+      message: sessionState.gameOver
+        ? "Shared table complete. Claim your reward when ready."
+        : isMyTurn
+          ? "Your turn. Aim and choose power."
+          : `Waiting for ${currentPlayerName} to shoot.`,
+      lastShot,
+    });
+  }, [canonicalKey, commitHud, currentPlayerName, isMultiplayer, isMyTurn, mySeatIndex, sessionState]);
 
   const addSparkle = useCallback((x: number, y: number, color: string, label?: string) => {
     sparkleIdRef.current += 1;
@@ -386,11 +487,14 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
     const nextShotsTaken = current.shotsTaken + 1;
     const remainingAfterShot = countRemainingObjectBalls(ballsRef.current);
     const allCleared = remainingAfterShot === 0;
+    const shotsLeftAfterShot = isMultiplayer && sessionState
+      ? Math.max(0, sessionState.shotsRemaining - 1)
+      : POOL_MAX_SHOTS - nextShotsTaken;
     const scoreDetails = scorePoolShot({
       pottedObjectCount,
       scratched,
       allCleared,
-      shotsLeftAfterShot: POOL_MAX_SHOTS - nextShotsTaken,
+      shotsLeftAfterShot,
     });
     const nextScore = Math.max(0, current.score + scoreDetails.scoreDelta);
 
@@ -399,7 +503,7 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
       addSparkle(POOL_TABLE.felt.x + 74, POOL_TABLE.felt.y + 60, "#df8094", "Scratch");
     }
 
-    const gameOver = allCleared || nextShotsTaken >= POOL_MAX_SHOTS;
+    const gameOver = allCleared || shotsLeftAfterShot <= 0;
     const message = gameOver
       ? allCleared
         ? "Table cleared. Claim your cozy reward."
@@ -421,6 +525,52 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
       .filter(Boolean)
       .join(" · ");
 
+    const summary: PoolShotSummary = {
+      ...scoreDetails,
+      pottedIds,
+      scratched,
+      allCleared,
+      shotsTaken: nextShotsTaken,
+    };
+
+    if (isMultiplayer) {
+      const activeShot = activeShotRef.current;
+      if (activeShot && onSubmitShot) {
+        const settledBalls = clonePoolBalls(ballsRef.current).map((ball) => ({ ...ball, vx: 0, vy: 0 }));
+        commitHud({
+          phase: "resolving",
+          score: nextScore,
+          shotsTaken: nextShotsTaken,
+          message: "Saving the shared table...",
+          lastShot,
+        });
+        setRemainingBalls(remainingAfterShot);
+        setPowerPreview(0);
+        pottedThisShotRef.current = new Set();
+        scratchedThisShotRef.current = false;
+        settleFramesRef.current = 0;
+
+        void onSubmitShot({
+          angle: activeShot.angle,
+          power: activeShot.power,
+          settledBalls,
+          summary,
+        }).then((result) => {
+          if (!result.ok) {
+            commitHud({
+              phase: "ready",
+              score: current.score,
+              shotsTaken: current.shotsTaken,
+              message: result.reason || "That shared shot could not be saved.",
+              lastShot: "The table will resync from the latest server state.",
+            });
+          }
+        });
+      }
+      activeShotRef.current = null;
+      return;
+    }
+
     commitHud({
       phase: gameOver ? "game-over" : "ready",
       score: nextScore,
@@ -438,7 +588,7 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
       reportedGameOverRef.current = true;
       onGameOver?.({ score: nextScore, shotsTaken: nextShotsTaken, cleared: allCleared });
     }
-  }, [addSparkle, commitHud, onGameOver]);
+  }, [addSparkle, commitHud, isMultiplayer, onGameOver, onSubmitShot, sessionState]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -485,13 +635,13 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
         }
       }
 
-      drawFrame(ctx, ballsRef.current, dragRef.current, effectsRef.current, hudRef.current.phase);
+      drawFrame(ctx, ballsRef.current, dragRef.current, effectsRef.current, hudRef.current.phase, canShoot);
       animationFrame = window.requestAnimationFrame(draw);
     };
 
     animationFrame = window.requestAnimationFrame(draw);
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [addSparkle, finishShot]);
+  }, [addSparkle, canShoot, finishShot]);
 
   const updateDrag = useCallback((point: { x: number; y: number }) => {
     const cue = getCueBall(ballsRef.current);
@@ -512,6 +662,15 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
 
   const onPointerDown = useCallback(
     (event: PointerEvent<HTMLCanvasElement>) => {
+      if (!canShoot) {
+        if (isMultiplayer && !sessionState?.gameOver) {
+          commitHud({
+            ...hudRef.current,
+            message: `Waiting for ${currentPlayerName} to finish the turn.`,
+          });
+        }
+        return;
+      }
       if (hudRef.current.phase === "resolving" || hudRef.current.phase === "game-over") return;
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -537,7 +696,7 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
       updateDrag(point);
       commitHud({ ...hudRef.current, phase: "aiming", message: "Release to send the cue ball." });
     },
-    [commitHud, updateDrag],
+    [canShoot, commitHud, currentPlayerName, isMultiplayer, sessionState?.gameOver, updateDrag],
   );
 
   const onPointerMove = useCallback(
@@ -551,6 +710,7 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
 
   const cancelDrag = useCallback(() => {
     dragRef.current = EMPTY_DRAG;
+    activeShotRef.current = null;
     setPowerPreview(0);
     commitHud({ ...hudRef.current, phase: "ready", message: "Drag back from the cue ball, aim, then release." });
   }, [commitHud]);
@@ -570,6 +730,10 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
       pottedThisShotRef.current = new Set();
       scratchedThisShotRef.current = false;
       settleFramesRef.current = 0;
+      activeShotRef.current = {
+        angle: Math.atan2(shot.direction.y, shot.direction.x),
+        power: shot.power,
+      };
       launchCueBall(ballsRef.current, shot.direction, shot.power);
       commitHud({
         ...hudRef.current,
@@ -592,7 +756,9 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
     [cancelDrag],
   );
 
-  const shotsLeft = Math.max(0, POOL_MAX_SHOTS - hud.shotsTaken);
+  const shotsLeft = isMultiplayer && sessionState
+    ? Math.max(0, sessionState.shotsRemaining)
+    : Math.max(0, POOL_MAX_SHOTS - hud.shotsTaken);
   const showDebug =
     process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DEBUG_MULTIPLAYER === "true";
 
@@ -664,9 +830,11 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
           </p>
         </div>
 
-        <Button onClick={resetRound} type="button" variant="secondary">
-          <RotateCcw /> Rack again
-        </Button>
+        {!isMultiplayer && (
+          <Button onClick={resetRound} type="button" variant="secondary">
+            <RotateCcw /> Rack again
+          </Button>
+        )}
 
         {showDebug && (
           <pre className="max-h-40 overflow-auto rounded-lg bg-ink-900 p-3 text-[10px] font-bold text-cream-50">
@@ -675,6 +843,10 @@ export function PoolCanvas({ roundKey, onGameOver, onRoundStart }: PoolCanvasPro
                 phase: hud.phase,
                 power: Number(powerPreview.toFixed(2)),
                 remainingBalls,
+                mode,
+                mySeatIndex,
+                currentSeat: sessionState?.currentSeat,
+                shotNumber: sessionState?.shotNumber,
               },
               null,
               2,

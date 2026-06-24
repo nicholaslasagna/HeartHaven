@@ -36,11 +36,38 @@ export type PoolShotScore = {
   finalBonus: number;
 };
 
+export type PoolShotSummary = PoolShotScore & {
+  pottedIds: string[];
+  scratched: boolean;
+  allCleared: boolean;
+  shotsTaken: number;
+};
+
+export type PoolSessionMetadata = {
+  balls: PoolBall[];
+  currentSeat: number;
+  scores: number[];
+  shotNumber: number;
+  shotsRemaining: number;
+  gameOver: boolean;
+  finalScore: number;
+  lastShot?: {
+    seat: number;
+    angle: number;
+    power: number;
+    pottedIds: string[];
+    scratched: boolean;
+    scoreDelta: number;
+    message: string;
+    submittedAt?: string;
+  };
+};
+
 export const POOL_CANVAS_WIDTH = 960;
 export const POOL_CANVAS_HEIGHT = 580;
 export const POOL_MAX_SHOTS = 12;
 export const POOL_BALL_RADIUS = 12;
-export const POOL_CUE_START = { x: 292, y: 290 };
+export const POOL_CUE_START = { x: 270, y: 290 };
 export const POOL_TABLE = {
   outer: { x: 30, y: 42, width: 900, height: 484, radius: 38 },
   felt: { x: 88, y: 96, width: 784, height: 376 },
@@ -92,38 +119,39 @@ export function createInitialPoolBalls(): PoolBall[] {
     },
   ];
 
-  const rackX = 642;
+  const rackX = 632;
   const rackY = 290;
-  const xStep = POOL_BALL_RADIUS * 2.18;
-  const yStep = POOL_BALL_RADIUS * 2.1;
-  const layout = [
-    [0],
-    [-0.5, 0.5],
-    [-1, 0, 1],
-    [-0.5, 0.5],
-    [0],
+  const centerDistance = POOL_BALL_RADIUS * 2.04;
+  const xStep = Math.sqrt(3) * POOL_BALL_RADIUS * 1.02;
+  const yStep = centerDistance;
+  const diamond = [
+    { number: 1, row: 0, offset: 0 },
+    { number: 2, row: 1, offset: -0.5 },
+    { number: 3, row: 1, offset: 0.5 },
+    { number: 4, row: 2, offset: -1 },
+    { number: 9, row: 2, offset: 0 },
+    { number: 5, row: 2, offset: 1 },
+    { number: 6, row: 3, offset: -0.5 },
+    { number: 7, row: 3, offset: 0.5 },
+    { number: 8, row: 4, offset: 0 },
   ];
 
-  let ballIndex = 0;
-  layout.forEach((row, rowIndex) => {
-    row.forEach((offset) => {
-      const source = BALLS[ballIndex];
-      if (!source) return;
-      balls.push({
-        id: `ball-${source.number}`,
-        kind: "object",
-        number: source.number,
-        label: source.label,
-        color: source.color,
-        stripe: source.stripe,
-        x: rackX + rowIndex * xStep,
-        y: rackY + offset * yStep,
-        vx: 0,
-        vy: 0,
-        radius: POOL_BALL_RADIUS,
-        potted: false,
-      });
-      ballIndex += 1;
+  diamond.forEach((slot) => {
+    const source = BALLS.find((candidate) => candidate.number === slot.number);
+    if (!source) return;
+    balls.push({
+      id: `ball-${source.number}`,
+      kind: "object",
+      number: source.number,
+      label: source.label,
+      color: source.color,
+      stripe: source.stripe,
+      x: rackX + slot.row * xStep,
+      y: rackY + slot.offset * yStep,
+      vx: 0,
+      vy: 0,
+      radius: POOL_BALL_RADIUS,
+      potted: false,
     });
   });
 
@@ -140,6 +168,93 @@ export function getCueBall(balls: PoolBall[]) {
 
 export function countRemainingObjectBalls(balls: PoolBall[]) {
   return balls.filter((ball) => ball.kind === "object" && !ball.potted).length;
+}
+
+export function createInitialPoolSessionMetadata(playerCount = 2): PoolSessionMetadata {
+  const safePlayerCount = Math.max(1, Math.min(8, Math.floor(playerCount)));
+  return {
+    balls: createInitialPoolBalls(),
+    currentSeat: 0,
+    scores: Array.from({ length: safePlayerCount }, () => 0),
+    shotNumber: 0,
+    shotsRemaining: POOL_MAX_SHOTS,
+    gameOver: false,
+    finalScore: 0,
+  };
+}
+
+function parseNumber(value: unknown, fallback: number) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function parsePoolBall(value: unknown, fallback?: PoolBall): PoolBall | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return fallback ? { ...fallback } : null;
+  const source = value as Record<string, unknown>;
+  const id = String(source.id ?? fallback?.id ?? "");
+  if (!id) return null;
+  const kind = source.kind === "cue" ? "cue" : "object";
+  return {
+    id,
+    kind,
+    number: source.number === null ? null : source.number === undefined ? fallback?.number ?? null : Number(source.number),
+    label: String(source.label ?? fallback?.label ?? id),
+    color: String(source.color ?? fallback?.color ?? "#f6d98e"),
+    stripe: source.stripe === undefined ? fallback?.stripe : String(source.stripe),
+    x: clamp(parseNumber(source.x, fallback?.x ?? POOL_CUE_START.x), POOL_TABLE.felt.x - 40, POOL_TABLE.felt.x + POOL_TABLE.felt.width + 40),
+    y: clamp(parseNumber(source.y, fallback?.y ?? POOL_CUE_START.y), POOL_TABLE.felt.y - 40, POOL_TABLE.felt.y + POOL_TABLE.felt.height + 40),
+    vx: parseNumber(source.vx, 0),
+    vy: parseNumber(source.vy, 0),
+    radius: clamp(parseNumber(source.radius, fallback?.radius ?? POOL_BALL_RADIUS), 8, 18),
+    potted: Boolean(source.potted),
+  };
+}
+
+export function parsePoolSessionMetadata(value: unknown, playerCount = 2): PoolSessionMetadata {
+  const fallback = createInitialPoolSessionMetadata(playerCount);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
+  const source = value as Record<string, unknown>;
+  const rawBalls = Array.isArray(source.balls) ? source.balls : [];
+  const fallbackById = new Map(fallback.balls.map((ball) => [ball.id, ball]));
+  const parsedBalls = rawBalls
+    .map((ball) => parsePoolBall(ball, fallbackById.get(String((ball as Record<string, unknown> | null)?.id ?? ""))))
+    .filter((ball): ball is PoolBall => Boolean(ball));
+  const ballsById = new Map(parsedBalls.map((ball) => [ball.id, ball]));
+  const balls = fallback.balls.map((ball) => ballsById.get(ball.id) ?? { ...ball });
+  const rawScores = Array.isArray(source.scores) ? source.scores : null;
+  const scores = rawScores
+    ? Array.from({ length: Math.max(1, playerCount) }, (_, index) => Math.max(0, Math.floor(Number(rawScores[index] ?? 0))))
+    : fallback.scores;
+  const shotNumber = Math.max(0, Math.floor(parseNumber(source.shotNumber, 0)));
+  const gameOver = Boolean(source.gameOver);
+
+  return {
+    balls,
+    currentSeat: clamp(Math.floor(parseNumber(source.currentSeat, 0)), 0, Math.max(0, playerCount - 1)),
+    scores,
+    shotNumber,
+    shotsRemaining: Math.max(0, Math.floor(parseNumber(source.shotsRemaining, POOL_MAX_SHOTS - shotNumber))),
+    gameOver,
+    finalScore: Math.max(0, Math.floor(parseNumber(source.finalScore, Math.max(...scores, 0)))),
+    lastShot:
+      source.lastShot && typeof source.lastShot === "object" && !Array.isArray(source.lastShot)
+        ? {
+            seat: Math.floor(parseNumber((source.lastShot as Record<string, unknown>).seat, 0)),
+            angle: parseNumber((source.lastShot as Record<string, unknown>).angle, 0),
+            power: parseNumber((source.lastShot as Record<string, unknown>).power, 0),
+            pottedIds: Array.isArray((source.lastShot as Record<string, unknown>).pottedIds)
+              ? ((source.lastShot as Record<string, unknown>).pottedIds as unknown[]).map(String)
+              : [],
+            scratched: Boolean((source.lastShot as Record<string, unknown>).scratched),
+            scoreDelta: Math.floor(parseNumber((source.lastShot as Record<string, unknown>).scoreDelta, 0)),
+            message: String((source.lastShot as Record<string, unknown>).message ?? ""),
+            submittedAt:
+              (source.lastShot as Record<string, unknown>).submittedAt === undefined
+                ? undefined
+                : String((source.lastShot as Record<string, unknown>).submittedAt),
+          }
+        : undefined,
+  };
 }
 
 export function resetCueBall(balls: PoolBall[]) {

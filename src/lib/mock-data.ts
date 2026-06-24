@@ -114,7 +114,7 @@ export const miniGames = [
     title: "Moonberry Pool",
     reward: "Coins + hearts",
     description: "Aim, pull back, and pocket cozy moonberry balls on a soft garden arcade table.",
-    status: "Playable solo",
+    status: "Playable party",
     href: "/app/pool",
   },
   {
@@ -182,9 +182,9 @@ export const partyGames = [
   {
     id: "moonberry-pool-party",
     title: "Moonberry Pool",
-    mode: "solo arcade table",
+    mode: "2-player table",
     href: "/app/pool",
-    description: "A date-night garden table with drag-to-aim pool shots. Shared table sync is planned for a later phase.",
+    description: "A date-night garden table with shared turns, synced ball positions, score, scratches, and cozy rewards.",
   },
   {
     id: "lantern-relay",

@@ -33,7 +33,6 @@ const partySizes = [2, 4, 6, 8] as const;
 const joinCodePattern = /^HH-[A-Z]{5,6}-[0-9]{3,4}$/;
 const soloPartyGameIds = new Set([
   "petal-catch-party",
-  "moonberry-pool-party",
   "lantern-relay",
   "heart-hunt",
   "fashion-show-party",
@@ -85,6 +84,7 @@ function actionErrorCopy(reason: string) {
 function canonicalPartyGameKey(game: (typeof partyGames)[number]) {
   if (game.href === "/app/rock-paper-scissors") return "rock-paper-scissors";
   if (game.href === "/app/bowling") return "bowling";
+  if (game.href === "/app/pool") return "pool";
   return game.id.replace(/-party$/, "");
 }
 

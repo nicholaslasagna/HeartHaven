@@ -1,6 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { PoolSubmittedShot } from "@/components/game/pool-canvas";
+import type { PoolSessionMetadata } from "@/lib/game/pool-physics";
 
 const PoolCanvas = dynamic(() => import("@/components/game/pool-canvas").then((module) => module.PoolCanvas), {
   ssr: false,
@@ -13,6 +15,12 @@ const PoolCanvas = dynamic(() => import("@/components/game/pool-canvas").then((m
 
 type PoolCanvasLoaderProps = {
   roundKey: number;
+  mode?: "solo" | "multiplayer";
+  sessionState?: PoolSessionMetadata | null;
+  mySeatIndex?: number | null;
+  currentPlayerName?: string;
+  submittingShot?: boolean;
+  onSubmitShot?: (shot: PoolSubmittedShot) => Promise<{ ok: true } | { ok: false; reason: string }>;
   onRoundStart?: () => void;
   onGameOver?: (result: { score: number; shotsTaken: number; cleared: boolean }) => void;
 };

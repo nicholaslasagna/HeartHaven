@@ -74,7 +74,7 @@ function sessionErrorCopy(message: string) {
 
 export function useGameSession(
   gameKey: string,
-  options?: { maxPlayers?: number; init?: Record<string, unknown> },
+  options?: { maxPlayers?: number; init?: Record<string, unknown>; autoCreate?: boolean },
 ) {
   const router = useRouter();
   const [sessionFromUrl, setSessionFromUrl] = useState<string | null>(null);
@@ -89,6 +89,7 @@ export function useGameSession(
   const lastMoveIndexRef = useRef(-1);
   const sessionIdRef = useRef<string | null>(null);
   const maxPlayers = options?.maxPlayers ?? 2;
+  const autoCreate = options?.autoCreate ?? true;
   const initKey = stableInitKey(options?.init);
 
   useEffect(() => {
@@ -209,6 +210,12 @@ export function useGameSession(
       const supabase = getSupabaseBrowserClient();
       let target = sessionFromUrl;
 
+      if (!target && !autoCreate) {
+        setLoading(false);
+        setStatus("Solo play — no online session.");
+        return;
+      }
+
       const { data, error } = await supabase.rpc("ensure_play_game_session", {
         p_game_key: gameKey,
         p_max_players: maxPlayers,
@@ -237,7 +244,7 @@ export function useGameSession(
     return () => {
       cancelled = true;
     };
-  }, [gameKey, hydrate, initKey, maxPlayers, sessionFromUrl, sessionUrlReady]);
+  }, [autoCreate, gameKey, hydrate, initKey, maxPlayers, sessionFromUrl, sessionUrlReady]);
 
   useEffect(() => {
     const target = sessionIdRef.current;
