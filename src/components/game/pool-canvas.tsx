@@ -8,6 +8,7 @@ import {
   POOL_CANVAS_HEIGHT,
   POOL_CANVAS_WIDTH,
   POOL_MAX_SHOTS,
+  POOL_OBJECT_BALL_COUNT,
   POOL_POCKETS,
   POOL_TABLE,
   clonePoolBalls,
@@ -398,7 +399,7 @@ export function PoolCanvas({
   const lastCanonicalKeyRef = useRef<string | null>(null);
   const [hud, setHud] = useState<HudState>(INITIAL_HUD);
   const hudRef = useRef<HudState>(INITIAL_HUD);
-  const [remainingBalls, setRemainingBalls] = useState(9);
+  const [remainingBalls, setRemainingBalls] = useState(POOL_OBJECT_BALL_COUNT);
   const [powerPreview, setPowerPreview] = useState(0);
   const isMultiplayer = mode === "multiplayer";
   const canonicalKey = useMemo(() => canonicalStateKey(sessionState), [sessionState]);

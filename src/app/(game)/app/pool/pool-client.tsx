@@ -51,6 +51,14 @@ function serializeBall(ball: PoolBall) {
   };
 }
 
+function readPoolSessionPayload(metadata: Record<string, unknown>) {
+  const nested = metadata.pool;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    return nested;
+  }
+  return metadata;
+}
+
 export function PoolClient() {
   const session = useGameSession("pool", { maxPlayers: 2, autoCreate: false });
   const { claimRun, startRun, status: rewardStatus } = useGameRewardRun("pool");
@@ -62,9 +70,10 @@ export function PoolClient() {
   const seenInitialRoundRef = useRef(false);
   const isMultiplayer = Boolean(session.sessionId);
   const playerCount = Math.max(1, session.seats.length || 2);
+  const poolPayload = useMemo(() => readPoolSessionPayload(session.metadata), [session.metadata]);
   const poolState = useMemo(
-    () => parsePoolSessionMetadata(session.metadata, playerCount),
-    [playerCount, session.metadata],
+    () => parsePoolSessionMetadata(poolPayload, playerCount),
+    [playerCount, poolPayload],
   );
   const mySeatIndex = session.mySeat?.seat_index ?? null;
   const currentSeat = session.seats.find((seat) => seat.seat_index === poolState.currentSeat);

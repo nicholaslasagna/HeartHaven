@@ -67,6 +67,7 @@ export const POOL_CANVAS_WIDTH = 960;
 export const POOL_CANVAS_HEIGHT = 580;
 export const POOL_MAX_SHOTS = 12;
 export const POOL_BALL_RADIUS = 12;
+export const POOL_OBJECT_BALL_COUNT = 15;
 export const POOL_CUE_START = { x: 270, y: 290 };
 export const POOL_TABLE = {
   outer: { x: 30, y: 42, width: 900, height: 484, radius: 38 },
@@ -92,6 +93,12 @@ const BALLS: Array<Pick<PoolBall, "number" | "label" | "color" | "stripe">> = [
   { number: 7, label: "Blush", color: "#e4a2ad" },
   { number: 8, label: "Moon", color: "#3c2d35", stripe: "#f6e4b8" },
   { number: 9, label: "Cream", color: "#f6d98e", stripe: "#b66a82" },
+  { number: 10, label: "Peony", color: "#ee9db4", stripe: "#fff1d6" },
+  { number: 11, label: "Sage", color: "#6f9f5d", stripe: "#fff1d6" },
+  { number: 12, label: "Dusk", color: "#6e5da8", stripe: "#fff1d6" },
+  { number: 13, label: "Cider", color: "#c98243", stripe: "#fff1d6" },
+  { number: 14, label: "River", color: "#568eaa", stripe: "#fff1d6" },
+  { number: 15, label: "Truffle", color: "#765043", stripe: "#fff1d6" },
 ];
 
 function clamp(value: number, min: number, max: number) {
@@ -119,24 +126,30 @@ export function createInitialPoolBalls(): PoolBall[] {
     },
   ];
 
-  const rackX = 632;
+  const rackX = 620;
   const rackY = 290;
   const centerDistance = POOL_BALL_RADIUS * 2.04;
   const xStep = Math.sqrt(3) * POOL_BALL_RADIUS * 1.02;
   const yStep = centerDistance;
-  const diamond = [
+  const triangle = [
     { number: 1, row: 0, offset: 0 },
     { number: 2, row: 1, offset: -0.5 },
     { number: 3, row: 1, offset: 0.5 },
     { number: 4, row: 2, offset: -1 },
-    { number: 9, row: 2, offset: 0 },
+    { number: 8, row: 2, offset: 0 },
     { number: 5, row: 2, offset: 1 },
     { number: 6, row: 3, offset: -0.5 },
-    { number: 7, row: 3, offset: 0.5 },
-    { number: 8, row: 4, offset: 0 },
+    { number: 10, row: 3, offset: -1.5 },
+    { number: 11, row: 3, offset: 0.5 },
+    { number: 7, row: 3, offset: 1.5 },
+    { number: 12, row: 4, offset: -2 },
+    { number: 9, row: 4, offset: -1 },
+    { number: 13, row: 4, offset: 0 },
+    { number: 14, row: 4, offset: 1 },
+    { number: 15, row: 4, offset: 2 },
   ];
 
-  diamond.forEach((slot) => {
+  triangle.forEach((slot) => {
     const source = BALLS.find((candidate) => candidate.number === slot.number);
     if (!source) return;
     balls.push({

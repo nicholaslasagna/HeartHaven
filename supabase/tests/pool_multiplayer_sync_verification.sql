@@ -21,6 +21,11 @@ select
   public.pool_initial_metadata(2)->>'shotsRemaining' as shots_remaining;
 
 select
+  jsonb_array_length(public.pool_initial_metadata(2)->'balls') = 16 as has_cue_plus_15_objects,
+  public.pool_initial_metadata(2)->'balls'->1->>'id' = 'ball-1' as triangle_apex_is_one_ball,
+  public.pool_initial_metadata(2)->'balls'->5->>'id' = 'ball-8' as center_ball_is_eight_ball;
+
+select
   game_key,
   label,
   max_score,
