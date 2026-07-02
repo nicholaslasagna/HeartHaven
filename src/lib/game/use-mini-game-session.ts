@@ -55,6 +55,7 @@ export function useMiniGameSession(
           coins: reward.coins,
           hearts: reward.hearts,
           label: reward.label,
+          sessionId: session.sessionId,
         })
         .finally(() => {
           claimingRef.current = false;

@@ -97,8 +97,8 @@ export const miniGames = [
     id: "petal-catch",
     title: "Petal Catch",
     reward: "Coins + hearts",
-    description: "Catch falling petals and hearts, avoid thorns, and build a combo before the timer runs out.",
-    status: "Playable",
+    description: "Catch falling petals and hearts solo, or launch Petal Catch Relay from the games lobby for co-op turns.",
+    status: "Solo + co-op",
     href: "/app/petal-catch",
   },
   {
@@ -192,9 +192,9 @@ export const partyGames = [
   {
     id: "petal-catch-party",
     title: "Petal Catch Relay",
-    mode: "solo now, co-op next",
+    mode: "2-6 co-op relay",
     href: "/app/petal-catch",
-    description: "Catch petals and hearts in a timed arcade round. The next version can share a basket between players.",
+    description: "Pass the basket between seated friends, catch petals and hearts, dodge thorns, and build one shared combo.",
   },
   {
     id: "moonberry-bowling-party",

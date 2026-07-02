@@ -129,16 +129,16 @@ export function useGameRewardRun(gameKey: string) {
           setStatus("error");
           return { ok: false, reason: "empty response" };
         }
-        const coinsAwarded = Math.max(0, Math.floor(Number(row.coins_awarded ?? 0)));
-        const heartsAwarded = Math.max(0, Math.floor(Number(row.hearts_awarded ?? 0)));
         const reason = (row.reason as string) || "awarded";
-
-        if (reason === "already-claimed-session") {
+        if (reason.startsWith("already-claimed")) {
           await hydrateWalletStateFromServer();
           setStatus("claimed");
           runIdRef.current = null;
           return { ok: true, coinsAwarded: 0, heartsAwarded: 0, reason: "already-claimed" };
         }
+
+        const coinsAwarded = Math.max(0, Math.floor(Number(row.coins_awarded ?? 0)));
+        const heartsAwarded = Math.max(0, Math.floor(Number(row.hearts_awarded ?? 0)));
 
         // Pull fresh wallet state from the server so the local ledger
         // shows the server-derived award. We do NOT call `creditWallet`

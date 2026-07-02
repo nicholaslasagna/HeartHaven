@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import type { GameReward } from "@/lib/game/rewards";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import {
+  petalRelayKindLabel,
+  type PetalRelayResult,
+  type PetalRelayState,
+} from "@/lib/game/petal-catch-relay";
+import type { GameSessionSeat } from "@/lib/game/use-game-session";
 
 type FallingItem = {
   node: Phaser.GameObjects.Container;
@@ -18,16 +24,48 @@ const GAME_HEIGHT = 560;
 
 type PetalCatchCanvasProps = {
   onReward?: (reward: GameReward) => void;
+  mode?: "solo" | "relay";
+  relayState?: PetalRelayState;
+  seats?: GameSessionSeat[];
+  mySeatIndex?: number | null;
+  pendingRelayMove?: boolean;
+  onRelayMove?: (result: PetalRelayResult) => void;
 };
 
-export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
+export function PetalCatchCanvas({
+  onReward,
+  mode = "solo",
+  relayState,
+  seats = [],
+  mySeatIndex = null,
+  pendingRelayMove = false,
+  onRelayMove,
+}: PetalCatchCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const onRewardRef = useRef(onReward);
+  const onRelayMoveRef = useRef(onRelayMove);
+  const modeRef = useRef(mode);
+  const relayStateRef = useRef(relayState);
+  const seatsRef = useRef(seats);
+  const mySeatIndexRef = useRef(mySeatIndex);
+  const pendingRelayMoveRef = useRef(pendingRelayMove);
   const [status, setStatus] = useState("Catch petals and hearts. Avoid thorns.");
 
   useEffect(() => {
     onRewardRef.current = onReward;
   }, [onReward]);
+
+  useEffect(() => {
+    onRelayMoveRef.current = onRelayMove;
+  }, [onRelayMove]);
+
+  useEffect(() => {
+    modeRef.current = mode;
+    relayStateRef.current = relayState;
+    seatsRef.current = seats;
+    mySeatIndexRef.current = mySeatIndex;
+    pendingRelayMoveRef.current = pendingRelayMove;
+  }, [mode, relayState, seats, mySeatIndex, pendingRelayMove]);
 
   useEffect(() => {
     let destroyed = false;
@@ -53,6 +91,12 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
         private comboText!: Phaser.GameObjects.Text;
         private timerText!: Phaser.GameObjects.Text;
         private rewardLayer?: Phaser.GameObjects.Container;
+        private relayItemNode?: Phaser.GameObjects.Container;
+        private relayItemKey: string | null = null;
+        private relayItemY = -30;
+        private relayItemElapsed = 0;
+        private relaySubmittedItemIndex = -1;
+        private relayStatusKey = "";
 
         constructor() {
           super("PetalCatch");
@@ -77,11 +121,20 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
             left: PhaserModule.Input.Keyboard.KeyCodes.A,
             right: PhaserModule.Input.Keyboard.KeyCodes.D,
           }) as Record<"left" | "right", Phaser.Input.Keyboard.Key> | undefined;
-          setStatus("Move the basket with mouse, touch, arrows, or A/D.");
+          if (modeRef.current === "relay") {
+            setStatus("Petal Catch Relay connected. Wait for your turn, then catch petals and dodge thorns.");
+          } else {
+            setStatus("Move the basket with mouse, touch, arrows, or A/D.");
+          }
         }
 
         update(_time: number, delta: number) {
           if (this.gameOver) return;
+
+          if (modeRef.current === "relay") {
+            this.updateRelay(delta);
+            return;
+          }
 
           this.elapsed += delta;
           this.timeLeft = Math.max(0, 60 - this.elapsed / 1000);
@@ -95,6 +148,201 @@ export function PetalCatchCanvas({ onReward }: PetalCatchCanvasProps) {
           if (this.timeLeft <= 0) {
             this.endRound();
           }
+        }
+
+        private setRelayStatus(key: string, copy: string) {
+          if (this.relayStatusKey === key) return;
+          this.relayStatusKey = key;
+          setStatus(copy);
+        }
+
+        private activeSeatName(state: PetalRelayState) {
+          const seat = seatsRef.current.find((candidate) => candidate.seat_index === state.currentSeat);
+          return seat?.display_name ?? `Seat ${state.currentSeat + 1}`;
+        }
+
+        private canTakeRelayTurn(state: PetalRelayState) {
+          return (
+            mySeatIndexRef.current !== null &&
+            mySeatIndexRef.current === state.currentSeat &&
+            !pendingRelayMoveRef.current &&
+            !state.gameOver
+          );
+        }
+
+        private updateRelay(delta: number) {
+          const state = relayStateRef.current;
+          if (!state) {
+            this.setRelayStatus("relay-loading", "Connecting the shared relay session...");
+            return;
+          }
+
+          this.score = state.score;
+          this.combo = state.combo;
+          this.updateRelayHud(state);
+
+          if (state.gameOver) {
+            this.basket.setAlpha(0.55);
+            this.basketGlow.setAlpha(0.1);
+            this.destroyRelayItem();
+            this.showRelayComplete(state);
+            this.setRelayStatus("relay-complete", `${state.success ? "Relay complete" : "Relay ended"}: ${state.finalScore} team points.`);
+            return;
+          }
+
+          this.rewardLayer?.destroy(true);
+          this.rewardLayer = undefined;
+
+          const canAct = this.canTakeRelayTurn(state);
+          this.basket.setAlpha(canAct ? 1 : 0.58);
+          this.basketGlow.setAlpha(canAct ? 0.16 : 0.08);
+
+          this.syncRelayItem(state);
+          if (!state.currentItem || !this.relayItemNode) return;
+
+          if (this.relaySubmittedItemIndex !== state.itemIndex && state.itemIndex > this.relaySubmittedItemIndex) {
+            this.relaySubmittedItemIndex = -1;
+          }
+
+          if (!canAct) {
+            const activeName = this.activeSeatName(state);
+            this.basket.x = PhaserModule.Math.Linear(this.basket.x, state.currentItem.x, 0.04);
+            this.basketGlow.x = this.basket.x;
+            this.relayItemElapsed += delta;
+            this.relayItemNode.y = 82 + Math.sin(this.relayItemElapsed * 0.004) * 8;
+            this.relayItemNode.x = state.currentItem.x + Math.sin(this.relayItemElapsed * 0.003) * 10;
+            this.setRelayStatus(`relay-wait-${state.itemIndex}-${activeName}`, `Waiting for ${activeName} to handle the ${petalRelayKindLabel(state.currentItem.kind).toLowerCase()}.`);
+            return;
+          }
+
+          this.updateBasket(delta);
+          this.relayItemElapsed += delta;
+          this.relayItemY += state.currentItem.speed * (delta / 1000);
+          this.relayItemNode.y = this.relayItemY;
+          this.relayItemNode.x = state.currentItem.x + Math.sin(this.relayItemElapsed * 0.004) * state.currentItem.sway * 24;
+          this.relayItemNode.rotation += state.currentItem.kind === "thorn" ? 0.0035 * delta : 0.002 * delta;
+          this.setRelayStatus(
+            `relay-act-${state.itemIndex}`,
+            state.currentItem.kind === "thorn"
+              ? "Your turn: dodge the thorn. Let it fall past the basket."
+              : `Your turn: catch the ${petalRelayKindLabel(state.currentItem.kind).toLowerCase()}.`,
+          );
+
+          const caught = PhaserModule.Math.Distance.Between(this.relayItemNode.x, this.relayItemNode.y, this.basket.x, this.basket.y) < 66;
+          if (caught) {
+            this.submitRelayResult("catch");
+            return;
+          }
+
+          if (this.relayItemNode.y > GAME_HEIGHT + 48) {
+            this.submitRelayResult("miss");
+          }
+        }
+
+        private updateRelayHud(state: PetalRelayState) {
+          this.scoreText.setText(`Team ${state.score}`);
+          this.comboText.setText(`Combo x${state.combo} · Misses ${state.misses}`);
+          this.timerText.setText(`${Math.max(0, 24 - state.itemIndex)} drops`);
+        }
+
+        private destroyRelayItem() {
+          this.relayItemNode?.destroy();
+          this.relayItemNode = undefined;
+          this.relayItemKey = null;
+        }
+
+        private syncRelayItem(state: PetalRelayState) {
+          const item = state.currentItem;
+          if (!item) {
+            this.destroyRelayItem();
+            return;
+          }
+          const key = `${state.itemIndex}:${item.id}`;
+          if (this.relayItemKey === key) return;
+
+          this.destroyRelayItem();
+          this.relayItemKey = key;
+          this.relayItemY = -34;
+          this.relayItemElapsed = 0;
+          this.relaySubmittedItemIndex = -1;
+
+          const node = this.add.container(item.x, this.relayItemY).setDepth(100);
+          const frame = item.kind === "heart" ? 3 : item.kind === "thorn" ? 5 : 4;
+          const size =
+            item.kind === "thorn"
+              ? { width: 88, height: 104 }
+              : item.kind === "heart"
+                ? { width: 86, height: 118 }
+                : item.kind === "golden"
+                  ? { width: 104, height: 128 }
+                  : { width: 92, height: 116 };
+          const sprite = this.add.image(0, 0, "minigame-props", frame).setDisplaySize(size.width, size.height);
+          if (item.kind === "golden") sprite.setTint(0xffd76f);
+          node.add(sprite);
+          this.relayItemNode = node;
+        }
+
+        private submitRelayResult(result: PetalRelayResult) {
+          const state = relayStateRef.current;
+          if (!state?.currentItem || pendingRelayMoveRef.current) return;
+          if (this.relaySubmittedItemIndex === state.itemIndex) return;
+          this.relaySubmittedItemIndex = state.itemIndex;
+          this.setRelayStatus(
+            `relay-submit-${state.itemIndex}-${result}`,
+            result === "catch" ? "Saving that catch..." : state.currentItem.kind === "thorn" ? "Nice dodge. Saving..." : "Saving that miss...",
+          );
+          playCozyCue(
+            result === "catch"
+              ? state.currentItem.kind === "thorn"
+                ? "thorn"
+                : state.currentItem.kind === "heart"
+                  ? "heart"
+                  : "catch"
+              : state.currentItem.kind === "thorn"
+                ? "combo"
+                : "miss",
+          );
+          onRelayMoveRef.current?.(result);
+        }
+
+        private showRelayComplete(state: PetalRelayState) {
+          if (this.rewardLayer) return;
+          const layer = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(7000);
+          const bg = this.add.graphics();
+          bg.fillStyle(0xfffcf3, 0.96);
+          bg.fillRoundedRect(-208, -130, 416, 260, 24);
+          bg.lineStyle(3, 0xf6cfd2, 0.9);
+          bg.strokeRoundedRect(-208, -130, 416, 260, 24);
+          layer.add(bg);
+          layer.add(
+            this.add.text(0, -82, state.success ? "Relay Complete" : "Relay Finished", {
+              color: "#3A2A2A",
+              fontFamily: "Caprasimo, Georgia, serif",
+              fontSize: "25px",
+            }).setOrigin(0.5),
+          );
+          layer.add(
+            this.add.text(0, -24, `Team score ${state.finalScore}\nCombo x${state.combo} · Misses ${state.misses}`, {
+              align: "center",
+              color: "#5B3F3F",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "18px",
+              fontStyle: "800",
+              lineSpacing: 8,
+            }).setOrigin(0.5),
+          );
+          layer.add(
+            this.add.text(0, 72, "Claim from the co-op panel", {
+              color: "#8E70BD",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "15px",
+              fontStyle: "900",
+              backgroundColor: "#EFE6F7",
+              padding: { x: 18, y: 10 },
+            }).setOrigin(0.5),
+          );
+          this.rewardLayer = layer;
+          playCozyCue("reward");
         }
 
         private drawBackdrop() {
