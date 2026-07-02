@@ -36,6 +36,12 @@ export type CoopGameStep = {
   tolerance?: number;
   routeId?: string;
   routeLabel?: string;
+  ingredientId?: string;
+  ingredientLabel?: string;
+  formationId?: string;
+  formationLabel?: string;
+  dynamicId?: string;
+  dynamicLabel?: string;
   beat?: number;
 };
 
@@ -208,14 +214,14 @@ export const coOpPartyGames: Record<CoopGameKey, CoopGameDefinition> = {
     accentClassName: "bg-blush-100 text-blush-800 border-blush-300",
     actions: bakeoffActions,
     steps: [
-      { id: "batter", label: "Cloud Batter", prompt: "Whisk cloud batter until the bowl shines.", actionId: "mix", points: 115, flourish: "the batter turns silky", lane: 0, targetValue: 62, tolerance: 12 },
-      { id: "berries", label: "Moonberries", prompt: "Sprinkle moonberries in a crescent pattern.", actionId: "sprinkle", points: 130, flourish: "berries dot the batter like stars", lane: 1, targetValue: 38, tolerance: 10 },
-      { id: "fold", label: "Soft Fold", prompt: "Whisk once more to fold the berries in.", actionId: "mix", points: 125, flourish: "purple ribbons swirl through the bowl", lane: 0, targetValue: 46, tolerance: 9 },
-      { id: "oven-warm", label: "Warm Oven", prompt: "Bake just long enough for the cake to rise.", actionId: "bake", points: 145, flourish: "the oven window glows honey", lane: 2, targetValue: 74, tolerance: 8 },
-      { id: "cream", label: "Heart Cream", prompt: "Frost the first heart curl before it cools.", actionId: "frost", points: 155, flourish: "icing curls into a tiny heart", lane: 3, targetValue: 57, tolerance: 11 },
-      { id: "sugar", label: "Lavender Sugar", prompt: "Sprinkle lavender sugar over the frosting.", actionId: "sprinkle", points: 150, flourish: "lavender sparkles drift down", lane: 1, targetValue: 31, tolerance: 9 },
-      { id: "final-bake", label: "Moonbeam Set", prompt: "Bake the glaze until it catches moonlight.", actionId: "bake", points: 175, flourish: "the glaze flashes gold", lane: 2, targetValue: 82, tolerance: 7 },
-      { id: "rose-finish", label: "Rose Finish", prompt: "Frost the final rose on top.", actionId: "frost", points: 200, flourish: "the finished cake blooms", lane: 3, targetValue: 69, tolerance: 10 },
+      { id: "batter", label: "Cloud Batter", prompt: "Whisk cloud batter until the bowl shines.", actionId: "mix", points: 115, flourish: "the batter turns silky", lane: 0, targetValue: 62, tolerance: 12, ingredientId: "cloud-milk", ingredientLabel: "Cloud Milk" },
+      { id: "berries", label: "Moonberries", prompt: "Sprinkle moonberries in a crescent pattern.", actionId: "sprinkle", points: 130, flourish: "berries dot the batter like stars", lane: 1, targetValue: 38, tolerance: 10, ingredientId: "moonberries", ingredientLabel: "Moonberries" },
+      { id: "fold", label: "Soft Fold", prompt: "Whisk once more to fold the berries in.", actionId: "mix", points: 125, flourish: "purple ribbons swirl through the bowl", lane: 0, targetValue: 46, tolerance: 9, ingredientId: "lavender-flour", ingredientLabel: "Lavender Flour" },
+      { id: "oven-warm", label: "Warm Oven", prompt: "Bake just long enough for the cake to rise.", actionId: "bake", points: 145, flourish: "the oven window glows honey", lane: 2, targetValue: 74, tolerance: 8, ingredientId: "honey-glaze", ingredientLabel: "Honey Glaze" },
+      { id: "cream", label: "Heart Cream", prompt: "Frost the first heart curl before it cools.", actionId: "frost", points: 155, flourish: "icing curls into a tiny heart", lane: 3, targetValue: 57, tolerance: 11, ingredientId: "rose-cream", ingredientLabel: "Rose Cream" },
+      { id: "sugar", label: "Lavender Sugar", prompt: "Sprinkle lavender sugar over the frosting.", actionId: "sprinkle", points: 150, flourish: "lavender sparkles drift down", lane: 1, targetValue: 31, tolerance: 9, ingredientId: "lavender-sugar", ingredientLabel: "Lavender Sugar" },
+      { id: "final-bake", label: "Moonbeam Set", prompt: "Bake the glaze until it catches moonlight.", actionId: "bake", points: 175, flourish: "the glaze flashes gold", lane: 2, targetValue: 82, tolerance: 7, ingredientId: "moonbeam-vanilla", ingredientLabel: "Moonbeam Vanilla" },
+      { id: "rose-finish", label: "Rose Finish", prompt: "Frost the final rose on top.", actionId: "frost", points: 200, flourish: "the finished cake blooms", lane: 3, targetValue: 69, tolerance: 10, ingredientId: "rose-cream", ingredientLabel: "Rose Cream" },
     ],
   },
   "firefly-grove": {
@@ -237,14 +243,14 @@ export const coOpPartyGames: Record<CoopGameKey, CoopGameDefinition> = {
     accentClassName: "bg-garden-100 text-garden-800 border-garden-300",
     actions: groveActions,
     steps: [
-      { id: "gate-net", label: "Gate Drift", prompt: "Sweep the net at the garden gate.", actionId: "net", points: 105, flourish: "the first swarm gathers", lane: 0, routeId: "stone-gate", routeLabel: "Stone Gate" },
-      { id: "gate-light", label: "Gate Lantern", prompt: "Light the gate lantern so they know where to land.", actionId: "lantern", points: 115, flourish: "a warm dot opens the route", lane: 1, routeId: "stone-gate", routeLabel: "Stone Gate" },
-      { id: "bridge-breeze", label: "Bridge Bend", prompt: "Guide a breeze across the stepping stones.", actionId: "breeze", points: 135, flourish: "fireflies arc over the bridge", lane: 2, routeId: "willow-bridge", routeLabel: "Willow Bridge" },
-      { id: "jar-crossing", label: "Glass Jar", prompt: "Open the jar at the crossing.", actionId: "release", points: 140, flourish: "captured sparks rejoin the swarm", lane: 3, routeId: "willow-bridge", routeLabel: "Willow Bridge" },
-      { id: "pond-net", label: "Pond Loop", prompt: "Sweep the net near the pond reeds.", actionId: "net", points: 145, flourish: "blue sparks whirl low", lane: 4, routeId: "lily-pond", routeLabel: "Lily Pond" },
-      { id: "tree-light", label: "Honey Tree", prompt: "Light the lantern tucked in the tree hollow.", actionId: "lantern", points: 160, flourish: "the canopy flickers gold", lane: 5, routeId: "honey-tree", routeLabel: "Honey Tree" },
-      { id: "moon-breeze", label: "Moon Ring", prompt: "Guide a breeze around the moon ring.", actionId: "breeze", points: 180, flourish: "the swarm forms a halo", lane: 6, routeId: "moon-ring", routeLabel: "Moon Ring" },
-      { id: "final-release", label: "Grove Release", prompt: "Open the jar and let the grove glow.", actionId: "release", points: 205, flourish: "every lantern answers", lane: 7, routeId: "moon-ring", routeLabel: "Moon Ring" },
+      { id: "gate-net", label: "Gate Drift", prompt: "Sweep the net at the garden gate.", actionId: "net", points: 105, flourish: "the first swarm gathers", lane: 0, routeId: "stone-gate", routeLabel: "Stone Gate", formationId: "wide", formationLabel: "Wide Sweep" },
+      { id: "gate-light", label: "Gate Lantern", prompt: "Light the gate lantern so they know where to land.", actionId: "lantern", points: 115, flourish: "a warm dot opens the route", lane: 1, routeId: "stone-gate", routeLabel: "Stone Gate", formationId: "single", formationLabel: "Single File" },
+      { id: "bridge-breeze", label: "Bridge Bend", prompt: "Guide a breeze across the stepping stones.", actionId: "breeze", points: 135, flourish: "fireflies arc over the bridge", lane: 2, routeId: "willow-bridge", routeLabel: "Willow Bridge", formationId: "arc", formationLabel: "Arc Drift" },
+      { id: "jar-crossing", label: "Glass Jar", prompt: "Open the jar at the crossing.", actionId: "release", points: 140, flourish: "captured sparks rejoin the swarm", lane: 3, routeId: "willow-bridge", routeLabel: "Willow Bridge", formationId: "tight", formationLabel: "Tight Cluster" },
+      { id: "pond-net", label: "Pond Loop", prompt: "Sweep the net near the pond reeds.", actionId: "net", points: 145, flourish: "blue sparks whirl low", lane: 4, routeId: "lily-pond", routeLabel: "Lily Pond", formationId: "wide", formationLabel: "Wide Sweep" },
+      { id: "tree-light", label: "Honey Tree", prompt: "Light the lantern tucked in the tree hollow.", actionId: "lantern", points: 160, flourish: "the canopy flickers gold", lane: 5, routeId: "honey-tree", routeLabel: "Honey Tree", formationId: "single", formationLabel: "Single File" },
+      { id: "moon-breeze", label: "Moon Ring", prompt: "Guide a breeze around the moon ring.", actionId: "breeze", points: 180, flourish: "the swarm forms a halo", lane: 6, routeId: "moon-ring", routeLabel: "Moon Ring", formationId: "arc", formationLabel: "Arc Drift" },
+      { id: "final-release", label: "Grove Release", prompt: "Open the jar and let the grove glow.", actionId: "release", points: 205, flourish: "every lantern answers", lane: 7, routeId: "moon-ring", routeLabel: "Moon Ring", formationId: "tight", formationLabel: "Tight Cluster" },
     ],
   },
   "moonlight-melody": {
@@ -266,14 +272,14 @@ export const coOpPartyGames: Record<CoopGameKey, CoopGameDefinition> = {
     accentClassName: "bg-lavender-100 text-lavender-800 border-lavender-300",
     actions: melodyActions,
     steps: [
-      { id: "first-tap", label: "Opening Tap", prompt: "Tap the bell on the first beat.", actionId: "tap", points: 110, flourish: "a blush note pops open", lane: 1, beat: 1 },
-      { id: "soft-hold", label: "Soft Hold", prompt: "Hold the lavender note through the moonbar.", actionId: "hold", points: 130, flourish: "the note stretches into moonlight", lane: 2, beat: 3 },
-      { id: "gold-chime", label: "Gold Chime", prompt: "Chime on the bright echo.", actionId: "chime", points: 140, flourish: "gold notes ripple outward", lane: 0, beat: 2 },
-      { id: "leaf-rest", label: "Leaf Rest", prompt: "Rest for one tiny garden breath.", actionId: "rest", points: 135, flourish: "the staff exhales softly", lane: 3, beat: 4 },
-      { id: "double-tap", label: "Double Tap", prompt: "Tap the returning heartbeat.", actionId: "tap", points: 150, flourish: "two heart notes bounce", lane: 1, beat: 2 },
-      { id: "long-hold", label: "Long Hold", prompt: "Hold the harmony while the duet turns.", actionId: "hold", points: 165, flourish: "the harmony braids together", lane: 2, beat: 4 },
-      { id: "moon-chime", label: "Moon Chime", prompt: "Chime the moonlit counter melody.", actionId: "chime", points: 185, flourish: "silver bells sparkle", lane: 0, beat: 1 },
-      { id: "final-rest", label: "Final Rest", prompt: "Rest at the finale so the last note lands.", actionId: "rest", points: 210, flourish: "the whole garden listens", lane: 3, beat: 3 },
+      { id: "first-tap", label: "Opening Tap", prompt: "Tap the bell on the first beat.", actionId: "tap", points: 110, flourish: "a blush note pops open", lane: 1, beat: 1, dynamicId: "soft", dynamicLabel: "Soft" },
+      { id: "soft-hold", label: "Soft Hold", prompt: "Hold the lavender note through the moonbar.", actionId: "hold", points: 130, flourish: "the note stretches into moonlight", lane: 2, beat: 3, dynamicId: "glow", dynamicLabel: "Glow" },
+      { id: "gold-chime", label: "Gold Chime", prompt: "Chime on the bright echo.", actionId: "chime", points: 140, flourish: "gold notes ripple outward", lane: 0, beat: 2, dynamicId: "bright", dynamicLabel: "Bright" },
+      { id: "leaf-rest", label: "Leaf Rest", prompt: "Rest for one tiny garden breath.", actionId: "rest", points: 135, flourish: "the staff exhales softly", lane: 3, beat: 4, dynamicId: "soft", dynamicLabel: "Soft" },
+      { id: "double-tap", label: "Double Tap", prompt: "Tap the returning heartbeat.", actionId: "tap", points: 150, flourish: "two heart notes bounce", lane: 1, beat: 2, dynamicId: "bright", dynamicLabel: "Bright" },
+      { id: "long-hold", label: "Long Hold", prompt: "Hold the harmony while the duet turns.", actionId: "hold", points: 165, flourish: "the harmony braids together", lane: 2, beat: 4, dynamicId: "glow", dynamicLabel: "Glow" },
+      { id: "moon-chime", label: "Moon Chime", prompt: "Chime the moonlit counter melody.", actionId: "chime", points: 185, flourish: "silver bells sparkle", lane: 0, beat: 1, dynamicId: "bright", dynamicLabel: "Bright" },
+      { id: "final-rest", label: "Final Rest", prompt: "Rest at the finale so the last note lands.", actionId: "rest", points: 210, flourish: "the whole garden listens", lane: 3, beat: 3, dynamicId: "soft", dynamicLabel: "Soft" },
     ],
   },
 };
@@ -328,6 +334,15 @@ function formatBakeoffRange(step: CoopGameStep) {
   return `${target}% ± ${tolerance}`;
 }
 
+function readableToken(value: string | null) {
+  if (!value) return "";
+  return value
+    .split("-")
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
 function initialSpecialMeters(theme: CoopGameDefinition["theme"]): Record<string, number> {
   if (theme === "bakeoff") {
     return { texture: 24, toppings: 0, oven: 35, frosting: 0 };
@@ -357,53 +372,73 @@ function evaluateCoopMove(
     const target = step.targetValue ?? 50;
     const tolerance = step.tolerance ?? 10;
     const submitted = payloadNumber(payload, "value");
+    const ingredientId = payloadString(payload, "ingredientId");
+    const ingredientMatches = ingredientId === step.ingredientId;
     const safeSubmitted = submitted === null ? -1 : clamp(Math.round(submitted), 0, 100);
     const diff = submitted === null ? 100 : Math.abs(safeSubmitted - target);
     const near = clamp(1 - diff / Math.max(1, tolerance * 2.4), 0, 1);
 
-    correct = actionCorrect && diff <= tolerance;
-    accuracy = actionCorrect ? (correct ? clamp(0.62 + near * 0.38, 0.62, 1) : clamp(near * 0.55, 0, 0.45)) : 0;
-    submittedValue = submitted === null ? "no timing" : `${safeSubmitted}%`;
-    expectedValue = formatBakeoffRange(step);
+    correct = actionCorrect && ingredientMatches && diff <= tolerance;
+    accuracy = actionCorrect
+      ? clamp(
+          (diff <= tolerance ? 0.45 : near * 0.28) +
+            (ingredientMatches ? 0.28 : 0) +
+            (diff <= tolerance ? near * 0.27 : 0),
+          0,
+          1,
+        )
+      : 0;
+    submittedValue = `${readableToken(ingredientId) || "No ingredient"} @ ${submitted === null ? "no timing" : `${safeSubmitted}%`}`;
+    expectedValue = `${step.ingredientLabel ?? "ingredient"} @ ${formatBakeoffRange(step)}`;
     detail = correct
       ? `${step.flourish} at ${safeSubmitted}%`
       : actionCorrect
-        ? `${safeSubmitted}% missed the ${expectedValue} sweet spot`
+        ? ingredientMatches
+          ? `${safeSubmitted}% missed the ${formatBakeoffRange(step)} sweet spot`
+          : `wrong ingredient; needed ${step.ingredientLabel ?? "the recipe card"}`
         : `wrong station; needed ${expectedValue}`;
-    missPenalty = actionCorrect ? Math.round(28 + Math.min(42, diff * 0.7)) : 50;
+    missPenalty = actionCorrect ? Math.round(26 + Math.min(38, diff * 0.55) + (ingredientMatches ? 0 : 14)) : 50;
   } else if (definition.theme === "grove") {
     const routeId = payloadString(payload, "routeId");
+    const formationId = payloadString(payload, "formationId");
     const routeMatches = routeId === step.routeId;
+    const formationMatches = formationId === step.formationId;
 
-    correct = actionCorrect && routeMatches;
-    accuracy = correct ? 1 : actionCorrect || routeMatches ? 0.35 : 0;
-    submittedValue = routeId ?? "no path";
-    expectedValue = step.routeLabel ?? step.routeId ?? "the lit route";
+    correct = actionCorrect && routeMatches && formationMatches;
+    accuracy = (actionCorrect ? 0.34 : 0) + (routeMatches ? 0.33 : 0) + (formationMatches ? 0.33 : 0);
+    submittedValue = `${readableToken(routeId) || "No path"} / ${readableToken(formationId) || "No formation"}`;
+    expectedValue = `${step.routeLabel ?? "route"} / ${step.formationLabel ?? "formation"}`;
     detail = correct
       ? `${step.flourish} through ${expectedValue}`
       : actionCorrect
-        ? `right tool, wrong path; aim for ${expectedValue}`
+        ? routeMatches
+          ? `right tool and route, wrong formation; use ${step.formationLabel ?? "the swarm shape"}`
+          : `right tool, wrong path; aim for ${step.routeLabel ?? "the route"}`
         : routeMatches
           ? `right path, wrong tool; needed ${step.label}`
           : `lost the swarm before ${expectedValue}`;
-    missPenalty = actionCorrect || routeMatches ? 40 : 55;
+    missPenalty = actionCorrect || routeMatches || formationMatches ? 40 : 55;
   } else {
     const beat = payloadNumber(payload, "beat");
+    const dynamicId = payloadString(payload, "dynamicId");
     const safeBeat = beat === null ? null : clamp(Math.round(beat), 1, 4);
     const beatMatches = safeBeat === step.beat;
+    const dynamicMatches = dynamicId === step.dynamicId;
 
-    correct = actionCorrect && beatMatches;
-    accuracy = correct ? 1 : actionCorrect || beatMatches ? 0.38 : 0;
-    submittedValue = safeBeat === null ? "no beat" : `Beat ${safeBeat}`;
-    expectedValue = `Beat ${step.beat ?? 1}`;
+    correct = actionCorrect && beatMatches && dynamicMatches;
+    accuracy = (actionCorrect ? 0.34 : 0) + (beatMatches ? 0.33 : 0) + (dynamicMatches ? 0.33 : 0);
+    submittedValue = `${safeBeat === null ? "No beat" : `Beat ${safeBeat}`} / ${readableToken(dynamicId) || "No dynamic"}`;
+    expectedValue = `Beat ${step.beat ?? 1} / ${step.dynamicLabel ?? "dynamic"}`;
     detail = correct
       ? `${step.flourish} on ${expectedValue}`
       : actionCorrect
-        ? `right note, wrong beat; land on ${expectedValue}`
+        ? beatMatches
+          ? `right note and beat, wrong dynamic; choose ${step.dynamicLabel ?? "the dynamic"}`
+          : `right note, wrong beat; land on Beat ${step.beat ?? 1}`
         : beatMatches
           ? `right beat, wrong note; needed ${step.label}`
           : `the phrase drifted from ${expectedValue}`;
-    missPenalty = actionCorrect || beatMatches ? 38 : 52;
+    missPenalty = actionCorrect || beatMatches || dynamicMatches ? 38 : 52;
   }
 
   const scoreDelta = correct ? Math.round(step.points * accuracy + combo * 28) : -missPenalty;

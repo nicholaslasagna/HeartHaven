@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { CircleDot, Gift, HeartHandshake, RefreshCcw, Sparkles, Trophy, UsersRound } from "lucide-react";
 import { CozyCard } from "@/components/cozy/cozy-card";
@@ -64,24 +64,61 @@ const groveRouteOptions = [
   { id: "moon-ring", label: "Moon Ring", description: "Final loop where every spark gathers." },
 ];
 
+const bakeoffIngredientOptions = [
+  { id: "cloud-milk", label: "Cloud Milk", description: "Makes batter soft and airy." },
+  { id: "moonberries", label: "Moonberries", description: "Adds bright purple bursts." },
+  { id: "lavender-flour", label: "Lavender Flour", description: "Keeps the crumb delicate." },
+  { id: "honey-glaze", label: "Honey Glaze", description: "Helps the crust shine." },
+  { id: "rose-cream", label: "Rose Cream", description: "Pipes heart-shaped curls." },
+  { id: "lavender-sugar", label: "Lavender Sugar", description: "Adds a sparkling finish." },
+  { id: "moonbeam-vanilla", label: "Moonbeam Vanilla", description: "Sets the final glow." },
+];
+
+const groveFormationOptions = [
+  { id: "wide", label: "Wide Sweep", description: "Cover a broad patch without startling sparks." },
+  { id: "single", label: "Single File", description: "Thread the swarm through a narrow lantern path." },
+  { id: "arc", label: "Arc Drift", description: "Curve around bridges and moon rings." },
+  { id: "tight", label: "Tight Cluster", description: "Hold the swarm steady before releasing it." },
+];
+
+const melodyDynamicOptions = [
+  { id: "soft", label: "Soft", description: "Gentle garden-note touch." },
+  { id: "bright", label: "Bright", description: "Clear chime with sparkle." },
+  { id: "glow", label: "Glow", description: "Warm sustained moonlight." },
+];
+
 function challengeHint(definition: CoopGameDefinition, step?: CoopGameStep) {
   if (!step) return "";
   if (definition.theme === "bakeoff") {
-    return `Set the station meter inside ${step.targetValue ?? 50}% ± ${step.tolerance ?? 10}.`;
+    return `Use ${step.ingredientLabel ?? "the ingredient"} and land the moving meter inside ${step.targetValue ?? 50}% ± ${step.tolerance ?? 10}.`;
   }
   if (definition.theme === "grove") {
-    return `Choose the route node: ${step.routeLabel ?? "the lit path"}.`;
+    return `Choose ${step.routeLabel ?? "the lit path"} with ${step.formationLabel ?? "the right formation"}.`;
   }
-  return `Place the note on beat ${step.beat ?? 1}.`;
+  return `Place the note on beat ${step.beat ?? 1} with a ${step.dynamicLabel ?? "matching"} dynamic.`;
 }
 
-function actionButtonDetail(definition: CoopGameDefinition, action: { description: string }, value: number, route: string, beat: number) {
-  if (definition.theme === "bakeoff") return `${action.description} Meter set to ${value}%.`;
-  if (definition.theme === "grove") {
-    const routeLabel = groveRouteOptions.find((option) => option.id === route)?.label ?? "selected route";
-    return `${action.description} Route: ${routeLabel}.`;
+function actionButtonDetail(
+  definition: CoopGameDefinition,
+  action: { description: string },
+  value: number,
+  ingredient: string,
+  route: string,
+  formation: string,
+  beat: number,
+  dynamic: string,
+) {
+  if (definition.theme === "bakeoff") {
+    const ingredientLabel = bakeoffIngredientOptions.find((option) => option.id === ingredient)?.label ?? "choose ingredient";
+    return `${action.description} ${ingredientLabel}, timing ${value}%.`;
   }
-  return `${action.description} Beat: ${beat}.`;
+  if (definition.theme === "grove") {
+    const routeLabel = groveRouteOptions.find((option) => option.id === route)?.label ?? "choose route";
+    const formationLabel = groveFormationOptions.find((option) => option.id === formation)?.label ?? "choose formation";
+    return `${action.description} ${routeLabel}, ${formationLabel}.`;
+  }
+  const dynamicLabel = melodyDynamicOptions.find((option) => option.id === dynamic)?.label ?? "choose dynamic";
+  return `${action.description} ${beat ? `Beat ${beat}` : "choose beat"}, ${dynamicLabel}.`;
 }
 
 function stageCopy(theme: string) {
@@ -262,7 +299,7 @@ function FireflyGroveStage({ definition, state, currentStep, expectedAction }: S
         {state.gameOver
           ? state.resultCopy
           : currentStep
-            ? `${currentStep.prompt} Choose ${expectedAction?.shortLabel ?? "the matching guide"} and route through ${currentStep.routeLabel ?? "the lit path"}.`
+            ? `${currentStep.prompt} Choose ${expectedAction?.shortLabel ?? "the matching guide"}, route through ${currentStep.routeLabel ?? "the lit path"}, and use ${currentStep.formationLabel ?? "the right formation"}.`
             : "The grove is glowing."}
         <span className="mt-2 block text-xs text-ink-500">
           Route {state.specialMeters.route ?? 0}% · Swarm {state.specialMeters.swarm ?? 0}% · Drift {state.specialMeters.drift ?? 0}%
@@ -322,7 +359,7 @@ function MoonlightMelodyStage({ definition, state, currentStep, expectedAction }
         {state.gameOver
           ? state.resultCopy
           : currentStep
-            ? `${currentStep.prompt} Play ${expectedAction?.shortLabel ?? "the matching note"} on beat ${currentStep.beat ?? 1}.`
+            ? `${currentStep.prompt} Play ${expectedAction?.shortLabel ?? "the matching note"} on beat ${currentStep.beat ?? 1} with a ${currentStep.dynamicLabel ?? "matching"} dynamic.`
             : "The duet is complete."}
         <span className="mt-2 block text-xs text-ink-500">
           Timing {state.specialMeters.timing ?? 0}% · Harmony {state.specialMeters.harmony ?? 0}% · Silence {state.specialMeters.silence ?? 0}%
@@ -344,8 +381,12 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<CoopActionId | null>(null);
   const [bakeoffValue, setBakeoffValue] = useState(50);
-  const [groveRouteId, setGroveRouteId] = useState(groveRouteOptions[0]?.id ?? "stone-gate");
-  const [melodyBeat, setMelodyBeat] = useState(1);
+  const [bakeoffIngredientId, setBakeoffIngredientId] = useState("");
+  const [groveRouteId, setGroveRouteId] = useState("");
+  const [groveFormationId, setGroveFormationId] = useState("");
+  const [melodyBeat, setMelodyBeat] = useState(0);
+  const [melodyDynamicId, setMelodyDynamicId] = useState("");
+  const [choiceMoveKey, setChoiceMoveKey] = useState("");
   const [rewardQueued, setRewardQueued] = useState(false);
   const claimedForSessionRef = useRef<string | null>(null);
 
@@ -367,11 +408,45 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
   const copy = stageCopy(definition.theme);
   const progressPct = Math.round(state.progress * 100);
   const sessionLabel = game.sessionId ? "Live shared session" : "Connecting shared session";
+  const currentMoveKey = `${definition.gameKey}:${state.countedMoves}`;
+  const bakeoffIngredientChoice = choiceMoveKey === currentMoveKey ? bakeoffIngredientId : "";
+  const groveRouteChoice = choiceMoveKey === currentMoveKey ? groveRouteId : "";
+  const groveFormationChoice = choiceMoveKey === currentMoveKey ? groveFormationId : "";
+  const melodyBeatChoice = choiceMoveKey === currentMoveKey ? melodyBeat : 0;
+  const melodyDynamicChoice = choiceMoveKey === currentMoveKey ? melodyDynamicId : "";
+  const detailsReady =
+    definition.theme === "bakeoff"
+      ? Boolean(bakeoffIngredientChoice)
+      : definition.theme === "grove"
+        ? Boolean(groveRouteChoice && groveFormationChoice)
+        : Boolean(melodyBeatChoice && melodyDynamicChoice);
+
+  useEffect(() => {
+    if (definition.theme !== "bakeoff" || !canAct || pendingAction || state.gameOver) return;
+    const interval = window.setInterval(() => {
+      const wave = Math.sin(Date.now() / 390 + state.currentStepIndex * 0.72);
+      setBakeoffValue(Math.round(50 + wave * 46));
+    }, 60);
+    return () => window.clearInterval(interval);
+  }, [canAct, definition.theme, pendingAction, state.currentStepIndex, state.gameOver]);
 
   function movePayload() {
-    if (definition.theme === "bakeoff") return { value: bakeoffValue };
-    if (definition.theme === "grove") return { routeId: groveRouteId };
-    return { beat: melodyBeat };
+    if (definition.theme === "bakeoff") return { value: bakeoffValue, ingredientId: bakeoffIngredientChoice };
+    if (definition.theme === "grove") return { routeId: groveRouteChoice, formationId: groveFormationChoice };
+    return { beat: melodyBeatChoice, dynamicId: melodyDynamicChoice };
+  }
+
+  function localMoveLooksCorrect(actionId: CoopActionId) {
+    if (!currentStep || actionId !== currentStep.actionId) return false;
+    if (definition.theme === "bakeoff") {
+      const target = currentStep.targetValue ?? 50;
+      const tolerance = currentStep.tolerance ?? 10;
+      return bakeoffIngredientChoice === currentStep.ingredientId && Math.abs(bakeoffValue - target) <= tolerance;
+    }
+    if (definition.theme === "grove") {
+      return groveRouteChoice === currentStep.routeId && groveFormationChoice === currentStep.formationId;
+    }
+    return melodyBeatChoice === currentStep.beat && melodyDynamicChoice === currentStep.dynamicId;
   }
 
   async function chooseAction(actionId: CoopActionId) {
@@ -384,6 +459,16 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
       setMessage(state.gameOver ? "This round is complete." : waitingCopy);
       return;
     }
+    if (!detailsReady) {
+      setMessage(
+        definition.theme === "bakeoff"
+          ? "Choose an ingredient first."
+          : definition.theme === "grove"
+            ? "Choose a route and formation first."
+            : "Choose a beat and dynamic first.",
+      );
+      return;
+    }
     if (pendingAction) {
       setMessage("Saving your last move.");
       return;
@@ -391,7 +476,7 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
 
     setPendingAction(actionId);
     setMessage(null);
-    playCozyCue(actionId === currentStep.actionId ? "combo" : "miss");
+    playCozyCue(localMoveLooksCorrect(actionId) ? "combo" : "miss");
     const result = await game.submitMove("coop-action", {
       gameKey: definition.gameKey,
       actionId,
@@ -507,31 +592,51 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
                 <div className="rounded-lg border border-honey-500/30 bg-honey-100/55 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs font-extrabold uppercase tracking-normal text-honey-700">Prep meter</p>
+                      <p className="text-xs font-extrabold uppercase tracking-normal text-honey-700">Ingredient + timing</p>
                       <p className="text-sm font-bold text-ink-700">{challengeHint(definition, currentStep)}</p>
                     </div>
                     <Badge variant="outline">{bakeoffValue}%</Badge>
                   </div>
-                  <input
-                    aria-label="Bake-off prep meter"
-                    className="mt-3 w-full accent-[#d88495]"
-                    disabled={!canAct || Boolean(pendingAction)}
-                    max={100}
-                    min={0}
-                    onChange={(event) => setBakeoffValue(Number(event.target.value))}
-                    type="range"
-                    value={bakeoffValue}
-                  />
-                  <div className="mt-2 h-3 overflow-hidden rounded-full bg-white/80">
+                  <div className="mt-3 grid max-h-40 gap-2 overflow-y-auto pr-1">
+                    {bakeoffIngredientOptions.map((ingredient) => (
+                      <button
+                        className={cn(
+                          "rounded-md border px-3 py-2 text-left text-xs font-extrabold transition disabled:opacity-60",
+                          bakeoffIngredientChoice === ingredient.id
+                            ? "border-honey-500 bg-white text-honey-900 shadow-sm"
+                            : "border-white/70 bg-white/55 text-ink-600 hover:bg-white",
+                        )}
+                        disabled={!canAct || Boolean(pendingAction)}
+                        key={ingredient.id}
+                        onClick={() => {
+                          setChoiceMoveKey(currentMoveKey);
+                          setBakeoffIngredientId(ingredient.id);
+                        }}
+                        type="button"
+                      >
+                        <span className="block">{ingredient.label}</span>
+                        <span className="block text-[11px] font-bold opacity-70">{ingredient.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="relative mt-3 h-10 overflow-hidden rounded-full border border-honey-500/30 bg-white/80">
                     <div
-                      className="h-full rounded-full bg-blush-300/60"
+                      className="absolute inset-y-1 rounded-full bg-blush-300/45"
                       style={{
-                        marginLeft: `${Math.max(0, (currentStep.targetValue ?? 50) - (currentStep.tolerance ?? 10))}%`,
+                        left: `${Math.max(0, (currentStep.targetValue ?? 50) - (currentStep.tolerance ?? 10))}%`,
                         width: `${Math.min(100, (currentStep.tolerance ?? 10) * 2)}%`,
                       }}
                     />
+                    <motion.div
+                      animate={{ left: `${bakeoffValue}%` }}
+                      className="absolute top-1/2 h-8 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-honey-600 shadow-[0_0_18px_rgba(212,147,42,.55)]"
+                      transition={{ ease: "linear", duration: 0.05 }}
+                    />
+                    <div className="absolute inset-x-4 top-1/2 h-px bg-honey-700/20" />
                   </div>
-                  <p className="mt-2 text-[11px] font-bold text-ink-500">Pink band is the shared team target.</p>
+                  <p className="mt-2 text-[11px] font-bold text-ink-500">
+                    Pick the ingredient, then tap the right station while the gold needle crosses the pink band.
+                  </p>
                 </div>
               )}
 
@@ -544,17 +649,43 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
                       <button
                         className={cn(
                           "rounded-md border px-3 py-2 text-left text-xs font-extrabold transition disabled:opacity-60",
-                          groveRouteId === route.id
+                          groveRouteChoice === route.id
                             ? "border-garden-500 bg-white text-garden-900 shadow-sm"
                             : "border-white/70 bg-white/55 text-ink-600 hover:bg-white",
                         )}
                         disabled={!canAct || Boolean(pendingAction)}
                         key={route.id}
-                        onClick={() => setGroveRouteId(route.id)}
+                        onClick={() => {
+                          setChoiceMoveKey(currentMoveKey);
+                          setGroveRouteId(route.id);
+                        }}
                         type="button"
                       >
                         <span className="block">{route.label}</span>
                         <span className="block text-[11px] font-bold opacity-70">{route.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs font-extrabold uppercase tracking-normal text-garden-700">Swarm formation</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                    {groveFormationOptions.map((formation) => (
+                      <button
+                        className={cn(
+                          "rounded-md border px-3 py-2 text-left text-xs font-extrabold transition disabled:opacity-60",
+                          groveFormationChoice === formation.id
+                            ? "border-garden-500 bg-white text-garden-900 shadow-sm"
+                            : "border-white/70 bg-white/55 text-ink-600 hover:bg-white",
+                        )}
+                        disabled={!canAct || Boolean(pendingAction)}
+                        key={formation.id}
+                        onClick={() => {
+                          setChoiceMoveKey(currentMoveKey);
+                          setGroveFormationId(formation.id);
+                        }}
+                        type="button"
+                      >
+                        <span className="block">{formation.label}</span>
+                        <span className="block text-[11px] font-bold opacity-70">{formation.description}</span>
                       </button>
                     ))}
                   </div>
@@ -570,16 +701,42 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
                       <button
                         className={cn(
                           "rounded-md border px-3 py-3 text-center font-display text-xl transition disabled:opacity-60",
-                          melodyBeat === beat
+                          melodyBeatChoice === beat
                             ? "border-lavender-500 bg-white text-lavender-800 shadow-sm"
                             : "border-white/70 bg-white/55 text-ink-600 hover:bg-white",
                         )}
                         disabled={!canAct || Boolean(pendingAction)}
                         key={beat}
-                        onClick={() => setMelodyBeat(beat)}
+                        onClick={() => {
+                          setChoiceMoveKey(currentMoveKey);
+                          setMelodyBeat(beat);
+                        }}
                         type="button"
                       >
                         {beat}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs font-extrabold uppercase tracking-normal text-lavender-700">Dynamic</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+                    {melodyDynamicOptions.map((dynamic) => (
+                      <button
+                        className={cn(
+                          "rounded-md border px-3 py-2 text-left text-xs font-extrabold transition disabled:opacity-60",
+                          melodyDynamicChoice === dynamic.id
+                            ? "border-lavender-500 bg-white text-lavender-800 shadow-sm"
+                            : "border-white/70 bg-white/55 text-ink-600 hover:bg-white",
+                        )}
+                        disabled={!canAct || Boolean(pendingAction)}
+                        key={dynamic.id}
+                        onClick={() => {
+                          setChoiceMoveKey(currentMoveKey);
+                          setMelodyDynamicId(dynamic.id);
+                        }}
+                        type="button"
+                      >
+                        <span className="block">{dynamic.label}</span>
+                        <span className="block text-[11px] font-bold opacity-70">{dynamic.description}</span>
                       </button>
                     ))}
                   </div>
@@ -596,7 +753,7 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
                         action.className,
                         expected && "ring-2 ring-white ring-offset-2",
                       )}
-                      disabled={!canAct || Boolean(pendingAction)}
+                      disabled={!canAct || !detailsReady || Boolean(pendingAction)}
                       key={action.id}
                       onClick={() => void chooseAction(action.id)}
                       type="button"
@@ -607,7 +764,16 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
                         {pendingAction === action.id ? <CircleDot className="size-5 animate-spin" /> : <Sparkles className="size-5" />}
                       </span>
                       <span className="mt-1 block text-xs font-bold leading-4 opacity-80">
-                        {actionButtonDetail(definition, action, bakeoffValue, groveRouteId, melodyBeat)}
+                        {actionButtonDetail(
+                          definition,
+                          action,
+                          bakeoffValue,
+                          bakeoffIngredientChoice,
+                          groveRouteChoice,
+                          groveFormationChoice,
+                          melodyBeatChoice,
+                          melodyDynamicChoice,
+                        )}
                       </span>
                     </motion.button>
                   );
