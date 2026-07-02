@@ -56,6 +56,34 @@ function actionSymbol(actionId: CoopActionId) {
   return "Rest";
 }
 
+const groveRouteOptions = [
+  { id: "stone-gate", label: "Stone Gate", description: "Safe opening path by the entry lantern." },
+  { id: "willow-bridge", label: "Willow Bridge", description: "Curved crossing over the moonlit stream." },
+  { id: "lily-pond", label: "Lily Pond", description: "Low reeds where the swarm drifts slowly." },
+  { id: "honey-tree", label: "Honey Tree", description: "High branch route with a tucked lantern." },
+  { id: "moon-ring", label: "Moon Ring", description: "Final loop where every spark gathers." },
+];
+
+function challengeHint(definition: CoopGameDefinition, step?: CoopGameStep) {
+  if (!step) return "";
+  if (definition.theme === "bakeoff") {
+    return `Set the station meter inside ${step.targetValue ?? 50}% ± ${step.tolerance ?? 10}.`;
+  }
+  if (definition.theme === "grove") {
+    return `Choose the route node: ${step.routeLabel ?? "the lit path"}.`;
+  }
+  return `Place the note on beat ${step.beat ?? 1}.`;
+}
+
+function actionButtonDetail(definition: CoopGameDefinition, action: { description: string }, value: number, route: string, beat: number) {
+  if (definition.theme === "bakeoff") return `${action.description} Meter set to ${value}%.`;
+  if (definition.theme === "grove") {
+    const routeLabel = groveRouteOptions.find((option) => option.id === route)?.label ?? "selected route";
+    return `${action.description} Route: ${routeLabel}.`;
+  }
+  return `${action.description} Beat: ${beat}.`;
+}
+
 function stageCopy(theme: string) {
   if (theme === "bakeoff") {
     return {
@@ -131,11 +159,29 @@ function MoonbeamBakeoffStage({ definition, state, currentStep, expectedAction, 
           </div>
         </div>
       </div>
+      <div className="relative z-10 mt-4 grid gap-2 sm:grid-cols-4">
+        {[
+          ["Texture", state.specialMeters.texture ?? 0],
+          ["Toppings", state.specialMeters.toppings ?? 0],
+          ["Oven", state.specialMeters.oven ?? 0],
+          ["Frosting", state.specialMeters.frosting ?? 0],
+        ].map(([label, value]) => (
+          <div className="rounded-md border border-white/80 bg-white/72 p-2" key={label}>
+            <div className="flex items-center justify-between text-[10px] font-black uppercase text-ink-500">
+              <span>{label}</span>
+              <span>{value}%</span>
+            </div>
+            <div className="mt-1 h-2 overflow-hidden rounded-full bg-cream-200">
+              <div className="h-full rounded-full bg-gradient-to-r from-honey-400 to-blush-400" style={{ width: `${value}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
       <div className="relative z-10 mt-4 rounded-lg border border-white/80 bg-white/80 p-3 text-sm font-extrabold text-ink-800">
         {state.gameOver
           ? state.resultCopy
           : currentStep
-            ? `${currentStep.prompt} Use ${expectedAction?.shortLabel ?? "the matching station"}.`
+            ? `${currentStep.prompt} Use ${expectedAction?.shortLabel ?? "the matching station"} and ${challengeHint(definition, currentStep).toLowerCase()}`
             : "The mooncake is ready."}
         {completed.length > 0 && (
           <span className="mt-2 block text-xs text-ink-500">
@@ -199,6 +245,7 @@ function FireflyGroveStage({ definition, state, currentStep, expectedAction }: S
               transition={{ duration: 1.3, repeat: active ? Infinity : 0 }}
             >
               {complete ? "Lit" : actionSymbol(step.actionId)}
+              {active && <span className="absolute -bottom-5 whitespace-nowrap text-[9px] text-garden-900">{step.routeLabel}</span>}
             </motion.div>
           );
         })}
@@ -215,8 +262,11 @@ function FireflyGroveStage({ definition, state, currentStep, expectedAction }: S
         {state.gameOver
           ? state.resultCopy
           : currentStep
-            ? `${currentStep.prompt} Choose ${expectedAction?.shortLabel ?? "the matching guide"}.`
+            ? `${currentStep.prompt} Choose ${expectedAction?.shortLabel ?? "the matching guide"} and route through ${currentStep.routeLabel ?? "the lit path"}.`
             : "The grove is glowing."}
+        <span className="mt-2 block text-xs text-ink-500">
+          Route {state.specialMeters.route ?? 0}% · Swarm {state.specialMeters.swarm ?? 0}% · Drift {state.specialMeters.drift ?? 0}%
+        </span>
       </div>
     </div>
   );
@@ -257,6 +307,7 @@ function MoonlightMelodyStage({ definition, state, currentStep, expectedAction }
               transition={{ duration: 1.1, repeat: active ? Infinity : 0 }}
             >
               {actionSymbol(step.actionId)}
+              {active && <span className="absolute -bottom-5 text-[10px] font-black text-lavender-800">Beat {step.beat}</span>}
             </motion.div>
           );
         })}
@@ -271,8 +322,11 @@ function MoonlightMelodyStage({ definition, state, currentStep, expectedAction }
         {state.gameOver
           ? state.resultCopy
           : currentStep
-            ? `${currentStep.prompt} Play ${expectedAction?.shortLabel ?? "the matching note"}.`
+            ? `${currentStep.prompt} Play ${expectedAction?.shortLabel ?? "the matching note"} on beat ${currentStep.beat ?? 1}.`
             : "The duet is complete."}
+        <span className="mt-2 block text-xs text-ink-500">
+          Timing {state.specialMeters.timing ?? 0}% · Harmony {state.specialMeters.harmony ?? 0}% · Silence {state.specialMeters.silence ?? 0}%
+        </span>
       </div>
     </div>
   );
@@ -289,6 +343,9 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
   const game = useMiniGameSession(definition.gameKey, { maxPlayers: definition.maxPlayers });
   const [message, setMessage] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<CoopActionId | null>(null);
+  const [bakeoffValue, setBakeoffValue] = useState(50);
+  const [groveRouteId, setGroveRouteId] = useState(groveRouteOptions[0]?.id ?? "stone-gate");
+  const [melodyBeat, setMelodyBeat] = useState(1);
   const [rewardQueued, setRewardQueued] = useState(false);
   const claimedForSessionRef = useRef<string | null>(null);
 
@@ -310,6 +367,12 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
   const copy = stageCopy(definition.theme);
   const progressPct = Math.round(state.progress * 100);
   const sessionLabel = game.sessionId ? "Live shared session" : "Connecting shared session";
+
+  function movePayload() {
+    if (definition.theme === "bakeoff") return { value: bakeoffValue };
+    if (definition.theme === "grove") return { routeId: groveRouteId };
+    return { beat: melodyBeat };
+  }
 
   async function chooseAction(actionId: CoopActionId) {
     if (!game.sessionId) {
@@ -334,6 +397,7 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
       actionId,
       stepId: currentStep.id,
       expectedActionId: currentStep.actionId,
+      ...movePayload(),
     });
     if (!result.ok) {
       setMessage(result.reason);
@@ -432,12 +496,95 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
                   {state.gameOver
                     ? `${state.finalScore} final points.`
                     : definition.theme === "bakeoff"
-                      ? "Choose the recipe station shown on the current prep card."
+                      ? "Choose the station and set the prep meter inside the sweet spot."
                       : definition.theme === "grove"
-                        ? "Choose the tool needed for the glowing route node."
-                        : "Choose the note action shown on the staff."}
+                        ? "Choose both the tool and the route node the swarm should follow."
+                        : "Choose the note action and the beat where it lands."}
                 </p>
               </div>
+
+              {definition.theme === "bakeoff" && currentStep && (
+                <div className="rounded-lg border border-honey-500/30 bg-honey-100/55 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-extrabold uppercase tracking-normal text-honey-700">Prep meter</p>
+                      <p className="text-sm font-bold text-ink-700">{challengeHint(definition, currentStep)}</p>
+                    </div>
+                    <Badge variant="outline">{bakeoffValue}%</Badge>
+                  </div>
+                  <input
+                    aria-label="Bake-off prep meter"
+                    className="mt-3 w-full accent-[#d88495]"
+                    disabled={!canAct || Boolean(pendingAction)}
+                    max={100}
+                    min={0}
+                    onChange={(event) => setBakeoffValue(Number(event.target.value))}
+                    type="range"
+                    value={bakeoffValue}
+                  />
+                  <div className="mt-2 h-3 overflow-hidden rounded-full bg-white/80">
+                    <div
+                      className="h-full rounded-full bg-blush-300/60"
+                      style={{
+                        marginLeft: `${Math.max(0, (currentStep.targetValue ?? 50) - (currentStep.tolerance ?? 10))}%`,
+                        width: `${Math.min(100, (currentStep.tolerance ?? 10) * 2)}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-2 text-[11px] font-bold text-ink-500">Pink band is the shared team target.</p>
+                </div>
+              )}
+
+              {definition.theme === "grove" && currentStep && (
+                <div className="rounded-lg border border-garden-300 bg-garden-100/55 p-4">
+                  <p className="text-xs font-extrabold uppercase tracking-normal text-garden-700">Route choice</p>
+                  <p className="mt-1 text-sm font-bold text-ink-700">{challengeHint(definition, currentStep)}</p>
+                  <div className="mt-3 grid gap-2">
+                    {groveRouteOptions.map((route) => (
+                      <button
+                        className={cn(
+                          "rounded-md border px-3 py-2 text-left text-xs font-extrabold transition disabled:opacity-60",
+                          groveRouteId === route.id
+                            ? "border-garden-500 bg-white text-garden-900 shadow-sm"
+                            : "border-white/70 bg-white/55 text-ink-600 hover:bg-white",
+                        )}
+                        disabled={!canAct || Boolean(pendingAction)}
+                        key={route.id}
+                        onClick={() => setGroveRouteId(route.id)}
+                        type="button"
+                      >
+                        <span className="block">{route.label}</span>
+                        <span className="block text-[11px] font-bold opacity-70">{route.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {definition.theme === "melody" && currentStep && (
+                <div className="rounded-lg border border-lavender-300 bg-lavender-100/55 p-4">
+                  <p className="text-xs font-extrabold uppercase tracking-normal text-lavender-700">Beat grid</p>
+                  <p className="mt-1 text-sm font-bold text-ink-700">{challengeHint(definition, currentStep)}</p>
+                  <div className="mt-3 grid grid-cols-4 gap-2">
+                    {[1, 2, 3, 4].map((beat) => (
+                      <button
+                        className={cn(
+                          "rounded-md border px-3 py-3 text-center font-display text-xl transition disabled:opacity-60",
+                          melodyBeat === beat
+                            ? "border-lavender-500 bg-white text-lavender-800 shadow-sm"
+                            : "border-white/70 bg-white/55 text-ink-600 hover:bg-white",
+                        )}
+                        disabled={!canAct || Boolean(pendingAction)}
+                        key={beat}
+                        onClick={() => setMelodyBeat(beat)}
+                        type="button"
+                      >
+                        {beat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
                 {definition.actions.map((action) => {
@@ -459,7 +606,9 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
                         <span className="font-display text-xl">{action.label}</span>
                         {pendingAction === action.id ? <CircleDot className="size-5 animate-spin" /> : <Sparkles className="size-5" />}
                       </span>
-                      <span className="mt-1 block text-xs font-bold leading-4 opacity-80">{action.description}</span>
+                      <span className="mt-1 block text-xs font-bold leading-4 opacity-80">
+                        {actionButtonDetail(definition, action, bakeoffValue, groveRouteId, melodyBeat)}
+                      </span>
                     </motion.button>
                   );
                 })}
@@ -525,7 +674,12 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
                     initial={{ opacity: 0, y: 8 }}
                     key={entry.moveIndex}
                   >
-                    {entry.playerName}: {entry.actionLabel} {entry.correct ? "matched" : `missed ${entry.expectedLabel}`} · {entry.stepLabel}
+                    <span className="block">
+                      {entry.playerName}: {entry.actionLabel} {entry.correct ? "landed" : `missed ${entry.expectedLabel}`} · {entry.stepLabel}
+                    </span>
+                    <span className="mt-1 block text-xs opacity-80">
+                      {entry.detail} · {entry.submittedValue} vs {entry.expectedValue} · {Math.round(entry.accuracy * 100)}%
+                    </span>
                   </motion.div>
                 ))}
               </div>

@@ -381,6 +381,36 @@ export function GamesClient() {
             {partyGames.map((game) => {
               const selected = lobby?.selected_game_href === game.href;
               const soloGame = isSoloPartyGame(game);
+              if (game.id === "petal-catch-party") {
+                return (
+                  <div
+                    className={cn(
+                      "rounded-lg border p-3 text-left shadow-sm transition sm:p-4",
+                      selected ? "border-blush-300 bg-blush-100" : "border-cream-300 bg-white/72",
+                    )}
+                    key={game.id}
+                  >
+                    <span className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-display text-lg text-ink-900 sm:text-xl">{game.title}</span>
+                      <Badge variant={selected ? "blush" : "outline"}>{selected ? "Picked" : "Solo + online"}</Badge>
+                    </span>
+                    <span className="mt-2 block text-sm font-bold leading-5 text-ink-700">{game.description}</span>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <Button onClick={() => router.push("/app/petal-catch", { scroll: false })} size="sm" variant="secondary">
+                        <Play /> Solo
+                      </Button>
+                      <Button
+                        disabled={Boolean(lobby && !party.isHost)}
+                        onClick={() => void chooseGame(game)}
+                        size="sm"
+                        variant={selected ? "default" : "warm"}
+                      >
+                        <UsersRound /> Online relay
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <button
                   className={cn(
