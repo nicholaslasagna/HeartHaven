@@ -2,7 +2,19 @@ import type { GameMoveRecord, GameSessionSeat } from "@/lib/game/use-game-sessio
 
 export type CoopGameKey = "moonbeam-bakeoff" | "firefly-grove" | "moonlight-melody";
 
-export type CoopActionId = "rose" | "honey" | "lavender" | "garden";
+export type CoopActionId =
+  | "mix"
+  | "sprinkle"
+  | "frost"
+  | "bake"
+  | "net"
+  | "lantern"
+  | "breeze"
+  | "release"
+  | "tap"
+  | "hold"
+  | "chime"
+  | "rest";
 
 export type CoopGameAction = {
   id: CoopActionId;
@@ -19,6 +31,7 @@ export type CoopGameStep = {
   actionId: CoopActionId;
   points: number;
   flourish: string;
+  lane: number;
 };
 
 export type CoopGameDefinition = {
@@ -72,33 +85,95 @@ export type CoopReducedState = {
   resultCopy: string;
 };
 
-const sharedActions: CoopGameAction[] = [
+const bakeoffActions: CoopGameAction[] = [
   {
-    id: "rose",
-    label: "Rose Pulse",
-    shortLabel: "Rose",
-    description: "A warm timing cue for blush-colored tasks.",
-    className: "border-blush-300 bg-blush-100 text-blush-800",
-  },
-  {
-    id: "honey",
-    label: "Honey Tap",
-    shortLabel: "Honey",
-    description: "A golden cue for steady, careful moments.",
+    id: "mix",
+    label: "Whisk",
+    shortLabel: "Whisk",
+    description: "Stir the batter until it turns glossy.",
     className: "border-honey-500/35 bg-honey-100 text-honey-800",
   },
   {
-    id: "lavender",
-    label: "Lavender Swirl",
-    shortLabel: "Lavender",
-    description: "A soft purple cue for dreamy magic steps.",
+    id: "sprinkle",
+    label: "Sprinkle",
+    shortLabel: "Sprinkle",
+    description: "Drop toppings exactly where the recipe asks.",
     className: "border-lavender-300 bg-lavender-100 text-lavender-700",
   },
   {
-    id: "garden",
-    label: "Garden Glow",
-    shortLabel: "Garden",
-    description: "A green cue for living, growing actions.",
+    id: "frost",
+    label: "Frost",
+    shortLabel: "Frost",
+    description: "Pipe soft icing curls and heart details.",
+    className: "border-blush-300 bg-blush-100 text-blush-800",
+  },
+  {
+    id: "bake",
+    label: "Bake",
+    shortLabel: "Bake",
+    description: "Time the oven so the mooncake rises.",
+    className: "border-orange-200 bg-orange-100 text-orange-800",
+  },
+];
+
+const groveActions: CoopGameAction[] = [
+  {
+    id: "net",
+    label: "Sweep Net",
+    shortLabel: "Net",
+    description: "Catch drifting fireflies without startling them.",
+    className: "border-sky-200 bg-sky-100 text-sky-800",
+  },
+  {
+    id: "lantern",
+    label: "Light Lantern",
+    shortLabel: "Lantern",
+    description: "Wake a lantern node so the route stays bright.",
+    className: "border-honey-500/35 bg-honey-100 text-honey-800",
+  },
+  {
+    id: "breeze",
+    label: "Guide Breeze",
+    shortLabel: "Breeze",
+    description: "Push the swarm through curved garden paths.",
+    className: "border-garden-300 bg-garden-100 text-garden-800",
+  },
+  {
+    id: "release",
+    label: "Open Jar",
+    shortLabel: "Release",
+    description: "Release gathered fireflies into the next glow ring.",
+    className: "border-lavender-300 bg-lavender-100 text-lavender-700",
+  },
+];
+
+const melodyActions: CoopGameAction[] = [
+  {
+    id: "tap",
+    label: "Tap",
+    shortLabel: "Tap",
+    description: "A quick bell note on the beat.",
+    className: "border-blush-300 bg-blush-100 text-blush-800",
+  },
+  {
+    id: "hold",
+    label: "Hold",
+    shortLabel: "Hold",
+    description: "Sustain the note until the phrase settles.",
+    className: "border-lavender-300 bg-lavender-100 text-lavender-700",
+  },
+  {
+    id: "chime",
+    label: "Chime",
+    shortLabel: "Chime",
+    description: "Ring the bright counter-melody.",
+    className: "border-honey-500/35 bg-honey-100 text-honey-800",
+  },
+  {
+    id: "rest",
+    label: "Rest",
+    shortLabel: "Rest",
+    description: "Leave a tiny silence so the duet can breathe.",
     className: "border-garden-300 bg-garden-100 text-garden-800",
   },
 ];
@@ -112,25 +187,25 @@ export const coOpPartyGames: Record<CoopGameKey, CoopGameDefinition> = {
     lobbyMode: "2-4 baker team",
     status: "Co-op party",
     rewardLabel: "Moonbeam Bake-Off",
-    description: "Take turns adding the right cozy ingredient before the mooncake cools.",
+    description: "Bake one shared mooncake by whisking, sprinkling, frosting, and timing the oven together.",
     longDescription:
-      "A shared kitchen rhythm game. Each seated player gets the next prep step, keeps the combo alive, and sends the cake from mixing bowl to glowing oven.",
+      "A shared kitchen game with recipe stations. Each seated player handles the next prep card, building a mooncake from batter to oven glow without burning the combo.",
     maxPlayers: 4,
-    maxTurns: 18,
+    maxTurns: 20,
     missLimit: 5,
     theme: "bakeoff",
     backdropClassName: "from-[#fff6df] via-[#fde8ed] to-[#efe6f7]",
     accentClassName: "bg-blush-100 text-blush-800 border-blush-300",
-    actions: sharedActions,
+    actions: bakeoffActions,
     steps: [
-      { id: "berries", label: "Moonberries", prompt: "Fold moonberries into the batter.", actionId: "rose", points: 120, flourish: "berries tumble into the bowl" },
-      { id: "honey", label: "Honey Glaze", prompt: "Pour the honey glaze slowly.", actionId: "honey", points: 130, flourish: "golden glaze ribbons over the spoon" },
-      { id: "lavender", label: "Lavender Sugar", prompt: "Dust lavender sugar across the top.", actionId: "lavender", points: 125, flourish: "lavender sparkles drift over the cake" },
-      { id: "mint", label: "Garden Mint", prompt: "Press fresh mint into the frosting.", actionId: "garden", points: 135, flourish: "mint leaves brighten the plate" },
-      { id: "stir", label: "Soft Stir", prompt: "Stir until the batter shines.", actionId: "honey", points: 140, flourish: "the bowl glows warm" },
-      { id: "oven", label: "Moon Oven", prompt: "Open the moon oven at the perfect moment.", actionId: "lavender", points: 155, flourish: "the oven window turns violet" },
-      { id: "heart", label: "Heart Icing", prompt: "Pipe the heart icing before it sets.", actionId: "rose", points: 160, flourish: "icing curls into a tiny heart" },
-      { id: "sprig", label: "Garden Finish", prompt: "Set the final sprig on top.", actionId: "garden", points: 180, flourish: "the cake blooms on the tray" },
+      { id: "batter", label: "Cloud Batter", prompt: "Whisk cloud batter until the bowl shines.", actionId: "mix", points: 115, flourish: "the batter turns silky", lane: 0 },
+      { id: "berries", label: "Moonberries", prompt: "Sprinkle moonberries in a crescent pattern.", actionId: "sprinkle", points: 130, flourish: "berries dot the batter like stars", lane: 1 },
+      { id: "fold", label: "Soft Fold", prompt: "Whisk once more to fold the berries in.", actionId: "mix", points: 125, flourish: "purple ribbons swirl through the bowl", lane: 0 },
+      { id: "oven-warm", label: "Warm Oven", prompt: "Bake just long enough for the cake to rise.", actionId: "bake", points: 145, flourish: "the oven window glows honey", lane: 2 },
+      { id: "cream", label: "Heart Cream", prompt: "Frost the first heart curl before it cools.", actionId: "frost", points: 155, flourish: "icing curls into a tiny heart", lane: 3 },
+      { id: "sugar", label: "Lavender Sugar", prompt: "Sprinkle lavender sugar over the frosting.", actionId: "sprinkle", points: 150, flourish: "lavender sparkles drift down", lane: 1 },
+      { id: "final-bake", label: "Moonbeam Set", prompt: "Bake the glaze until it catches moonlight.", actionId: "bake", points: 175, flourish: "the glaze flashes gold", lane: 2 },
+      { id: "rose-finish", label: "Rose Finish", prompt: "Frost the final rose on top.", actionId: "frost", points: 200, flourish: "the finished cake blooms", lane: 3 },
     ],
   },
   "firefly-grove": {
@@ -141,25 +216,25 @@ export const coOpPartyGames: Record<CoopGameKey, CoopGameDefinition> = {
     lobbyMode: "2-6 glow team",
     status: "Co-op party",
     rewardLabel: "Firefly Grove",
-    description: "Guide fireflies into lanterns in order and keep the whole grove glowing.",
+    description: "Route a firefly swarm across a lantern map using nets, breezes, jars, and glowing checkpoints.",
     longDescription:
-      "A shared grove puzzle. Players take turns choosing the right glow cue to guide fireflies through lantern circles without breaking the chain.",
+      "A spatial routing game. The party lights a garden path node by node, choosing how to catch, guide, and release the swarm without losing the trail.",
     maxPlayers: 6,
     maxTurns: 20,
     missLimit: 6,
     theme: "grove",
     backdropClassName: "from-[#edf6e7] via-[#fff6df] to-[#e5f3f7]",
     accentClassName: "bg-garden-100 text-garden-800 border-garden-300",
-    actions: sharedActions,
+    actions: groveActions,
     steps: [
-      { id: "gate", label: "Gate Lantern", prompt: "Wake the gate lantern with a garden glow.", actionId: "garden", points: 105, flourish: "the first lantern opens" },
-      { id: "bridge", label: "Bridge Spark", prompt: "Send a honey spark across the bridge.", actionId: "honey", points: 120, flourish: "fireflies cross in a ribbon" },
-      { id: "rose-bed", label: "Rose Bed", prompt: "Call the rose-bed fireflies home.", actionId: "rose", points: 125, flourish: "pink fireflies gather low" },
-      { id: "violet-arch", label: "Violet Arch", prompt: "Spin lavender light through the arch.", actionId: "lavender", points: 130, flourish: "the arch lights from left to right" },
-      { id: "pond", label: "Pond Glow", prompt: "Reflect garden light on the pond stones.", actionId: "garden", points: 145, flourish: "the water mirrors the lanterns" },
-      { id: "honey-tree", label: "Honey Tree", prompt: "Pulse honey light in the tree hollow.", actionId: "honey", points: 155, flourish: "gold dots rise into the leaves" },
-      { id: "moon-ring", label: "Moon Ring", prompt: "Finish with a lavender moon ring.", actionId: "lavender", points: 175, flourish: "the ring blooms violet" },
-      { id: "heart-path", label: "Heart Path", prompt: "Seal the path with rose light.", actionId: "rose", points: 190, flourish: "the path glows like a trail of hearts" },
+      { id: "gate-net", label: "Gate Drift", prompt: "Sweep the net at the garden gate.", actionId: "net", points: 105, flourish: "the first swarm gathers", lane: 0 },
+      { id: "gate-light", label: "Gate Lantern", prompt: "Light the gate lantern so they know where to land.", actionId: "lantern", points: 115, flourish: "a warm dot opens the route", lane: 1 },
+      { id: "bridge-breeze", label: "Bridge Bend", prompt: "Guide a breeze across the stepping stones.", actionId: "breeze", points: 135, flourish: "fireflies arc over the bridge", lane: 2 },
+      { id: "jar-crossing", label: "Glass Jar", prompt: "Open the jar at the crossing.", actionId: "release", points: 140, flourish: "captured sparks rejoin the swarm", lane: 3 },
+      { id: "pond-net", label: "Pond Loop", prompt: "Sweep the net near the pond reeds.", actionId: "net", points: 145, flourish: "blue sparks whirl low", lane: 4 },
+      { id: "tree-light", label: "Honey Tree", prompt: "Light the lantern tucked in the tree hollow.", actionId: "lantern", points: 160, flourish: "the canopy flickers gold", lane: 5 },
+      { id: "moon-breeze", label: "Moon Ring", prompt: "Guide a breeze around the moon ring.", actionId: "breeze", points: 180, flourish: "the swarm forms a halo", lane: 6 },
+      { id: "final-release", label: "Grove Release", prompt: "Open the jar and let the grove glow.", actionId: "release", points: 205, flourish: "every lantern answers", lane: 7 },
     ],
   },
   "moonlight-melody": {
@@ -170,25 +245,25 @@ export const coOpPartyGames: Record<CoopGameKey, CoopGameDefinition> = {
     lobbyMode: "2-4 duet band",
     status: "Co-op party",
     rewardLabel: "Moonlight Melody",
-    description: "Play a soft garden melody together by hitting each color note in sequence.",
+    description: "Play a duet phrase together with taps, holds, chimes, and rests on a glowing music staff.",
     longDescription:
-      "A turn-based rhythm duet for parties. Players pass the melody around, hit the next note, and build a shared combo without losing the beat.",
+      "A rhythm phrase game. The melody passes around the party, asking for quick taps, sustained holds, bell chimes, and intentional rests to keep the song breathing.",
     maxPlayers: 4,
     maxTurns: 22,
     missLimit: 5,
     theme: "melody",
     backdropClassName: "from-[#efe6f7] via-[#fde8ed] to-[#e5f3f7]",
     accentClassName: "bg-lavender-100 text-lavender-800 border-lavender-300",
-    actions: sharedActions,
+    actions: melodyActions,
     steps: [
-      { id: "intro", label: "Opening Note", prompt: "Start the melody with lavender.", actionId: "lavender", points: 110, flourish: "a violet note floats upward" },
-      { id: "echo", label: "Honey Echo", prompt: "Answer with honey on the second beat.", actionId: "honey", points: 120, flourish: "golden notes ripple across the staff" },
-      { id: "pulse", label: "Rose Pulse", prompt: "Tap rose when the heart beat arrives.", actionId: "rose", points: 130, flourish: "a blush note pops in time" },
-      { id: "leaf", label: "Leaf Rest", prompt: "Hold the garden note softly.", actionId: "garden", points: 125, flourish: "green notes sway like leaves" },
-      { id: "harmony", label: "Lavender Harmony", prompt: "Bring the harmony back with lavender.", actionId: "lavender", points: 150, flourish: "two notes braid together" },
-      { id: "bridge", label: "Honey Bridge", prompt: "Carry the bridge with honey.", actionId: "honey", points: 155, flourish: "the bridge glows gold" },
-      { id: "chorus", label: "Rose Chorus", prompt: "Lift the chorus with rose.", actionId: "rose", points: 170, flourish: "heart notes fill the air" },
-      { id: "finale", label: "Garden Finale", prompt: "Finish on the garden note.", actionId: "garden", points: 200, flourish: "the whole staff blooms" },
+      { id: "first-tap", label: "Opening Tap", prompt: "Tap the bell on the first beat.", actionId: "tap", points: 110, flourish: "a blush note pops open", lane: 1 },
+      { id: "soft-hold", label: "Soft Hold", prompt: "Hold the lavender note through the moonbar.", actionId: "hold", points: 130, flourish: "the note stretches into moonlight", lane: 2 },
+      { id: "gold-chime", label: "Gold Chime", prompt: "Chime on the bright echo.", actionId: "chime", points: 140, flourish: "gold notes ripple outward", lane: 0 },
+      { id: "leaf-rest", label: "Leaf Rest", prompt: "Rest for one tiny garden breath.", actionId: "rest", points: 135, flourish: "the staff exhales softly", lane: 3 },
+      { id: "double-tap", label: "Double Tap", prompt: "Tap the returning heartbeat.", actionId: "tap", points: 150, flourish: "two heart notes bounce", lane: 1 },
+      { id: "long-hold", label: "Long Hold", prompt: "Hold the harmony while the duet turns.", actionId: "hold", points: 165, flourish: "the harmony braids together", lane: 2 },
+      { id: "moon-chime", label: "Moon Chime", prompt: "Chime the moonlit counter melody.", actionId: "chime", points: 185, flourish: "silver bells sparkle", lane: 0 },
+      { id: "final-rest", label: "Final Rest", prompt: "Rest at the finale so the last note lands.", actionId: "rest", points: 210, flourish: "the whole garden listens", lane: 3 },
     ],
   },
 };
@@ -198,7 +273,20 @@ export function getCoOpPartyGame(gameKey: CoopGameKey) {
 }
 
 export function isCoopActionId(value: unknown): value is CoopActionId {
-  return value === "rose" || value === "honey" || value === "lavender" || value === "garden";
+  return (
+    value === "mix" ||
+    value === "sprinkle" ||
+    value === "frost" ||
+    value === "bake" ||
+    value === "net" ||
+    value === "lantern" ||
+    value === "breeze" ||
+    value === "release" ||
+    value === "tap" ||
+    value === "hold" ||
+    value === "chime" ||
+    value === "rest"
+  );
 }
 
 function seatName(seats: GameSessionSeat[], seatIndex: number) {

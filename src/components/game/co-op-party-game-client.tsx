@@ -10,7 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   type CoopActionId,
+  type CoopGameDefinition,
   type CoopGameKey,
+  type CoopGameStep,
+  type CoopReducedState,
   getCoOpPartyGame,
   reduceCoopGameState,
 } from "@/lib/game/co-op-party-games";
@@ -30,35 +33,255 @@ function fallbackPayout(score: number) {
 }
 
 function actionDotClass(actionId: CoopActionId) {
-  if (actionId === "rose") return "bg-blush-400";
-  if (actionId === "honey") return "bg-honey-500";
-  if (actionId === "lavender") return "bg-lavender-500";
-  return "bg-garden-500";
+  if (actionId === "mix" || actionId === "chime" || actionId === "lantern") return "bg-honey-500";
+  if (actionId === "sprinkle" || actionId === "hold" || actionId === "release") return "bg-lavender-500";
+  if (actionId === "frost" || actionId === "tap") return "bg-blush-400";
+  if (actionId === "breeze" || actionId === "rest") return "bg-garden-500";
+  if (actionId === "net") return "bg-sky-400";
+  return "bg-orange-400";
+}
+
+function actionSymbol(actionId: CoopActionId) {
+  if (actionId === "mix") return "Whisk";
+  if (actionId === "sprinkle") return "Sugar";
+  if (actionId === "frost") return "Icing";
+  if (actionId === "bake") return "Oven";
+  if (actionId === "net") return "Net";
+  if (actionId === "lantern") return "Lamp";
+  if (actionId === "breeze") return "Wind";
+  if (actionId === "release") return "Jar";
+  if (actionId === "tap") return "Tap";
+  if (actionId === "hold") return "Hold";
+  if (actionId === "chime") return "Bell";
+  return "Rest";
 }
 
 function stageCopy(theme: string) {
   if (theme === "bakeoff") {
     return {
-      title: "Shared kitchen table",
-      center: "Mooncake",
-      left: "Mixing bowl",
-      right: "Moon oven",
+      title: "Recipe stations",
     };
   }
   if (theme === "grove") {
     return {
-      title: "Lantern grove path",
-      center: "Firefly chain",
-      left: "Garden gate",
-      right: "Moon ring",
+      title: "Firefly route map",
     };
   }
   return {
-    title: "Moonlight music stand",
-    center: "Shared melody",
-    left: "Soft intro",
-    right: "Garden finale",
+    title: "Moonlight staff",
   };
+}
+
+type StageProps = {
+  definition: CoopGameDefinition;
+  state: CoopReducedState;
+  currentStep?: CoopGameStep;
+  expectedAction?: { shortLabel: string } | null;
+  progressPct: number;
+};
+
+function MoonbeamBakeoffStage({ definition, state, currentStep, expectedAction, progressPct }: StageProps) {
+  const completed = definition.steps.slice(0, state.currentStepIndex);
+  const currentLane = currentStep?.lane ?? 0;
+  const stationLabels = ["Mixing Bowl", "Topping Tray", "Moon Oven", "Frosting Bag"];
+
+  return (
+    <div className="relative min-h-[390px] overflow-hidden rounded-lg border border-honey-500/25 bg-gradient-to-br from-[#fff8e4] via-[#fffdf6] to-[#fde8ed] p-4">
+      <div className="absolute inset-x-6 bottom-10 h-20 rounded-[48%] bg-honey-200/45 blur-xl" />
+      <div className="relative z-10 grid h-full min-h-[360px] gap-4 lg:grid-cols-[1fr_1.1fr]">
+        <div className="grid gap-3">
+          {stationLabels.map((label, index) => (
+            <motion.div
+              animate={currentLane === index && !state.gameOver ? { scale: [1, 1.03, 1] } : { scale: 1 }}
+              className={cn(
+                "rounded-lg border bg-white/78 p-3 shadow-sm",
+                currentLane === index && !state.gameOver ? "border-blush-300 ring-2 ring-blush-100" : "border-cream-300",
+              )}
+              key={label}
+              transition={{ duration: 1.1, repeat: currentLane === index && !state.gameOver ? Infinity : 0 }}
+            >
+              <p className="text-xs font-extrabold uppercase tracking-normal text-ink-500">Station {index + 1}</p>
+              <p className="font-display text-xl text-ink-900">{label}</p>
+            </motion.div>
+          ))}
+        </div>
+
+        <div className="relative flex items-center justify-center rounded-lg border border-cream-300 bg-white/65 p-4 shadow-inner">
+          <motion.div
+            animate={state.lastEntry?.correct ? { rotate: [0, -3, 3, 0], scale: [1, 1.06, 1] } : { y: [0, -5, 0] }}
+            className="relative flex size-56 items-center justify-center rounded-full border-[10px] border-honey-200 bg-[#fff6df] shadow-[0_20px_40px_rgba(171,112,39,.18)]"
+            transition={{ duration: state.lastEntry ? 0.55 : 2.4, repeat: state.lastEntry ? 0 : Infinity }}
+          >
+            <div className="absolute inset-8 rounded-full border-4 border-dashed border-blush-200" />
+            <div className="absolute left-12 top-14 size-8 rounded-full bg-blush-300/80" />
+            <div className="absolute right-14 top-20 size-7 rounded-full bg-lavender-300/80" />
+            <div className="absolute bottom-16 left-20 size-6 rounded-full bg-garden-300/80" />
+            <div className="relative z-10 text-center">
+              <p className="font-display text-3xl text-ink-900">Mooncake</p>
+              <p className="text-sm font-black text-honey-800">{progressPct}% baked</p>
+            </div>
+          </motion.div>
+          <motion.div
+            animate={{ height: `${Math.max(12, progressPct)}%` }}
+            className="absolute right-6 bottom-6 w-4 rounded-full bg-gradient-to-t from-honey-500 to-blush-400"
+            transition={{ type: "spring", stiffness: 140, damping: 20 }}
+          />
+          <div className="absolute right-3 bottom-6 h-32 w-10 rounded-full border border-honey-500/40 bg-white/80 p-1 text-center text-[10px] font-black uppercase text-honey-800">
+            Heat
+          </div>
+        </div>
+      </div>
+      <div className="relative z-10 mt-4 rounded-lg border border-white/80 bg-white/80 p-3 text-sm font-extrabold text-ink-800">
+        {state.gameOver
+          ? state.resultCopy
+          : currentStep
+            ? `${currentStep.prompt} Use ${expectedAction?.shortLabel ?? "the matching station"}.`
+            : "The mooncake is ready."}
+        {completed.length > 0 && (
+          <span className="mt-2 block text-xs text-ink-500">
+            Finished: {completed.slice(-3).map((step) => step.label).join(" / ")}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FireflyGroveStage({ definition, state, currentStep, expectedAction }: StageProps) {
+  const nodes = [
+    { x: 12, y: 58 },
+    { x: 24, y: 28 },
+    { x: 42, y: 42 },
+    { x: 54, y: 18 },
+    { x: 63, y: 56 },
+    { x: 77, y: 34 },
+    { x: 86, y: 62 },
+    { x: 70, y: 78 },
+  ];
+
+  return (
+    <div className="relative min-h-[390px] overflow-hidden rounded-lg border border-garden-300 bg-gradient-to-br from-[#edf6e7] via-[#fffaf0] to-[#e5f3f7] p-4">
+      <div className="absolute inset-0 opacity-80">
+        <div className="absolute left-8 top-8 size-40 rounded-full bg-garden-200 blur-3xl" />
+        <div className="absolute right-10 bottom-10 size-48 rounded-full bg-sky-100 blur-3xl" />
+      </div>
+      <div className="relative h-[330px] rounded-lg border border-white/80 bg-white/42 shadow-inner">
+        <svg className="absolute inset-0 size-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+          <polyline
+            fill="none"
+            points={nodes.map((node) => `${node.x},${node.y}`).join(" ")}
+            stroke="#E7C77D"
+            strokeDasharray="2 2"
+            strokeLinecap="round"
+            strokeWidth="2.5"
+          />
+          <polyline
+            fill="none"
+            points={nodes.slice(0, Math.max(1, state.currentStepIndex + 1)).map((node) => `${node.x},${node.y}`).join(" ")}
+            stroke="#6A9B4E"
+            strokeLinecap="round"
+            strokeWidth="3"
+          />
+        </svg>
+        {nodes.map((node, index) => {
+          const step = definition.steps[index];
+          const complete = index < state.currentStepIndex;
+          const active = index === state.currentStepIndex && !state.gameOver;
+          return (
+            <motion.div
+              animate={active ? { scale: [1, 1.2, 1], boxShadow: ["0 0 0 rgba(250,235,194,0)", "0 0 36px rgba(250,235,194,.9)", "0 0 0 rgba(250,235,194,0)"] } : { scale: 1 }}
+              className={cn(
+                "absolute flex size-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-center text-[10px] font-black leading-none shadow-lg",
+                complete ? "bg-honey-300 text-ink-900" : active ? actionDotClass(step.actionId) : "bg-cream-100 text-ink-500",
+              )}
+              key={step.id}
+              style={{ left: `${node.x}%`, top: `${node.y}%` }}
+              transition={{ duration: 1.3, repeat: active ? Infinity : 0 }}
+            >
+              {complete ? "Lit" : actionSymbol(step.actionId)}
+            </motion.div>
+          );
+        })}
+        <motion.div
+          animate={{
+            left: `${nodes[Math.min(state.currentStepIndex, nodes.length - 1)]?.x ?? 12}%`,
+            top: `${nodes[Math.min(state.currentStepIndex, nodes.length - 1)]?.y ?? 58}%`,
+          }}
+          className="absolute size-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-honey-200/75 blur-sm"
+          transition={{ type: "spring", stiffness: 80, damping: 18 }}
+        />
+      </div>
+      <div className="relative z-10 mt-4 rounded-lg border border-white/80 bg-white/80 p-3 text-sm font-extrabold text-ink-800">
+        {state.gameOver
+          ? state.resultCopy
+          : currentStep
+            ? `${currentStep.prompt} Choose ${expectedAction?.shortLabel ?? "the matching guide"}.`
+            : "The grove is glowing."}
+      </div>
+    </div>
+  );
+}
+
+function MoonlightMelodyStage({ definition, state, currentStep, expectedAction }: StageProps) {
+  return (
+    <div className="relative min-h-[390px] overflow-hidden rounded-lg border border-lavender-300 bg-gradient-to-br from-[#efe6f7] via-[#fffdf6] to-[#fde8ed] p-4">
+      <div className="absolute inset-0 opacity-70">
+        <div className="absolute left-16 top-8 size-40 rounded-full bg-lavender-200 blur-3xl" />
+        <div className="absolute right-12 bottom-12 size-44 rounded-full bg-blush-100 blur-3xl" />
+      </div>
+      <div className="relative h-[330px] rounded-lg border border-white/80 bg-white/58 p-6 shadow-inner">
+        <div className="absolute inset-x-6 top-1/2 grid -translate-y-1/2 gap-7">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div className="h-1 rounded-full bg-ink-900/12" key={index} />
+          ))}
+        </div>
+        <div className="absolute inset-x-8 top-8 flex justify-between text-xs font-black uppercase tracking-normal text-lavender-700">
+          <span>Intro</span>
+          <span>Harmony</span>
+          <span>Finale</span>
+        </div>
+        {definition.steps.map((step, index) => {
+          const complete = index < state.currentStepIndex;
+          const active = index === state.currentStepIndex && !state.gameOver;
+          const left = 10 + index * 11.5;
+          const top = 70 - step.lane * 14;
+          return (
+            <motion.div
+              animate={active ? { y: [0, -10, 0], scale: [1, 1.18, 1] } : complete ? { y: 0, scale: 0.9 } : { y: 0, scale: 1 }}
+              className={cn(
+                "absolute flex size-14 items-center justify-center rounded-full border-4 border-white font-display text-lg shadow-lg",
+                complete ? "bg-garden-300 text-garden-900" : active ? actionDotClass(step.actionId) : "bg-cream-100 text-ink-500",
+              )}
+              key={step.id}
+              style={{ left: `${left}%`, top: `${top}%` }}
+              transition={{ duration: 1.1, repeat: active ? Infinity : 0 }}
+            >
+              {actionSymbol(step.actionId)}
+            </motion.div>
+          );
+        })}
+        <motion.div
+          animate={{ width: `${Math.round(state.progress * 100)}%` }}
+          className="absolute bottom-7 left-8 h-3 rounded-full bg-gradient-to-r from-lavender-400 via-blush-400 to-honey-400"
+          transition={{ type: "spring", stiffness: 120, damping: 20 }}
+        />
+        <div className="absolute bottom-5 left-8 right-8 h-7 rounded-full border border-lavender-300/60 bg-white/65" />
+      </div>
+      <div className="relative z-10 mt-4 rounded-lg border border-white/80 bg-white/80 p-3 text-sm font-extrabold text-ink-800">
+        {state.gameOver
+          ? state.resultCopy
+          : currentStep
+            ? `${currentStep.prompt} Play ${expectedAction?.shortLabel ?? "the matching note"}.`
+            : "The duet is complete."}
+      </div>
+    </div>
+  );
+}
+
+function ThemedStage(props: StageProps) {
+  if (props.definition.theme === "bakeoff") return <MoonbeamBakeoffStage {...props} />;
+  if (props.definition.theme === "grove") return <FireflyGroveStage {...props} />;
+  return <MoonlightMelodyStage {...props} />;
 }
 
 export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
@@ -190,72 +413,14 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
             </div>
           </div>
 
-          <div className="grid gap-4 p-4 lg:grid-cols-[1fr_.9fr]">
-            <div className="relative min-h-[360px] overflow-hidden rounded-lg border border-cream-300 bg-white/58 p-4">
-              <div className="absolute inset-0 opacity-70">
-                <div className="absolute left-8 top-10 size-28 rounded-full bg-blush-100 blur-2xl" />
-                <div className="absolute right-8 top-20 size-32 rounded-full bg-lavender-100 blur-2xl" />
-                <div className="absolute bottom-4 left-1/3 size-36 rounded-full bg-garden-100 blur-2xl" />
-              </div>
-
-              <div className="relative z-10 flex h-full min-h-[330px] flex-col justify-between">
-                <div className="grid grid-cols-3 items-start gap-3 text-center text-xs font-extrabold uppercase tracking-normal text-ink-500">
-                  <span>{copy.left}</span>
-                  <span>{copy.center}</span>
-                  <span>{copy.right}</span>
-                </div>
-
-                <div className="relative mx-auto flex size-56 items-center justify-center rounded-full border border-cream-300 bg-cream-50/85 shadow-inner">
-                  <motion.div
-                    animate={{
-                      scale: state.lastEntry?.correct ? [1, 1.08, 1] : state.lastEntry ? [1, 0.95, 1] : [1, 1.02, 1],
-                      rotate: definition.theme === "melody" ? [0, 2, -2, 0] : 0,
-                    }}
-                    className={cn(
-                      "flex size-40 items-center justify-center rounded-full border-4 text-center font-display text-2xl leading-tight shadow-lg",
-                      definition.accentClassName,
-                    )}
-                    transition={{ duration: state.lastEntry ? 0.55 : 2.4, repeat: state.lastEntry ? 0 : Infinity }}
-                  >
-                    {definition.theme === "bakeoff" ? "Moon Cake" : definition.theme === "grove" ? "Glow Path" : "Duet"}
-                  </motion.div>
-
-                  {definition.steps.map((step, index) => {
-                    const angle = (Math.PI * 2 * index) / definition.steps.length - Math.PI / 2;
-                    const complete = index < state.currentStepIndex;
-                    const active = index === state.currentStepIndex && !state.gameOver;
-                    return (
-                      <motion.div
-                        animate={active ? { scale: [1, 1.18, 1] } : { scale: 1 }}
-                        className={cn(
-                          "absolute flex size-8 items-center justify-center rounded-full border-2 border-white text-[10px] font-extrabold shadow",
-                          complete ? "bg-garden-400 text-white" : active ? actionDotClass(step.actionId) : "bg-cream-200 text-ink-500",
-                        )}
-                        key={step.id}
-                        style={{
-                          left: `calc(50% + ${Math.cos(angle) * 122}px - 1rem)`,
-                          top: `calc(50% + ${Math.sin(angle) * 122}px - 1rem)`,
-                        }}
-                        transition={{ duration: 1.1, repeat: active ? Infinity : 0 }}
-                      >
-                        {index + 1}
-                      </motion.div>
-                    );
-                  })}
-                </div>
-
-                <motion.div
-                  animate={state.lastEntry ? { y: [6, 0], opacity: 1 } : { opacity: 0.85 }}
-                  className="rounded-lg border border-white/80 bg-white/80 p-3 text-center text-sm font-extrabold text-ink-800 shadow-sm"
-                >
-                  {state.gameOver
-                    ? state.resultCopy
-                    : currentStep
-                      ? `${currentStep.prompt} ${expectedAction ? `Choose ${expectedAction.shortLabel}.` : ""}`
-                      : "Every step is complete."}
-                </motion.div>
-              </div>
-            </div>
+          <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <ThemedStage
+              currentStep={currentStep}
+              definition={definition}
+              expectedAction={expectedAction}
+              progressPct={progressPct}
+              state={state}
+            />
 
             <div className="grid content-start gap-3">
               <div className="rounded-lg border border-cream-300 bg-cream-50/80 p-4">
@@ -266,7 +431,11 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
                 <p className="mt-1 text-sm font-bold leading-5 text-ink-600">
                   {state.gameOver
                     ? `${state.finalScore} final points.`
-                    : "Tap the matching cue. Wrong cues break the combo but the team can recover."}
+                    : definition.theme === "bakeoff"
+                      ? "Choose the recipe station shown on the current prep card."
+                      : definition.theme === "grove"
+                        ? "Choose the tool needed for the glowing route node."
+                        : "Choose the note action shown on the staff."}
                 </p>
               </div>
 
