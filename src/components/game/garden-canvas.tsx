@@ -79,6 +79,10 @@ import {
   navigationMapIdFromVariant,
   type NavigationZone,
 } from "@/lib/game/garden-navigation";
+import {
+  findNavigationRoute,
+  hasNavigationLineOfSight,
+} from "@/lib/game/garden-pathfinding";
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { creditWallet } from "@/lib/game/wallet-store";
@@ -517,6 +521,12 @@ export function GardenCanvas({
         private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
         private wasd?: Record<"up" | "left" | "down" | "right" | "rotate", Phaser.Input.Keyboard.Key>;
         private target?: Phaser.Math.Vector2;
+        private navigationDestination?: Phaser.Math.Vector2;
+        private navigationWaypoints: Phaser.Math.Vector2[] = [];
+        private navigationRepathAt = 0;
+        private petFollowDestination?: Phaser.Math.Vector2;
+        private petFollowWaypoints: Phaser.Math.Vector2[] = [];
+        private petFollowRepathAt = 0;
         private navigationDebugGraphics?: Phaser.GameObjects.Graphics;
         private navigationDebugLabel?: Phaser.GameObjects.Text;
         private navigationRequestedTarget?: { x: number; y: number };
@@ -888,6 +898,18 @@ export function GardenCanvas({
               );
             }
           }
+          const activeRoute = [this.target, ...this.navigationWaypoints].filter(
+            (point): point is Phaser.Math.Vector2 => Boolean(point),
+          );
+          if (activeRoute.length > 0) {
+            this.navigationDebugGraphics.lineStyle(4, 0x3c87d6, 0.9);
+            let previous = position;
+            activeRoute.forEach((waypoint) => {
+              this.navigationDebugGraphics?.lineBetween(previous.x, previous.y, waypoint.x, waypoint.y);
+              this.navigationDebugGraphics?.strokeCircle(waypoint.x, waypoint.y, 6);
+              previous = waypoint;
+            });
+          }
           if (this.navigationPointerPosition) {
             this.navigationDebugGraphics.lineStyle(2, 0x8556b8, 0.85);
             this.navigationDebugGraphics.strokeCircle(
@@ -904,28 +926,36 @@ export function GardenCanvas({
             `pointer: ${this.formatNavigationPoint(this.navigationPointerPosition)}`,
             `clicked: ${this.formatNavigationPoint(this.navigationRequestedTarget)}`,
             `clamped: ${this.formatNavigationPoint(this.navigationClampedTarget)}`,
+            `destination: ${this.formatNavigationPoint(this.navigationDestination)}`,
             `pointer zones: ${pointerZones.join(", ") || "none"}`,
+            `route waypoints: ${activeRoute.length}`,
             `walkable zones: ${getNavigationWalkableZones(navigationMapId).length}`,
             `blocked zones: ${getNavigationBlockedZones(navigationMapId).length}`,
           ]);
           const debugWindow = window as Window & {
             __HEARTHAVEN_NAVIGATION_DEBUG__?: {
               clampedTarget?: { x: number; y: number };
+              destination?: { x: number; y: number };
               mapId: typeof navigationMapId;
+              mode: "keeper" | "companion";
               pointer?: { x: number; y: number };
               pointerZones: string[];
               position: { x: number; y: number };
               requestedTarget?: { x: number; y: number };
+              route: Array<{ x: number; y: number }>;
               valid: boolean;
             };
           };
           const debugState = {
             clampedTarget: this.navigationClampedTarget,
+            destination: this.navigationDestination,
             mapId: navigationMapId,
+            mode: this.playMode,
             pointer: this.navigationPointerPosition,
             pointerZones,
             position,
             requestedTarget: this.navigationRequestedTarget,
+            route: activeRoute.map((point) => ({ x: point.x, y: point.y })),
             valid,
           };
           debugWindow.__HEARTHAVEN_NAVIGATION_DEBUG__ = debugState;
@@ -1113,8 +1143,8 @@ export function GardenCanvas({
             const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? x, this.avatar?.y ?? y, x, y);
             if (distance > 120 && this.avatar) {
               const pathPoint = this.constrainAvatarToWalkable(x, y + 58);
-              this.target = new PhaserModule.Math.Vector2(pathPoint.x, pathPoint.y);
-              setStatus(`Walking over to ${plot.name}.`);
+              const routeStarted = this.beginNavigation(this.avatar, pathPoint);
+              setStatus(routeStarted ? `Walking over to ${plot.name}.` : `${plot.name} cannot be reached from here.`);
               return;
             }
             this.waterPlot(plot, x, y);
@@ -1757,7 +1787,7 @@ export function GardenCanvas({
               );
               this.navigationClampedTarget = target;
               if (!target) {
-                this.target = undefined;
+                this.clearNavigationTarget();
                 setStatus("That spot is too deep inside blocked scenery. Try a nearby path edge.");
                 if (navigationDebugActive) {
                   console.info("[HeartHaven navigation]", {
@@ -1770,7 +1800,10 @@ export function GardenCanvas({
                 }
                 return;
               }
-              this.target = new PhaserModule.Math.Vector2(target.x, target.y);
+              if (!this.beginNavigation(active, target)) {
+                setStatus("No clear route reaches that spot. Try a nearby path or lawn.");
+                return;
+              }
               playCozyCue("move");
               const wasClamped = PhaserModule.Math.Distance.Between(pointer.worldX, pointer.worldY, target.x, target.y) > 12;
               setStatus(wasClamped
@@ -1888,7 +1921,7 @@ export function GardenCanvas({
             nearest.to.x / 100 * GARDEN_WORLD_WIDTH,
             nearest.to.y / 100 * GARDEN_WORLD_HEIGHT,
           );
-          this.target = undefined;
+          this.clearNavigationTarget();
           this.companionActionBusyUntil = this.time.now + 950;
           this.petFacing = destination.x < this.pet.x ? "left" : "right";
           this.petSprite.setFlipX(petFlipX(this.petFacing));
@@ -1974,7 +2007,7 @@ export function GardenCanvas({
           const result = markDigSpotDug(nearest.spot.id);
           if (!result.ok) return;
 
-          this.target = undefined;
+          this.clearNavigationTarget();
           this.companionActionBusyUntil = this.time.now + 1150;
           this.petMood = "happy";
           this.applyPetLocomotion(false, "walk1");
@@ -2220,7 +2253,8 @@ export function GardenCanvas({
             return;
           }
           this.playMode = this.playMode === "keeper" ? "companion" : "keeper";
-          this.target = undefined;
+          this.clearNavigationTarget();
+          this.clearPetFollowRoute();
           if (this.playMode === "companion") {
             cancelPetNap();
             this.petBehavior = getPetBehavior();
@@ -2867,6 +2901,112 @@ export function GardenCanvas({
           }
         }
 
+        private navigationBounds() {
+          return {
+            minX: WORLD_EDGE_INSET,
+            minY: WORLD_EDGE_INSET,
+            maxX: GARDEN_WORLD_WIDTH - WORLD_EDGE_INSET,
+            maxY: GARDEN_WORLD_HEIGHT - WORLD_EDGE_INSET,
+          };
+        }
+
+        private clearNavigationTarget() {
+          this.target = undefined;
+          this.navigationDestination = undefined;
+          this.navigationWaypoints = [];
+        }
+
+        private beginNavigation(
+          actor: Phaser.GameObjects.Container,
+          destination: { x: number; y: number },
+        ) {
+          const route = findNavigationRoute(
+            { x: actor.x, y: actor.y },
+            destination,
+            this.navigationBounds(),
+            (x, y) => this.isNavigationPointWalkable(x, y),
+          );
+          if (!route || route.length < 2) {
+            this.clearNavigationTarget();
+            return false;
+          }
+          this.navigationDestination = new PhaserModule.Math.Vector2(destination.x, destination.y);
+          this.navigationWaypoints = route
+            .slice(1)
+            .map((point) => new PhaserModule.Math.Vector2(point.x, point.y));
+          this.target = this.navigationWaypoints.shift();
+          this.navigationRepathAt = this.time.now + 260;
+          return Boolean(this.target);
+        }
+
+        private currentNavigationWaypoint(actor: Phaser.GameObjects.Container) {
+          while (
+            this.target
+            && PhaserModule.Math.Distance.Between(actor.x, actor.y, this.target.x, this.target.y) < 7
+          ) {
+            this.target = this.navigationWaypoints.shift();
+          }
+          if (!this.target) {
+            this.clearNavigationTarget();
+            return undefined;
+          }
+          return this.target;
+        }
+
+        private recoverNavigationRoute(actor: Phaser.GameObjects.Container) {
+          if (!this.navigationDestination || this.time.now < this.navigationRepathAt) return false;
+          const destination = { x: this.navigationDestination.x, y: this.navigationDestination.y };
+          this.navigationRepathAt = this.time.now + 320;
+          return this.beginNavigation(actor, destination);
+        }
+
+        private clearPetFollowRoute() {
+          this.petFollowDestination = undefined;
+          this.petFollowWaypoints = [];
+        }
+
+        private petFollowWaypoint(destination: { x: number; y: number }) {
+          const start = { x: this.pet.x, y: this.pet.y };
+          if (hasNavigationLineOfSight(start, destination, (x, y) => this.isNavigationPointWalkable(x, y))) {
+            this.clearPetFollowRoute();
+            return destination;
+          }
+
+          const destinationMoved = !this.petFollowDestination
+            || PhaserModule.Math.Distance.Between(
+              destination.x,
+              destination.y,
+              this.petFollowDestination.x,
+              this.petFollowDestination.y,
+            ) > 44;
+          if (destinationMoved || this.petFollowWaypoints.length === 0 || this.time.now >= this.petFollowRepathAt) {
+            const route = findNavigationRoute(
+              start,
+              destination,
+              this.navigationBounds(),
+              (x, y) => this.isNavigationPointWalkable(x, y),
+            );
+            this.petFollowDestination = new PhaserModule.Math.Vector2(destination.x, destination.y);
+            this.petFollowWaypoints = (route ?? [])
+              .slice(1)
+              .map((point) => new PhaserModule.Math.Vector2(point.x, point.y));
+            this.petFollowRepathAt = this.time.now + 520;
+          }
+
+          while (
+            this.petFollowWaypoints[0]
+            && PhaserModule.Math.Distance.Between(
+              this.pet.x,
+              this.pet.y,
+              this.petFollowWaypoints[0].x,
+              this.petFollowWaypoints[0].y,
+            ) < 8
+          ) {
+            this.petFollowWaypoints.shift();
+          }
+          return this.petFollowWaypoints[0] ?? destination;
+        }
+
         private updateAvatar(delta: number) {
           // When the player is driving the companion, the keeper stays put.
           // We still update the facing flip and the pose so the keeper
@@ -2887,7 +3027,7 @@ export function GardenCanvas({
           let moveDy = 0;
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
-            this.target = undefined;
+            this.clearNavigationTarget();
             const next = this.resolveMovementStep(
               this.avatar.x,
               this.avatar.y,
@@ -2898,12 +3038,10 @@ export function GardenCanvas({
             moveDy = next.y - this.avatar.y;
             this.avatar.setPosition(next.x, next.y);
             moving = Math.hypot(moveDx, moveDy) > 0.05;
-          } else if (this.target) {
-            const distance = PhaserModule.Math.Distance.Between(this.avatar.x, this.avatar.y, this.target.x, this.target.y);
-            if (distance < 5) {
-              this.target = undefined;
-            } else {
-              const angle = PhaserModule.Math.Angle.Between(this.avatar.x, this.avatar.y, this.target.x, this.target.y);
+          } else {
+            const waypoint = this.currentNavigationWaypoint(this.avatar);
+            if (waypoint) {
+              const angle = PhaserModule.Math.Angle.Between(this.avatar.x, this.avatar.y, waypoint.x, waypoint.y);
               const next = this.resolveMovementStep(
                 this.avatar.x,
                 this.avatar.y,
@@ -2914,7 +3052,7 @@ export function GardenCanvas({
               moveDy = next.y - this.avatar.y;
               this.avatar.setPosition(next.x, next.y);
               moving = Math.hypot(moveDx, moveDy) > 0.05;
-              if (!moving) this.target = undefined;
+              if (!moving && !this.recoverNavigationRoute(this.avatar)) this.clearNavigationTarget();
             }
           }
 
@@ -2993,6 +3131,7 @@ export function GardenCanvas({
           let petMoveDy = 0;
 
           if (keyboard.x !== 0 || keyboard.y !== 0) {
+            this.clearNavigationTarget();
             const next = this.resolveMovementStep(
               this.pet.x,
               this.pet.y,
@@ -3003,12 +3142,10 @@ export function GardenCanvas({
             petMoveDy = next.y - this.pet.y;
             this.pet.setPosition(next.x, next.y);
             petMoving = Math.hypot(petMoveDx, petMoveDy) > 0.05;
-          } else if (this.target) {
-            const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, this.target.x, this.target.y);
-            if (distance < 5) {
-              this.target = undefined;
-            } else {
-              const angle = PhaserModule.Math.Angle.Between(this.pet.x, this.pet.y, this.target.x, this.target.y);
+          } else {
+            const waypoint = this.currentNavigationWaypoint(this.pet);
+            if (waypoint) {
+              const angle = PhaserModule.Math.Angle.Between(this.pet.x, this.pet.y, waypoint.x, waypoint.y);
               const next = this.resolveMovementStep(
                 this.pet.x,
                 this.pet.y,
@@ -3019,7 +3156,7 @@ export function GardenCanvas({
               petMoveDy = next.y - this.pet.y;
               this.pet.setPosition(next.x, next.y);
               petMoving = Math.hypot(petMoveDx, petMoveDy) > 0.05;
-              if (!petMoving) this.target = undefined;
+              if (!petMoving && !this.recoverNavigationRoute(this.pet)) this.clearNavigationTarget();
             }
           }
 
@@ -3191,8 +3328,9 @@ export function GardenCanvas({
           }
 
           const follow = this.companionFollowTarget();
-          const targetX = follow.x;
-          const targetY = follow.y;
+          const routedFollow = this.petFollowWaypoint(follow);
+          const targetX = routedFollow.x;
+          const targetY = routedFollow.y;
           const distance = PhaserModule.Math.Distance.Between(this.pet.x, this.pet.y, targetX, targetY);
           let petMoving = false;
           const prevPetX = this.pet.x;
@@ -3331,7 +3469,7 @@ export function GardenCanvas({
           return candidates[0] ?? origin;
         }
 
-        private clampTargetToReachable(startX: number, startY: number, targetX: number, targetY: number) {
+        private clampTargetToReachable(_startX: number, _startY: number, targetX: number, targetY: number) {
           const boundedTarget = this.constrainToWorldBounds(targetX, targetY);
           const targetWasWalkable = this.isNavigationPointWalkable(
             boundedTarget.x,
@@ -3355,32 +3493,6 @@ export function GardenCanvas({
             desired.y,
           );
           if (!targetWasWalkable && snapDistance > MAX_CLICK_SNAP_DISTANCE) return undefined;
-
-          const distance = PhaserModule.Math.Distance.Between(startX, startY, desired.x, desired.y);
-          const steps = Math.max(1, Math.ceil(distance / 18));
-          let lastReachable = this.constrainAvatarToWalkable(startX, startY);
-
-          for (let index = 1; index <= steps; index += 1) {
-            const progress = index / steps;
-            const sample = {
-              x: PhaserModule.Math.Linear(startX, desired.x, progress),
-              y: PhaserModule.Math.Linear(startY, desired.y, progress),
-            };
-            if (!this.isNavigationPointWalkable(sample.x, sample.y)) {
-              // An open target across water or scenery is not a valid direct
-              // route. Dynamic furniture is different: stopping at its near
-              // edge is predictable and feels more forgiving than ignoring
-              // the click completely.
-              const staticMapBlocked = !isPointWalkable(
-                navigationMapId,
-                sample.x,
-                sample.y,
-              );
-              return staticMapBlocked && targetWasWalkable ? undefined : lastReachable;
-            }
-            lastReachable = sample;
-          }
-
           return desired;
         }
 
@@ -3848,9 +3960,11 @@ export function GardenCanvas({
             const distance = PhaserModule.Math.Distance.Between(this.avatar?.x ?? decoration.x, this.avatar?.y ?? decoration.y, decoration.x, decoration.y);
             if (distance > 180 && this.avatar) {
               const pathPoint = this.constrainAvatarToWalkable(decoration.x, decoration.y + 62);
-              this.target = new PhaserModule.Math.Vector2(pathPoint.x, pathPoint.y);
-              playCozyCue("move");
-              setStatus(`Walking to ${decoration.label}. Click it again when you arrive.`);
+              const routeStarted = this.beginNavigation(this.avatar, pathPoint);
+              if (routeStarted) playCozyCue("move");
+              setStatus(routeStarted
+                ? `Walking to ${decoration.label}. Click it again when you arrive.`
+                : `${decoration.label} cannot be reached from here.`);
               return;
             }
             this.activateDecoration(decoration);
