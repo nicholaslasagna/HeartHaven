@@ -2,6 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import {
+  HEARTRUSH_COLORS,
+  heartRushSeatColor,
+  type HeartRushRemote,
+  type HeartRushState,
+} from "@/lib/game/heartrush-shared";
 
 /**
  * HeartRush — a 2-8 player 3D obstacle course.
@@ -46,28 +52,9 @@ const COYOTE_TIME = 0.12;
 /** Jump pressed slightly before landing still fires. Forgiving on purpose. */
 const JUMP_BUFFER = 0.14;
 
-export const HEARTRUSH_COLORS = [
-  0xf07f9a, 0x7fc4f0, 0xf6c66a, 0x9ad98b,
-  0xc79af0, 0xf09a6a, 0x6ad9c4, 0xe86a8f,
-];
-
 const FINISH_Z = -146;
 
-export type HeartRushState = {
-  x: number;
-  y: number;
-  z: number;
-  /** 0 idle, 1 running, 2 airborne, 3 diving */
-  a: number;
-  /** checkpoint index, so late joiners see roughly where someone is */
-  c: number;
-};
-
-export type HeartRushRemote = HeartRushState & {
-  id: string;
-  name: string;
-  seat: number;
-};
+export type { HeartRushRemote, HeartRushState };
 
 type HeartRushCanvasProps = {
   /** Shared wall-clock ms when the race begins. null = not started. */
@@ -780,7 +767,7 @@ export function HeartRushCanvas({
     try {
       course = new Course(scene);
       effects = new Effects(scene);
-      player = new Player(scene, HEARTRUSH_COLORS[mySeatIndex % HEARTRUSH_COLORS.length]);
+      player = new Player(scene, heartRushSeatColor(mySeatIndex));
     } catch (error) {
       onError?.(error instanceof Error ? error.message : "HeartRush could not build the course.");
       renderer.dispose();
@@ -840,7 +827,7 @@ export function HeartRushCanvas({
           avatar = new RemoteAvatar(
             scene,
             entry.name,
-            HEARTRUSH_COLORS[entry.seat % HEARTRUSH_COLORS.length],
+            heartRushSeatColor(entry.seat),
           );
           avatar.group.position.set(entry.x, entry.y, entry.z);
           remotes.set(entry.id, avatar);
@@ -867,7 +854,7 @@ export function HeartRushCanvas({
     const resize = () => {
       const width = mount.clientWidth || 960;
       const height = Math.max(360, Math.round(width * 0.56));
-      renderer.setSize(width, height, false);
+      renderer.setSize(width, height, true);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
     };
@@ -978,5 +965,5 @@ export function HeartRushCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mySeatIndex, myName]);
 
-  return <div className="w-full overflow-hidden rounded-lg bg-sky-100" ref={mountRef} />;
+  return <div className="min-h-[360px] w-full overflow-hidden rounded-lg bg-sky-100" ref={mountRef} />;
 }

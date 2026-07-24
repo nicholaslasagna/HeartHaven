@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { ArrowLeft, Flag, Play, Timer, Trophy, Users } from "lucide-react";
 import { HeartRushCanvasLoader } from "@/components/game/heartrush-canvas-loader";
-import { HEARTRUSH_COLORS, type HeartRushRemote, type HeartRushState } from "@/components/game/heartrush-canvas";
+import { heartRushSeatCss, type HeartRushRemote, type HeartRushState } from "@/lib/game/heartrush-shared";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
@@ -261,11 +261,7 @@ export function HeartRushClient() {
                     <span className="inline-flex items-center gap-2">
                       <span
                         className="inline-block size-3 rounded-full"
-                        style={{
-                          backgroundColor: `#${HEARTRUSH_COLORS[entry.seatIndex % HEARTRUSH_COLORS.length]
-                            .toString(16)
-                            .padStart(6, "0")}`,
-                        }}
+                        style={{ backgroundColor: heartRushSeatCss(entry.seatIndex) }}
                       />
                       {index + 1}. {entry.name}
                     </span>
