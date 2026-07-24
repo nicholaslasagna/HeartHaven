@@ -197,6 +197,13 @@ export const partyGames = [
     description: "Pass the basket between seated friends, catch petals and hearts, dodge thorns, and build one shared combo.",
   },
   {
+    id: "heartrush-party",
+    title: "HeartRush",
+    mode: "2-8 racers",
+    href: "/app/heartrush",
+    description: "A colorful 3D obstacle race — dodge rotating sweepers, ride moving platforms, cross the narrow bridge, and sprint the ramp to the gate.",
+  },
+  {
     id: "moonberry-bowling-party",
     title: "Moonberry Bowling",
     mode: "2-player party lane",
