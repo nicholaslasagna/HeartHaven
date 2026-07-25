@@ -57,12 +57,14 @@ export function LanternLeapClient() {
     finished: boolean;
     remotes: Array<{ id: string; coins: number; bubbled: boolean }>;
   }>(() => ({ now: Date.now(), coins: 0, bubbled: false, finished: false, remotes: [] }));
+  const now = hud.now;
 
-  /* One array instance for the whole session, refilled in place. The canvas
-     re-reads it every frame, so teammates stay smooth at 20Hz without React
-     re-rendering once. Held in state purely so render can hand it to the
-     canvas without reading a ref. */
-  const [remoteList] = useState<RemoteEntry[]>(() => []);
+  /* The canvas keeps its own ref to this list, so replacing the array here
+     updates remote bodies without restarting the Three.js scene. */
+  const [remoteSnapshot, setRemoteSnapshot] = useState<{ level: number; entries: RemoteEntry[] }>(() => ({
+    level: 0,
+    entries: [],
+  }));
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const remotesRef = useRef(new Map<string, RemoteEntry>());
@@ -142,9 +144,8 @@ export function LanternLeapClient() {
   }, [playerId]);
 
   const refillList = useCallback(() => {
-    remoteList.length = 0;
-    for (const entry of remotesRef.current.values()) remoteList.push(entry);
-  }, [remoteList]);
+    setRemoteSnapshot({ level: levelIndexRef.current, entries: [...remotesRef.current.values()] });
+  }, []);
 
   /* New level: fresh world, fresh finish flag, drop stale ghosts. Coins keep
      accumulating — they are the run's score, not the level's. */
@@ -153,8 +154,7 @@ export function LanternLeapClient() {
     advancingRef.current = false;
     myStateRef.current = null;
     remotesRef.current.clear();
-    remoteList.length = 0;
-  }, [levelIndex, remoteList]);
+  }, [levelIndex]);
 
   /* ---- HUD pump: prune dead ghosts, snapshot the refs for render ---- */
   useEffect(() => {
@@ -219,7 +219,7 @@ export function LanternLeapClient() {
         dropped = true;
       }
       if (dropped) refillList();
-      setNow(Date.now());
+      setHud((current) => ({ ...current, now: Date.now() }));
     }, HUD_MS);
 
     return () => {
@@ -232,7 +232,9 @@ export function LanternLeapClient() {
   /* Offline / solo still needs a clock and a HUD tick. */
   useEffect(() => {
     if (sessionId && isSupabaseConfigured()) return;
-    const timer = window.setInterval(() => setNow(Date.now()), HUD_MS);
+    const timer = window.setInterval(() => {
+      setHud((current) => ({ ...current, now: Date.now() }));
+    }, HUD_MS);
     return () => window.clearInterval(timer);
   }, [sessionId]);
 
@@ -348,11 +350,13 @@ export function LanternLeapClient() {
      ponytail: the chips read live refs during a render the 4Hz tick just
      caused. Mirroring positions and coins into state would re-render the page
      20 times a second for no visible gain. */
+  const remoteHud = new Map(hud.remotes.map((entry) => [entry.id, entry]));
+  const remoteList = remoteSnapshot.level === levelIndex ? remoteSnapshot.entries : [];
   const chips = roster.map((entry) => {
     const mine = entry.id === playerId;
-    const remote = remotesRef.current.get(entry.id);
+    const remote = remoteHud.get(entry.id);
     const finishMs = finishedThisLevel.get(entry.id) ?? null;
-    const bubbled = mine ? Boolean(myStateRef.current?.bubbled) : Boolean(remote?.bubbled);
+    const bubbled = mine ? hud.bubbled : Boolean(remote?.bubbled);
     let status: "done" | "bubble" | "away" | "playing" = "playing";
     if (finishMs !== null) status = "done";
     else if (bubbled) status = "bubble";
@@ -360,7 +364,7 @@ export function LanternLeapClient() {
     return {
       ...entry,
       mine,
-      coins: mine ? coinsRef.current : (remote?.coins ?? 0),
+      coins: mine ? hud.coins : (remote?.coins ?? 0),
       status,
       finishMs,
     };
@@ -368,7 +372,7 @@ export function LanternLeapClient() {
 
   const elapsed = levelStartAt === null ? 0 : Math.max(0, now - levelStartAt);
   const waitingOn = chips.filter((chip) => chip.status === "playing" || chip.status === "bubble").length;
-  const iFinished = finishedThisLevel.has(playerId) || finishedRef.current;
+  const iFinished = finishedThisLevel.has(playerId) || hud.finished;
 
   return (
     <div className="grid gap-4">
@@ -451,7 +455,7 @@ export function LanternLeapClient() {
             paused={!started}
             playerId={playerId}
             playerName={myName}
-            remotes={remoteListRef.current}
+            remotes={remoteList}
             seatIndex={seatIndex}
           />
         )}
@@ -498,7 +502,7 @@ export function LanternLeapClient() {
               <Trophy className="mx-auto size-8 text-honey-700" />
               <h2 className="mt-2 font-display text-2xl text-ink-900">All lanterns lit!</h2>
               <p className="mt-1 text-sm font-bold text-ink-700">
-                {coinsRef.current} coins collected in {formatTime(myTotalMs)}.
+                {hud.coins} coins collected in {formatTime(myTotalMs)}.
               </p>
               {/* ponytail: no "play again" — a replay means a fresh session,
                   and the games hub already starts one. */}
