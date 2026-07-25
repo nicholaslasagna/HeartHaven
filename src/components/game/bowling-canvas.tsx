@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import { cn } from "@/lib/utils";
 import {
-  BOWLING_PIN_IDS,
   computeBowlingStandingPinIds,
   computeBowlingState,
   getBowlingImpact,

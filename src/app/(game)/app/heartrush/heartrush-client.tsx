@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { ArrowLeft, Flag, Play, Timer, Trophy, Users } from "lucide-react";
+import { ArrowLeft, Flag, Layers, Play, Timer, Trophy, Users } from "lucide-react";
 import { HeartRushCanvasLoader } from "@/components/game/heartrush-canvas-loader";
 import { heartRushSeatCss, type HeartRushRemote, type HeartRushState } from "@/lib/game/heartrush-shared";
+import { HEARTRUSH_LEVELS } from "@/lib/game/heartrush-course";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
@@ -13,6 +14,10 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 const COUNTDOWN_MS = 3500;
+/* Par for all three levels. Beat it and you score the full 1000; slower
+   runs scale down from there. Kept in step with the reward spec's
+   min_duration_seconds, which rejects anything impossibly fast. */
+const PAR_MS = 150_000;
 /** Drop a racer's ghost if we have not heard from them in this long. */
 const STALE_MS = 4000;
 
@@ -29,7 +34,7 @@ export function HeartRushClient() {
 
   const [liveStartAt, setLiveStartAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [checkpoints, setCheckpoints] = useState(0);
+  const [progress, setProgress] = useState({ level: 0, levels: HEARTRUSH_LEVELS, checkpoint: 0, checkpoints: 0 });
   const [myFinishMs, setMyFinishMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,7 +141,7 @@ export function HeartRushClient() {
     setLiveStartAt(startAt);
     finishedRef.current = false;
     setMyFinishMs(null);
-    setCheckpoints(0);
+    setProgress({ level: 0, levels: HEARTRUSH_LEVELS, checkpoint: 0, checkpoints: 0 });
     channelRef.current?.send({ type: "broadcast", event: "race_start", payload: { startAt } });
     // Durable copy so reloads and late joins still learn the start time.
     const result = await submitMove("start", { startAt });
@@ -149,8 +154,9 @@ export function HeartRushClient() {
       finishedRef.current = true;
       setMyFinishMs(elapsedMs);
       void submitMove("finish", { ms: elapsedMs });
-      // Faster runs score higher; the server spec caps the payout.
-      const score = Math.max(0, Math.round(1000 - elapsedMs / 100));
+      // Par-relative so the three-level run scores sensibly at any pace;
+      // the server spec still caps the actual payout.
+      const score = Math.max(0, Math.min(1000, Math.round((PAR_MS / Math.max(1, elapsedMs)) * 1000)));
       handleReward({
         gameId: "heartrush",
         label: "HeartRush",
@@ -174,8 +180,8 @@ export function HeartRushClient() {
           <p className="text-sm font-extrabold uppercase tracking-normal text-sky-700">Party obstacle race</p>
           <h1 className="mt-1 font-display text-3xl text-ink-900 sm:text-4xl">HeartRush</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            Two to eight keepers race one course. Dodge the sweepers, ride the platforms, cross the bridge, and hit the
-            gate first.
+            Two to eight keepers race {HEARTRUSH_LEVELS} courses back to back, freshly generated for every race. Dodge the
+            sweepers, ride the platforms, cross the bridge, and hit the last gate first.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -195,7 +201,7 @@ export function HeartRushClient() {
         <HeartRushCanvasLoader
           myName={myName}
           mySeatIndex={seatIndex}
-          onCheckpoint={(index) => setCheckpoints((current) => Math.max(current, index))}
+          onProgress={setProgress}
           onError={setError}
           onFinish={handleFinish}
           onLocalState={broadcastState}
@@ -208,8 +214,13 @@ export function HeartRushClient() {
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 font-mono text-sm font-black text-ink-900 shadow">
               <Timer className="size-4 text-sky-700" /> {formatTime(elapsed)}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-sm font-black text-ink-900 shadow">
-              <Flag className="size-4 text-garden-700" /> {checkpoints}/4
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-1.5 text-sm font-black text-ink-900 shadow">
+              <span className="inline-flex items-center gap-1.5 text-sky-700">
+                <Layers className="size-4" /> Level {progress.level + 1}/{progress.levels}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Flag className="size-4 text-garden-700" /> {progress.checkpoint}/{Math.max(1, progress.checkpoints)}
+              </span>
             </span>
           </div>
         )}

@@ -3,11 +3,23 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import {
-  HEARTRUSH_COLORS,
   heartRushSeatColor,
   type HeartRushRemote,
   type HeartRushState,
 } from "@/lib/game/heartrush-shared";
+import {
+  HEARTRUSH_GRAVITY,
+  HEARTRUSH_JUMP_VELOCITY,
+  HEARTRUSH_LEVELS,
+  HEARTRUSH_MAX_SPEED,
+  heartRushLevelSeed,
+  planHeartRushCourse,
+  type BumperSpec,
+  type CoursePlan,
+  type PadSpec,
+  type RailSpec,
+  type SweeperSpec,
+} from "@/lib/game/heartrush-course";
 
 /**
  * HeartRush — a 2-8 player 3D obstacle course.
@@ -37,11 +49,13 @@ import {
 
 /** Fixed timestep so physics feel identical on 60Hz and 144Hz screens. */
 const STEP = 1 / 60;
-const GRAVITY = -52;
+/* Jump/gravity/top-speed live in heartrush-course so the generator sizes its
+   gaps with the same numbers the physics use here. One source of truth. */
+const GRAVITY = -HEARTRUSH_GRAVITY;
+const JUMP_VELOCITY = HEARTRUSH_JUMP_VELOCITY;
+const MAX_SPEED = HEARTRUSH_MAX_SPEED;
 const MOVE_ACCEL = 145;
-const MAX_SPEED = 12.5;
 const FRICTION = 12;
-const JUMP_VELOCITY = 17.5;
 const DIVE_SPEED = 20;
 const DIVE_TIME = 0.32;
 const DIVE_COOLDOWN = 0.75;
@@ -51,8 +65,6 @@ const FALL_Y = -14;
 const COYOTE_TIME = 0.12;
 /** Jump pressed slightly before landing still fires. Forgiving on purpose. */
 const JUMP_BUFFER = 0.14;
-
-const FINISH_Z = -146;
 
 export type { HeartRushRemote, HeartRushState };
 
@@ -65,7 +77,8 @@ type HeartRushCanvasProps = {
   onLocalState?: (state: HeartRushState) => void;
   /** Called once when the player crosses the finish line. */
   onFinish?: (elapsedMs: number) => void;
-  onCheckpoint?: (index: number) => void;
+  /** Fires on every checkpoint and every level change. */
+  onProgress?: (progress: { level: number; levels: number; checkpoint: number; checkpoints: number }) => void;
   onError?: (message: string) => void;
 };
 
@@ -77,7 +90,6 @@ type Solid = {
   mesh: THREE.Object3D;
   hx: number;
   hz: number;
-  top: number;
   /** Previous world position, so riders inherit platform movement. */
   prev: THREE.Vector3;
   update?: (t: number) => void;
@@ -90,18 +102,27 @@ abstract class Obstacle {
   abstract collide(pos: THREE.Vector3, vel: THREE.Vector3): THREE.Vector3 | null;
 }
 
+/** Half-depth of the arm box, and how far the end caps stick out past it. */
+const ARM_HALF_THICKNESS = 0.35;
+const ARM_CAP_RADIUS = 0.52;
+
 class Sweeper extends Obstacle {
   readonly pivot: THREE.Group;
+  private readonly origin: THREE.Vector3;
+  private readonly length: number;
+  private readonly speed: number;
+  private readonly phase: number;
   private readonly arm: THREE.Mesh;
-  constructor(
-    scene: THREE.Scene,
-    private readonly origin: THREE.Vector3,
-    private readonly length: number,
-    private readonly speed: number,
-    private readonly phase: number,
-    color: number,
-  ) {
+
+  constructor(scene: THREE.Scene, spec: SweeperSpec) {
     super();
+    this.origin = new THREE.Vector3(spec.x, spec.y, spec.z);
+    this.length = spec.length;
+    this.speed = spec.speed;
+    this.phase = spec.phase;
+    const { color } = spec;
+    const origin = this.origin;
+    const length = this.length;
     this.pivot = new THREE.Group();
     this.pivot.position.copy(origin);
     const post = new THREE.Mesh(
@@ -141,40 +162,54 @@ class Sweeper extends Obstacle {
     const dy = pos.y - this.origin.y;
     if (dy < -0.9 || dy > 1.5) return null;
 
-    // Work in the arm's local frame: the bar is the X axis, so a hit is
-    // "close to the axis in Z, inside the arm in X".
+    /* Work in the arm's local frame: the bar lies along local X, so a hit
+       is "inside the arm in X, close to it in Z".
+
+       three.js rotates local→world about Y as
+           xw =  x·cos + z·sin
+           zw = -x·sin + z·cos
+       so world→local is that matrix TRANSPOSED. Applying the forward
+       matrix here instead (which is what a Math.cos(-angle) pair does)
+       mirrors the box about the arm, leaving the hitbox lagging the
+       visible bar by twice the rotation — hits from thin air at one
+       angle, a bar you walk straight through at another. */
     const angle = this.pivot.rotation.y;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
     const dx = pos.x - this.origin.x;
     const dz = pos.z - this.origin.z;
-    const cos = Math.cos(-angle);
-    const sin = Math.sin(-angle);
     const localX = dx * cos - dz * sin;
     const localZ = dx * sin + dz * cos;
 
-    if (Math.abs(localX) > this.length / 2 + PLAYER_RADIUS) return null;
-    if (Math.abs(localZ) > 0.35 + PLAYER_RADIUS) return null;
+    // The end caps are spheres centred on the arm ends, so they add reach.
+    if (Math.abs(localX) > this.length / 2 + ARM_CAP_RADIUS + PLAYER_RADIUS) return null;
+    if (Math.abs(localZ) > ARM_HALF_THICKNESS + PLAYER_RADIUS) return null;
 
-    // Shove along the bar's sweep direction (its local Z), plus a hop so
-    // the hit reads as comedic rather than instantly fatal.
+    /* Shove out along the face the player is standing on — local ±Z, which
+       is world (±sin, ±cos). A bar sweeping toward you reaches you on its
+       leading face, so "away from the bar" is also "the way it was going".
+       Plus a hop, so a hit reads as comedic rather than instantly fatal. */
     const dir = localZ >= 0 ? 1 : -1;
-    const worldX = -Math.sin(angle) * dir;
-    const worldZ = -Math.cos(angle) * dir;
-    return new THREE.Vector3(worldX * 15, 8, worldZ * 15);
+    return new THREE.Vector3(sin * dir * 15, 8, cos * dir * 15);
   }
 }
 
 class Bumper extends Obstacle {
   readonly mesh: THREE.Mesh;
+  private readonly radius: number;
+  private readonly phase: number;
   private readonly base: number;
-  constructor(scene: THREE.Scene, position: THREE.Vector3, private readonly radius: number, private readonly phase: number) {
+  constructor(scene: THREE.Scene, spec: BumperSpec) {
     super();
+    this.radius = spec.radius;
+    this.phase = spec.phase;
     this.mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius, radius, 1.6, 24),
+      new THREE.CylinderGeometry(spec.radius, spec.radius, 1.6, 24),
       new THREE.MeshStandardMaterial({ color: 0xf5a8c0, roughness: 0.2, metalness: 0.1 }),
     );
-    this.mesh.position.copy(position);
+    this.mesh.position.set(spec.x, spec.y, spec.z);
     this.mesh.castShadow = true;
-    this.base = position.y;
+    this.base = spec.y;
     scene.add(this.mesh);
   }
 
@@ -200,7 +235,7 @@ class Bumper extends Obstacle {
 class Checkpoint {
   readonly index: number;
   readonly position: THREE.Vector3;
-  private readonly ring: THREE.Mesh;
+  readonly ring: THREE.Mesh;
   private reached = false;
   constructor(scene: THREE.Scene, index: number, position: THREE.Vector3) {
     this.index = index;
@@ -231,12 +266,6 @@ class Checkpoint {
     return true;
   }
 
-  reset() {
-    this.reached = false;
-    const material = this.ring.material as THREE.MeshStandardMaterial;
-    material.color.set(0xffd479);
-    material.emissive.set(0x7a5a12);
-  }
 }
 
 class Effects {
@@ -307,142 +336,106 @@ class Course {
   readonly obstacles: Obstacle[] = [];
   readonly checkpoints: Checkpoint[] = [];
   readonly decor: THREE.Object3D[] = [];
+  readonly finishZ: number;
+  readonly level: number;
+  /** Everything added to the scene, so a level swap can take it all back. */
+  private readonly roots: THREE.Object3D[] = [];
 
-  constructor(private readonly scene: THREE.Scene) {
-    this.buildStart();
-    this.buildSweepers();
-    this.buildMovingPlatforms();
-    this.buildBumpers();
-    this.buildBridge();
-    this.buildFinish();
+  constructor(private readonly scene: THREE.Scene, plan: CoursePlan) {
+    this.finishZ = plan.finishZ;
+    this.level = plan.level;
+
+    for (const pad of plan.pads) this.addPad(pad);
+    for (const spec of plan.sweepers) {
+      const sweeper = new Sweeper(scene, spec);
+      this.obstacles.push(sweeper);
+      this.roots.push(sweeper.pivot);
+    }
+    for (const spec of plan.bumpers) {
+      const bumper = new Bumper(scene, spec);
+      this.obstacles.push(bumper);
+      this.roots.push(bumper.mesh);
+    }
+    for (const rail of plan.rails) this.addRail(rail);
+    for (const spec of plan.checkpoints) {
+      const checkpoint = new Checkpoint(scene, spec.index, new THREE.Vector3(spec.x, spec.y, spec.z));
+      this.checkpoints.push(checkpoint);
+      this.roots.push(checkpoint.ring);
+    }
+    if (plan.ramp) this.addRamp(plan.ramp);
+    this.addGates(plan);
     this.buildBackdrop();
   }
 
-  private platform(
-    x: number,
-    y: number,
-    z: number,
-    width: number,
-    depth: number,
-    color: number,
-    update?: (t: number, mesh: THREE.Mesh) => void,
-  ) {
-    const height = 1;
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(width, height, depth),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.28, metalness: 0.06 }),
-    );
-    mesh.position.set(x, y - height / 2, z);
-    mesh.receiveShadow = true;
-    mesh.castShadow = true;
-    this.scene.add(mesh);
-    const solid: Solid = {
-      mesh,
-      hx: width / 2,
-      hz: depth / 2,
-      top: y,
-      prev: mesh.position.clone(),
-      update: update ? (t: number) => update(t, mesh) : undefined,
-    };
-    this.solids.push(solid);
-    return solid;
+  private track<T extends THREE.Object3D>(object: T) {
+    this.scene.add(object);
+    this.roots.push(object);
+    return object;
   }
 
-  private buildStart() {
-    this.platform(0, 0, 4, 16, 16, 0xffd9e4);
-    this.checkpoints.push(new Checkpoint(this.scene, 0, new THREE.Vector3(0, 0, 0)));
+  private addPad(pad: PadSpec) {
+    const height = 1;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(pad.width, height, pad.depth),
+      new THREE.MeshStandardMaterial({ color: pad.color, roughness: 0.28, metalness: 0.06 }),
+    );
+    mesh.position.set(pad.x, pad.y - height / 2, pad.z);
+    mesh.receiveShadow = true;
+    mesh.castShadow = true;
+    this.track(mesh);
 
-    // Start banner so the lane direction reads instantly.
-    const gate = new THREE.Mesh(
+    const sway = pad.sway;
+    this.solids.push({
+      mesh,
+      hx: pad.width / 2,
+      hz: pad.depth / 2,
+      prev: mesh.position.clone(),
+      update: sway
+        ? (t: number) => {
+            mesh.position.x = pad.x + Math.sin(t * sway.speed + sway.phase) * sway.range;
+          }
+        : undefined,
+    });
+  }
+
+  private addRail(rail: RailSpec) {
+    // Purely a visual guide on the narrow beam — decor, never a solid.
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.9, rail.depth),
+      new THREE.MeshStandardMaterial({ color: 0xfff6ff, roughness: 0.4 }),
+    );
+    mesh.position.set(rail.x, rail.y, rail.z);
+    this.decor.push(this.track(mesh));
+  }
+
+  private addRamp(ramp: { z: number; y: number; length: number }) {
+    // The stepped pads under this are the real collision; the slab just
+    // makes the staircase read as a ramp.
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(8, 0.6, ramp.length),
+      new THREE.MeshStandardMaterial({ color: 0xffc98d, roughness: 0.3 }),
+    );
+    mesh.position.set(0, ramp.y, ramp.z);
+    mesh.rotation.x = -0.28;
+    mesh.castShadow = true;
+    this.decor.push(this.track(mesh));
+  }
+
+  private addGates(plan: CoursePlan) {
+    const start = new THREE.Mesh(
       new THREE.TorusGeometry(5, 0.4, 10, 24, Math.PI),
       new THREE.MeshStandardMaterial({ color: 0xffb3c9, roughness: 0.3 }),
     );
-    gate.position.set(0, 0, 10);
-    this.scene.add(gate);
-    this.decor.push(gate);
-  }
+    start.position.set(0, 0, 10);
+    this.decor.push(this.track(start));
 
-  private buildSweepers() {
-    this.platform(0, 0, -18, 14, 30, 0xfff0d6);
-    this.obstacles.push(new Sweeper(this.scene, new THREE.Vector3(0, 1.2, -10), 11, 1.5, 0, 0xf2789b));
-    this.obstacles.push(new Sweeper(this.scene, new THREE.Vector3(0, 1.2, -20), 11, -1.9, Math.PI / 2, 0xa07ff0));
-    this.obstacles.push(new Sweeper(this.scene, new THREE.Vector3(0, 1.2, -29), 11, 2.3, Math.PI, 0x7fc4f0));
-    this.checkpoints.push(new Checkpoint(this.scene, 1, new THREE.Vector3(0, 0, -32)));
-  }
-
-  private buildMovingPlatforms() {
-    // Gap the player must cross on three oscillating pads.
-    for (let i = 0; i < 3; i += 1) {
-      const z = -42 - i * 9;
-      const phase = i * 1.1;
-      const range = 5.2;
-      this.platform(0, 0, z, 6, 5, 0xbfe6ff, (t, mesh) => {
-        mesh.position.x = Math.sin(t * 1.15 + phase) * range;
-      });
-    }
-    this.checkpoints.push(new Checkpoint(this.scene, 2, new THREE.Vector3(0, 0, -66)));
-    this.platform(0, 0, -68, 12, 10, 0xfff0d6);
-  }
-
-  private buildBumpers() {
-    this.platform(0, 0, -84, 14, 24, 0xffe0ef);
-    const spots: Array<[number, number]> = [
-      [-3.6, -78], [3.6, -82], [-2.4, -88], [3.0, -92], [-4.2, -94],
-    ];
-    spots.forEach(([x, z], index) => {
-      this.obstacles.push(new Bumper(this.scene, new THREE.Vector3(x, 0.8, z), 1.15, index * 0.8));
-    });
-    this.checkpoints.push(new Checkpoint(this.scene, 3, new THREE.Vector3(0, 0, -96)));
-  }
-
-  private buildBridge() {
-    // Narrow beam. Deliberately short so a fall costs a few seconds, not a run.
-    this.platform(0, 0, -108, 2.6, 22, 0xd8c8ff);
-    // Two side rails purely as visual guides — they are decor, not solids.
-    for (const side of [-1.7, 1.7]) {
-      const rail = new THREE.Mesh(
-        new THREE.BoxGeometry(0.18, 0.9, 22),
-        new THREE.MeshStandardMaterial({ color: 0xfff6ff, roughness: 0.4 }),
-      );
-      rail.position.set(side, 0.4, -108);
-      this.scene.add(rail);
-      this.decor.push(rail);
-    }
-    this.checkpoints.push(new Checkpoint(this.scene, 4, new THREE.Vector3(0, 0, -122)));
-  }
-
-  private buildFinish() {
-    this.platform(0, 0, -128, 10, 12, 0xfff0d6);
-
-    // Ramp: a thin rotated box reads as a slope, and we register a stack of
-    // narrow steps as the actual collision so the arcade AABB test still works.
-    const rampLength = 10;
-    const ramp = new THREE.Mesh(
-      new THREE.BoxGeometry(8, 0.6, rampLength),
-      new THREE.MeshStandardMaterial({ color: 0xffc98d, roughness: 0.3 }),
-    );
-    ramp.position.set(0, 1.1, -138);
-    ramp.rotation.x = -0.28;
-    ramp.castShadow = true;
-    this.scene.add(ramp);
-    this.decor.push(ramp);
-
-    const steps = 10;
-    for (let i = 0; i < steps; i += 1) {
-      const z = -133.5 - i;
-      const y = 0.25 + i * 0.29;
-      this.platform(0, y, z, 8, 1.05, 0xffc98d);
-    }
-
-    this.platform(0, 3.1, -146, 14, 12, 0xc8ffd8);
-
-    const gate = new THREE.Mesh(
+    const deck = plan.pads[plan.pads.length - 1];
+    const finish = new THREE.Mesh(
       new THREE.TorusGeometry(5.4, 0.5, 12, 28, Math.PI),
       new THREE.MeshStandardMaterial({ color: 0x8ee6a0, emissive: 0x1d5c2c, roughness: 0.3 }),
     );
-    gate.position.set(0, 3.1, -144);
-    this.scene.add(gate);
-    this.decor.push(gate);
+    finish.position.set(0, deck?.y ?? 0, plan.gateZ);
+    this.decor.push(this.track(finish));
   }
 
   private buildBackdrop() {
@@ -461,13 +454,12 @@ class Course {
       mesh.position.set(
         (Math.random() - 0.5) * 90,
         -6 + Math.random() * 34,
-        10 - Math.random() * 170,
+        10 - Math.random() * (Math.abs(this.finishZ) + 30),
       );
       mesh.userData.spin = (Math.random() - 0.5) * 0.6;
       mesh.userData.bobPhase = Math.random() * Math.PI * 2;
       mesh.userData.baseY = mesh.position.y;
-      this.scene.add(mesh);
-      this.decor.push(mesh);
+      this.decor.push(this.track(mesh));
     }
   }
 
@@ -485,6 +477,25 @@ class Course {
       piece.rotation.x += piece.userData.spin * 0.004;
       piece.position.y = piece.userData.baseY + Math.sin(t * 0.7 + piece.userData.bobPhase) * 0.6;
     }
+  }
+
+  /** Tear the whole level out of the scene before building the next one. */
+  dispose() {
+    for (const root of this.roots) {
+      this.scene.remove(root);
+      root.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        mesh.geometry?.dispose();
+        const material = mesh.material;
+        if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
+        else material?.dispose();
+      });
+    }
+    this.roots.length = 0;
+    this.solids.length = 0;
+    this.obstacles.length = 0;
+    this.checkpoints.length = 0;
+    this.decor.length = 0;
   }
 }
 
@@ -517,12 +528,16 @@ class Player {
     this.body.castShadow = true;
     this.group.add(this.body);
 
-    // Two eyes so the character reads as facing its travel direction.
+    /* Two eyes so the character reads as facing its travel direction.
+       Forward is local +Z: the group is turned with
+       `rotation.y = atan2(vx, vz)`, and three.js maps local +Z to world
+       (sin, cos) — exactly the velocity. Putting the eyes on -Z is what
+       had the capsule running the course while staring back at you. */
     const eyeGeometry = new THREE.SphereGeometry(0.1, 10, 8);
     const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0x3a2a2a });
     for (const side of [-0.17, 0.17]) {
       const eye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-      eye.position.set(side, 0.2, -PLAYER_RADIUS - 0.02);
+      eye.position.set(side, 0.2, PLAYER_RADIUS + 0.02);
       this.body.add(eye);
     }
     scene.add(this.group);
@@ -703,12 +718,12 @@ export function HeartRushCanvas({
   myName,
   onLocalState,
   onFinish,
-  onCheckpoint,
+  onProgress,
   onError,
 }: HeartRushCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const raceStartRef = useRef(raceStartAt);
-  const callbacksRef = useRef({ onLocalState, onFinish, onCheckpoint });
+  const callbacksRef = useRef({ onLocalState, onFinish, onProgress });
   const resetRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -716,8 +731,8 @@ export function HeartRushCanvas({
   }, [raceStartAt]);
 
   useEffect(() => {
-    callbacksRef.current = { onLocalState, onFinish, onCheckpoint };
-  }, [onLocalState, onFinish, onCheckpoint]);
+    callbacksRef.current = { onLocalState, onFinish, onProgress };
+  }, [onLocalState, onFinish, onProgress]);
 
   // A new race start means a fresh run for everyone.
   useEffect(() => {
@@ -764,10 +779,33 @@ export function HeartRushCanvas({
     let course: Course;
     let player: Player;
     let effects: Effects;
+    let levelIndex = 0;
+    // Set when the player is teleported, so the chase cam cuts instead of
+    // flying the length of the old course to catch up.
+    let snapCamera = true;
+
+    /* The seed is the shared race-start stamp, so all eight racers plan the
+       identical three courses without a byte of extra traffic. */
+    const buildLevel = (level: number) => {
+      course?.dispose();
+      levelIndex = level;
+      const plan = planHeartRushCourse(heartRushLevelSeed(raceStartRef.current ?? 1, level), level);
+      course = new Course(scene, plan);
+      player.checkpointIndex = 0;
+      player.respawn(course.checkpoints[0].position);
+      snapCamera = true;
+      callbacksRef.current.onProgress?.({
+        level,
+        levels: HEARTRUSH_LEVELS,
+        checkpoint: 0,
+        checkpoints: course.checkpoints.length - 1,
+      });
+    };
+
     try {
-      course = new Course(scene);
       effects = new Effects(scene);
       player = new Player(scene, heartRushSeatColor(mySeatIndex));
+      buildLevel(0);
     } catch (error) {
       onError?.(error instanceof Error ? error.message : "HeartRush could not build the course.");
       renderer.dispose();
@@ -844,9 +882,7 @@ export function HeartRushCanvas({
 
     const reset = () => {
       player.finished = false;
-      player.checkpointIndex = 0;
-      course.checkpoints.forEach((checkpoint) => checkpoint.reset());
-      player.respawn(course.checkpoints[0].position);
+      buildLevel(0);
     };
     resetRef.current = reset;
     reset();
@@ -900,7 +936,12 @@ export function HeartRushCanvas({
           if (!checkpoint.tryClaim(player.position)) continue;
           player.checkpointIndex = Math.max(player.checkpointIndex, checkpoint.index);
           effects.burst(checkpoint.position.clone().setY(checkpoint.position.y + 1.6), 0x8ee6a0, 14, 7);
-          callbacksRef.current.onCheckpoint?.(checkpoint.index);
+          callbacksRef.current.onProgress?.({
+            level: levelIndex,
+            levels: HEARTRUSH_LEVELS,
+            checkpoint: player.checkpointIndex,
+            checkpoints: course.checkpoints.length - 1,
+          });
         }
 
         if (player.position.y < FALL_Y) {
@@ -909,10 +950,15 @@ export function HeartRushCanvas({
           effects.burst(spot.clone().setY(spot.y + 1.2), 0xffc2d6, 16, 8);
         }
 
-        if (player.position.z <= FINISH_Z) {
-          player.finished = true;
+        if (player.position.z <= course.finishZ) {
           effects.burst(player.position, 0xffe066, 40, 12);
-          callbacksRef.current.onFinish?.(Math.max(0, Date.now() - (startAt ?? Date.now())));
+          if (levelIndex < HEARTRUSH_LEVELS - 1) {
+            buildLevel(levelIndex + 1);
+          } else {
+            player.finished = true;
+            // One clock across all three levels: the whole run is the time.
+            callbacksRef.current.onFinish?.(Math.max(0, Date.now() - (startAt ?? Date.now())));
+          }
         }
       }
 
@@ -933,7 +979,8 @@ export function HeartRushCanvas({
       // Fixed-orientation chase cam: readable on a linear course and
       // impossible to get disoriented in.
       cameraTarget.set(player.position.x * 0.55, player.position.y + 7.4, player.position.z + 12.5);
-      camera.position.lerp(cameraTarget, Math.min(1, dt * 4.5));
+      camera.position.lerp(cameraTarget, snapCamera ? 1 : Math.min(1, dt * 4.5));
+      snapCamera = false;
       camera.lookAt(player.position.x * 0.6, player.position.y + 1.1, player.position.z - 5);
 
       renderer.render(scene, camera);
@@ -949,6 +996,7 @@ export function HeartRushCanvas({
       window.removeEventListener("hearthaven:heartrush-remote", onRemote);
       resetRef.current = null;
       effects.dispose();
+      course.dispose();
       remotes.forEach((avatar) => avatar.dispose(scene));
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh;
