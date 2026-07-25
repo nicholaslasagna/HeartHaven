@@ -204,6 +204,13 @@ export const partyGames = [
     description: "A colorful 3D obstacle race — dodge rotating sweepers, ride moving platforms, cross the narrow bridge, and sprint the ramp to the gate.",
   },
   {
+    id: "lantern-leap-party",
+    title: "Lantern Leap",
+    mode: "2-8 players",
+    href: "/app/lantern-leap",
+    description: "A co-op lantern-lit platformer — run and jump through hand-built levels together, collect coins and gems, and pop a bubbled friend free before the goal opens.",
+  },
+  {
     id: "moonberry-bowling-party",
     title: "Moonberry Bowling",
     mode: "2-player party lane",
