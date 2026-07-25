@@ -1,18 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ChevronLeft, ChevronRight, CircleDot } from "lucide-react";
 import type Phaser from "phaser";
 import { Button } from "@/components/ui/button";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import { cn } from "@/lib/utils";
 import {
   BOWLING_PIN_IDS,
   computeBowlingStandingPinIds,
   computeBowlingState,
   getBowlingImpact,
+  readSwipe,
   getBowlingPinReactions,
   selectBowlingKnockedPinIds,
   type BowlingRoll,
+  type SwipeSample,
 } from "@/lib/game/bowling-scoring";
 
 type BowlingCanvasProps = {
@@ -25,6 +28,10 @@ type BowlingCanvasProps = {
   sessionId?: string | null;
 };
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
 const GAME_WIDTH = 920;
 const GAME_HEIGHT = 560;
 const BALL_START = { x: 460, y: 485 };
@@ -32,10 +39,6 @@ const PIN_POSITIONS = [
   [460, 128], [430, 162], [490, 162], [400, 196], [460, 196],
   [520, 196], [370, 230], [430, 230], [490, 230], [550, 230],
 ] as const;
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
 
 function describeRoll(pins: number, standingBeforeRoll: number, roll: BowlingRoll) {
   if (standingBeforeRoll === 10 && pins === 10) return "Strike!";
@@ -76,7 +79,9 @@ export function BowlingCanvas({
   const [power, setPower] = useState(0);
   const [powerTouched, setPowerTouched] = useState(false);
   const [sceneBusy, setSceneBusy] = useState(false);
-  const [status, setStatus] = useState("Aim for the pocket and release with steady power.");
+  const [status, setStatus] = useState("Swipe up the lane to bowl. Flick faster for more power.");
+  const swipeRef = useRef<{ pointerId: number; start: SwipeSample; tail: SwipeSample[] } | null>(null);
+  const [swipeTrail, setSwipeTrail] = useState<{ from: SwipeSample; to: SwipeSample } | null>(null);
 
   const state = useMemo(() => computeBowlingState(rolls, seatCount), [rolls, seatCount]);
   const isMyTurn = !state.gameOver && (
@@ -98,16 +103,71 @@ export function BowlingCanvas({
     window.dispatchEvent(new CustomEvent("hearthaven:bowling-controls"));
   }, [aim, power]);
 
-  async function handleRoll() {
-    if (!canRoll) return;
+  async function handleRoll(nextAim = aim, nextPower = power) {
+    if (!canAdjust || nextPower < 0.12) return;
     setStatus("Sending your roll to the shared lane...");
-    const result = await onRoll({ aim, power });
+    const result = await onRoll({ aim: nextAim, power: nextPower });
     if (!result.ok) setStatus(result.reason ?? "That roll could not be saved. Try again.");
     else {
       setPower(0);
       setPowerTouched(false);
       setStatus("Roll accepted. Waiting for the shared lane animation.");
     }
+  }
+
+  function sampleAt(event: ReactPointerEvent<HTMLDivElement>): SwipeSample {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top, t: performance.now() };
+  }
+
+  function onSwipeStart(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!canAdjust) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const sample = sampleAt(event);
+    swipeRef.current = { pointerId: event.pointerId, start: sample, tail: [sample] };
+    setSwipeTrail({ from: sample, to: sample });
+    setStatus("Flick up the lane and let go.");
+  }
+
+  function onSwipeMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const swipe = swipeRef.current;
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    const sample = sampleAt(event);
+    swipe.tail.push(sample);
+    // Only recent samples feed velocity, so a long drag stays cheap.
+    if (swipe.tail.length > 32) swipe.tail.splice(0, swipe.tail.length - 32);
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const preview = readSwipe(swipe.start, swipe.tail, rect.width, rect.height);
+    if (preview) {
+      setAim(preview.aim);
+      setPower(preview.power);
+      setPowerTouched(true);
+    }
+    setSwipeTrail({ from: swipe.start, to: sample });
+  }
+
+  function onSwipeEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    const swipe = swipeRef.current;
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    swipeRef.current = null;
+    setSwipeTrail(null);
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    swipe.tail.push(sampleAt(event));
+    const result = readSwipe(swipe.start, swipe.tail, rect.width, rect.height);
+    if (!result) {
+      setStatus("That was a tap, not a throw. Swipe up the lane to bowl.");
+      return;
+    }
+    setAim(result.aim);
+    setPower(result.power);
+    setPowerTouched(true);
+    if (result.power < 0.12) {
+      setStatus("Too gentle — flick a little quicker to get the ball down the lane.");
+      return;
+    }
+    void handleRoll(result.aim, result.power);
   }
 
   useEffect(() => {
@@ -155,7 +215,7 @@ export function BowlingCanvas({
           this.bannerText = this.add.text(GAME_WIDTH / 2, 38, "", {
             fontFamily: "Nunito, sans-serif", fontSize: "22px", fontStyle: "900", color: "#5b3f3f", align: "center",
           }).setOrigin(0.5).setDepth(7000);
-          this.helpText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 34, "Set aim and power below, then roll.", {
+          this.helpText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 34, "Swipe up the lane to bowl.", {
             fontFamily: "Nunito, sans-serif", fontSize: "15px", fontStyle: "900", color: "#6c4d4d", align: "center",
           }).setOrigin(0.5).setDepth(7000);
           this.laneGuide = this.add.graphics().setDepth(6750);
@@ -249,7 +309,7 @@ export function BowlingCanvas({
           }
           const turnName = names[state.currentSeat] ?? `Player ${state.currentSeat + 1}`;
           this.bannerText.setText(`${turnName} · frame ${state.currentFrame + 1}, ball ${state.ballInFrame + 1}`);
-          this.helpText.setText("Aim → choose power → roll → score → next ball.");
+          this.helpText.setText("Swipe up the lane to bowl.");
         }
 
         private animateCanonicalRoll(canonicalRolls: BowlingRoll[], newestIndex: number) {
@@ -385,11 +445,60 @@ export function BowlingCanvas({
 
   return (
     <div className="grid gap-3">
-      <div className="overflow-hidden rounded-lg border border-cream-300 bg-cream-50 shadow-sm">
+      <div className="relative overflow-hidden rounded-lg border border-cream-300 bg-cream-50 shadow-sm">
         <div ref={mountRef} className="aspect-[920/560] w-full" />
+
+        {/* Swipe surface. touch-action:none so a flick bowls instead of
+            scrolling the page on a phone. */}
+        <div
+          className={cn(
+            "absolute inset-0 touch-none select-none",
+            canAdjust ? "cursor-grab active:cursor-grabbing" : "pointer-events-none",
+          )}
+          onPointerCancel={onSwipeEnd}
+          onPointerDown={onSwipeStart}
+          onPointerMove={onSwipeMove}
+          onPointerUp={onSwipeEnd}
+        >
+          {swipeTrail && (
+            <svg className="pointer-events-none absolute inset-0 size-full" aria-hidden="true">
+              <line
+                x1={swipeTrail.from.x}
+                y1={swipeTrail.from.y}
+                x2={swipeTrail.to.x}
+                y2={swipeTrail.to.y}
+                stroke="#8E70BD"
+                strokeWidth={5}
+                strokeLinecap="round"
+                strokeDasharray="10 8"
+                opacity={0.85}
+              />
+              <circle cx={swipeTrail.from.x} cy={swipeTrail.from.y} r={9} fill="#D87E8C" opacity={0.9} />
+            </svg>
+          )}
+
+          {canAdjust && !swipeTrail && (
+            <p className="pointer-events-none absolute inset-x-0 bottom-3 text-center text-xs font-black uppercase tracking-normal text-ink-700/70">
+              Swipe up the lane to bowl
+            </p>
+          )}
+
+          {swipeTrail && (
+            <div className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-40 rounded-full bg-white/90 px-3 py-1.5 text-center shadow">
+              <span className="text-xs font-black text-ink-800">{Math.round(power * 100)}% · {aimLabel(aim)}</span>
+              <span className="mt-1 block h-1.5 w-full overflow-hidden rounded-full bg-cream-200">
+                <span className="block h-full rounded-full bg-blush-500 transition-[width]" style={{ width: `${Math.round(power * 100)}%` }} />
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="grid gap-4 rounded-lg border border-lavender-300/45 bg-white/88 p-4 shadow-sm md:grid-cols-[1fr_1fr_auto] md:items-end">
+      <details className="rounded-lg border border-lavender-300/45 bg-white/88 shadow-sm">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-extrabold text-ink-800">
+          Prefer sliders? Open the precision controls
+        </summary>
+        <div className="grid gap-4 border-t border-lavender-300/30 p-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
         <label className="grid gap-2 text-sm font-extrabold text-ink-800">
           <span className="flex items-center justify-between gap-2"><span>Aim</span><span className="text-xs text-lavender-600">{aimLabel(aim)}</span></span>
           <span className="grid grid-cols-[40px_1fr_40px] items-center gap-2">
@@ -419,10 +528,11 @@ export function BowlingCanvas({
           <span className="flex justify-between text-[11px] font-bold text-ink-500"><span>Soft</span><span>Balanced</span><span>Full</span></span>
         </label>
 
-        <Button type="button" size="lg" disabled={!canRoll} onClick={() => void handleRoll()} className="w-full md:w-auto">
-          <CircleDot /> {sceneBusy ? "Pins falling..." : rollLocked ? "Confirming..." : !isMyTurn ? "Friend's turn" : !powerTouched || power < 0.12 ? "Choose power" : "Roll ball"}
-        </Button>
-      </div>
+          <Button type="button" size="lg" disabled={!canRoll} onClick={() => void handleRoll()} className="w-full md:w-auto">
+            <CircleDot /> {sceneBusy ? "Pins falling..." : rollLocked ? "Confirming..." : !isMyTurn ? "Friend's turn" : !powerTouched || power < 0.12 ? "Choose power" : "Roll ball"}
+          </Button>
+        </div>
+      </details>
 
       <p aria-live="polite" className="rounded-lg border border-honey-500/30 bg-honey-100/60 px-3 py-2 text-sm font-bold text-ink-700">
         {status}

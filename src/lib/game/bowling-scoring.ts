@@ -508,3 +508,42 @@ export function computeBowlingState(rolls: BowlingRoll[], seatCount = 2): Bowlin
     winnerSeats,
   };
 }
+
+function clampSwipe(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+/* Swipe feel. Distances are fractions of the lane box, not pixels, so a
+   phone and a desktop need the same flick — a big screen must not mean a
+   free strike. Velocity comes from the last ~110ms of the swipe, so the
+   throw is the flick at the end, not a slow drag with a twitch on top.
+   These are the calibration knobs: raise MAX_SPEED if full power is too
+   easy, raise AIM_SPAN if the lane feels twitchy. */
+export const SWIPE_MIN_TRAVEL = 0.12;
+export const SWIPE_MIN_SPEED = 0.45;
+export const SWIPE_MAX_SPEED = 2.6;
+export const SWIPE_AIM_SPAN = 0.22;
+export const SWIPE_VELOCITY_WINDOW_MS = 110;
+
+export type SwipeSample = { x: number; y: number; t: number };
+
+/* Reads a swipe into the aim/power the lane already understands.
+   `start` is where the finger landed (aim is measured from there); `tail`
+   is the recent samples (velocity is measured across those). */
+export function readSwipe(start: SwipeSample, tail: SwipeSample[], width: number, height: number) {
+  const last = tail[tail.length - 1];
+  if (!last || width <= 0 || height <= 0) return null;
+
+  const travel = (start.y - last.y) / height;
+  if (travel < SWIPE_MIN_TRAVEL) return null;
+
+  const cutoff = last.t - SWIPE_VELOCITY_WINDOW_MS;
+  const from = tail.find((sample) => sample.t >= cutoff) ?? start;
+  const seconds = Math.max(0.016, (last.t - from.t) / 1000);
+  const speed = ((from.y - last.y) / height) / seconds;
+
+  return {
+    aim: clampSwipe((last.x - start.x) / width / SWIPE_AIM_SPAN, -1, 1),
+    power: clampSwipe((speed - SWIPE_MIN_SPEED) / (SWIPE_MAX_SPEED - SWIPE_MIN_SPEED), 0, 1),
+  };
+}

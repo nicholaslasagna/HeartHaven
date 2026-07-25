@@ -25,7 +25,16 @@ import {
 } from "@/lib/game/pool-physics";
 import { cn } from "@/lib/utils";
 
-type PoolPhase = "ready" | "aiming" | "resolving" | "game-over";
+type PoolPhase = "ready" | "aiming" | "resolving" | "watching" | "game-over";
+
+/* Fixed physics step. Both the shooter ("resolving") and the watcher
+   ("watching") advance the table in identical increments, so the same start
+   state plus the same angle/power produces the same roll on both screens
+   regardless of frame rate. The server's settled positions still win at the
+   end — this only makes the correction invisible instead of a teleport. */
+const POOL_FIXED_DT = 1 / 120;
+/* Watchdog: a replay that somehow never settles must not strand the table. */
+const POOL_MAX_REPLAY_STEPS = 120 * 12;
 
 type HudState = {
   phase: PoolPhase;
@@ -397,6 +406,11 @@ export function PoolCanvas({
   const effectsRef = useRef<SparkleEffect[]>([]);
   const reportedGameOverRef = useRef(false);
   const lastCanonicalKeyRef = useRef<string | null>(null);
+  /* Authoritative table held back until the opponent's replay finishes. */
+  const pendingSyncRef = useRef<PoolSessionMetadata | null>(null);
+  const lastSyncedShotNumberRef = useRef<number | null>(null);
+  const replayStepsRef = useRef(0);
+  const physicsCarryRef = useRef(0);
   const [hud, setHud] = useState<HudState>(INITIAL_HUD);
   const hudRef = useRef<HudState>(INITIAL_HUD);
   const [remainingBalls, setRemainingBalls] = useState(POOL_OBJECT_BALL_COUNT);
@@ -409,6 +423,7 @@ export function PoolCanvas({
   const canShoot =
     !submittingShot &&
     hud.phase !== "resolving" &&
+    hud.phase !== "watching" &&
     hud.phase !== "game-over" &&
     (!isMultiplayer || (isMyTurn && !sessionState?.gameOver));
 
@@ -437,35 +452,86 @@ export function PoolCanvas({
     if (!isMultiplayer) resetRound();
   }, [isMultiplayer, roundKey, resetRound]);
 
+  /* Snap the table to the server's copy. Every sync path ends here, which is
+     what lets the replay below trust its own starting positions. */
+  const applySessionState = useCallback(
+    (state: PoolSessionMetadata) => {
+      ballsRef.current = clonePoolBalls(state.balls);
+      dragRef.current = EMPTY_DRAG;
+      activeShotRef.current = null;
+      pottedThisShotRef.current = new Set();
+      scratchedThisShotRef.current = false;
+      settleFramesRef.current = 0;
+      replayStepsRef.current = 0;
+      pendingSyncRef.current = null;
+      setPowerPreview(0);
+      setRemainingBalls(countRemainingObjectBalls(ballsRef.current));
+
+      const mine = mySeatIndex !== null && state.currentSeat === mySeatIndex;
+      const score = mySeatIndex === null ? Math.max(...state.scores, 0) : (state.scores[mySeatIndex] ?? 0);
+      const lastShot = state.lastShot?.message
+        || (mine ? "Your turn. Drag from the cue ball to shoot." : `Waiting for ${currentPlayerName}.`);
+      commitHud({
+        phase: state.gameOver ? "game-over" : "ready",
+        score,
+        shotsTaken: state.shotNumber,
+        message: state.gameOver
+          ? "Shared table complete. Claim your reward when ready."
+          : mine
+            ? "Your turn. Aim and choose power."
+            : `Waiting for ${currentPlayerName} to shoot.`,
+        lastShot,
+      });
+    },
+    [commitHud, currentPlayerName, mySeatIndex],
+  );
+
   useEffect(() => {
     if (!isMultiplayer || !sessionState) return;
     if (lastCanonicalKeyRef.current === canonicalKey) return;
     lastCanonicalKeyRef.current = canonicalKey;
 
-    ballsRef.current = clonePoolBalls(sessionState.balls);
-    dragRef.current = EMPTY_DRAG;
-    activeShotRef.current = null;
-    pottedThisShotRef.current = new Set();
-    scratchedThisShotRef.current = false;
-    settleFramesRef.current = 0;
-    setPowerPreview(0);
-    setRemainingBalls(countRemainingObjectBalls(ballsRef.current));
+    const shot = sessionState.lastShot;
+    const previousShotNumber = lastSyncedShotNumberRef.current;
+    lastSyncedShotNumberRef.current = sessionState.shotNumber;
 
-    const score = mySeatIndex === null ? Math.max(...sessionState.scores, 0) : (sessionState.scores[mySeatIndex] ?? 0);
-    const lastShot = sessionState.lastShot?.message
-      || (isMyTurn ? "Your turn. Drag from the cue ball to shoot." : `Waiting for ${currentPlayerName}.`);
-    commitHud({
-      phase: sessionState.gameOver ? "game-over" : "ready",
-      score,
-      shotsTaken: sessionState.shotNumber,
-      message: sessionState.gameOver
-        ? "Shared table complete. Claim your reward when ready."
-        : isMyTurn
-          ? "Your turn. Aim and choose power."
-          : `Waiting for ${currentPlayerName} to shoot.`,
-      lastShot,
-    });
-  }, [canonicalKey, commitHud, currentPlayerName, isMultiplayer, isMyTurn, mySeatIndex, sessionState]);
+    /* Show the opponent's shot instead of teleporting the balls to where it
+       ended. We already hold the exact pre-shot table, so re-launching the
+       cue with the angle and power they logged rolls the same shot on this
+       screen. Strictly one shot ahead, and only someone else's — a fresh
+       join, a skipped update or my own shot all fall through to the snap. */
+    const canReplay =
+      shot != null &&
+      // A replay already rolling means we missed a shot; snap instead.
+      pendingSyncRef.current === null &&
+      previousShotNumber !== null &&
+      sessionState.shotNumber === previousShotNumber + 1 &&
+      mySeatIndex !== null &&
+      shot.seat !== mySeatIndex &&
+      Number.isFinite(shot.angle) &&
+      Number.isFinite(shot.power) &&
+      shot.power > 0 &&
+      !getCueBall(ballsRef.current).potted;
+
+    if (canReplay) {
+      pendingSyncRef.current = sessionState;
+      pottedThisShotRef.current = new Set();
+      scratchedThisShotRef.current = false;
+      settleFramesRef.current = 0;
+      replayStepsRef.current = 0;
+      dragRef.current = EMPTY_DRAG;
+      activeShotRef.current = null;
+      launchCueBall(ballsRef.current, { x: Math.cos(shot.angle), y: Math.sin(shot.angle) }, shot.power);
+      commitHud({
+        ...hudRef.current,
+        phase: "watching",
+        message: `${currentPlayerName} is shooting…`,
+      });
+      return;
+    }
+
+    applySessionState(sessionState);
+  }, [applySessionState, canonicalKey, commitHud, currentPlayerName, isMultiplayer, mySeatIndex, sessionState]);
 
   const addSparkle = useCallback((x: number, y: number, color: string, label?: string) => {
     sparkleIdRef.current += 1;
@@ -615,25 +681,45 @@ export function PoolCanvas({
         .map((effect) => ({ ...effect, age: effect.age + dt }))
         .filter((effect) => effect.age <= effect.life);
 
-      if (hudRef.current.phase === "resolving") {
-        const result = stepPoolPhysics(ballsRef.current, dt);
-        for (const id of result.pottedIds) {
-          if (!pottedThisShotRef.current.has(id)) {
-            const pottedBall = ballsRef.current.find((ball) => ball.id === id);
-            addSparkle(pottedBall?.x ?? POOL_CANVAS_WIDTH / 2, pottedBall?.y ?? POOL_CANVAS_HEIGHT / 2, id === "cue" ? "#df8094" : "#f6d98e", id === "cue" ? "Foul" : "+100");
+      const phase = hudRef.current.phase;
+      if (phase === "resolving" || phase === "watching") {
+        // Fixed steps, paced by real time: identical roll on both screens.
+        physicsCarryRef.current = Math.min(physicsCarryRef.current + dt, 0.25);
+        let moving = false;
+        while (physicsCarryRef.current >= POOL_FIXED_DT) {
+          physicsCarryRef.current -= POOL_FIXED_DT;
+          replayStepsRef.current += 1;
+          const result = stepPoolPhysics(ballsRef.current, POOL_FIXED_DT);
+          for (const id of result.pottedIds) {
+            if (!pottedThisShotRef.current.has(id)) {
+              const pottedBall = ballsRef.current.find((ball) => ball.id === id);
+              addSparkle(pottedBall?.x ?? POOL_CANVAS_WIDTH / 2, pottedBall?.y ?? POOL_CANVAS_HEIGHT / 2, id === "cue" ? "#df8094" : "#f6d98e", id === "cue" ? "Foul" : "+100");
+            }
+            pottedThisShotRef.current.add(id);
           }
-          pottedThisShotRef.current.add(id);
+          if (result.scratched) scratchedThisShotRef.current = true;
+          if (result.moving) moving = true;
         }
-        if (result.scratched) scratchedThisShotRef.current = true;
 
-        if (result.moving) {
+        if (moving) {
           settleFramesRef.current = 0;
         } else {
           settleFramesRef.current += 1;
-          if (settleFramesRef.current >= 10) {
-            finishShot();
-          }
         }
+
+        const pending = pendingSyncRef.current;
+        if (phase === "watching") {
+          // Settled, or the watchdog fired — either way the server wins now.
+          if (!pending) {
+            settleFramesRef.current = 0;
+          } else if (settleFramesRef.current >= 10 || replayStepsRef.current >= POOL_MAX_REPLAY_STEPS) {
+            applySessionState(pending);
+          }
+        } else if (settleFramesRef.current >= 10) {
+          finishShot();
+        }
+      } else {
+        physicsCarryRef.current = 0;
       }
 
       drawFrame(ctx, ballsRef.current, dragRef.current, effectsRef.current, hudRef.current.phase, canShoot);
@@ -642,7 +728,7 @@ export function PoolCanvas({
 
     animationFrame = window.requestAnimationFrame(draw);
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [addSparkle, canShoot, finishShot]);
+  }, [addSparkle, applySessionState, canShoot, finishShot]);
 
   const updateDrag = useCallback((point: { x: number; y: number }) => {
     const cue = getCueBall(ballsRef.current);
@@ -804,13 +890,13 @@ export function PoolCanvas({
             "rounded-xl border p-4 text-sm font-bold leading-5",
             hud.phase === "game-over"
               ? "border-honey-500/40 bg-honey-100/70 text-honey-900"
-              : hud.phase === "resolving"
+              : hud.phase === "resolving" || hud.phase === "watching"
                 ? "border-lavender-300/50 bg-lavender-100/70 text-lavender-900"
                 : "border-garden-300/50 bg-garden-100/60 text-garden-900",
           )}
         >
           <p className="text-xs font-black uppercase tracking-normal opacity-75">
-            {hud.phase === "aiming" ? "Aiming" : hud.phase === "resolving" ? "Balls settling" : hud.phase === "game-over" ? "Round complete" : "Ready"}
+            {hud.phase === "aiming" ? "Aiming" : hud.phase === "watching" ? `${currentPlayerName}'s shot` : hud.phase === "resolving" ? "Balls settling" : hud.phase === "game-over" ? "Round complete" : "Ready"}
           </p>
           <p className="mt-1">{hud.message}</p>
           <p className="mt-2 text-xs text-ink-600">{hud.lastShot}</p>
