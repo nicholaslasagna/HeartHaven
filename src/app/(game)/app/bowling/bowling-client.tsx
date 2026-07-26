@@ -216,7 +216,7 @@ function rollSymbols(frame: ReturnType<typeof computeBowlingState>["players"][nu
   });
 }
 
-function BowlingScoreboard({
+export function BowlingScoreboard({
   state,
   seatNames,
   mySeatIndex,

@@ -380,6 +380,7 @@ export class LanternRenderer {
   private readonly shadowGeometry: THREE.PlaneGeometry;
   private readonly glowTexture: THREE.Texture;
   private readonly glintMap: THREE.Texture;
+  private readonly cameraDirection = new THREE.Vector3();
   private sky?: THREE.Mesh;
   private keyLight?: THREE.DirectionalLight;
   private goalBeacon?: { root: THREE.Group; rings: THREE.Object3D[]; orb: THREE.Mesh; shaft: THREE.Mesh; light: THREE.PointLight };
@@ -462,7 +463,7 @@ export class LanternRenderer {
     const key = new THREE.DirectionalLight(theme.key, theme.keyPower);
     key.position.set(-16, 26, 34);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(1024, 1024);
     key.shadow.camera.near = 1;
     key.shadow.camera.far = 140;
     key.shadow.camera.left = -30;
@@ -1539,7 +1540,12 @@ export class LanternRenderer {
       }
 
       if (player.local) rig.root.position.set(player.x, player.y, ENTITY_Z);
-      else rig.root.position.lerp(new THREE.Vector3(player.x, player.y, ENTITY_Z), 0.35);
+      else {
+        const follow = 1 - Math.pow(0.65, Math.max(0, dt) * 60);
+        rig.root.position.x += (player.x - rig.root.position.x) * follow;
+        rig.root.position.y += (player.y - rig.root.position.y) * follow;
+        rig.root.position.z = ENTITY_Z;
+      }
 
       const wasAirborne = rig.motion === "jump" || rig.motion === "fall" || rig.motion === "pound";
       const nowGrounded = player.motion === "idle" || player.motion === "walk"
@@ -2160,7 +2166,7 @@ export class LanternRenderer {
 
     if (this.sky) {
       this.sky.position.set(cx, cy, 0).addScaledVector(
-        this.camera.getWorldDirection(new THREE.Vector3()), 120,
+        this.camera.getWorldDirection(this.cameraDirection), 120,
       );
       this.sky.quaternion.copy(this.camera.quaternion);
       this.sky.scale.set(halfWidth * 2.3, halfHeight * 2.3, 1);

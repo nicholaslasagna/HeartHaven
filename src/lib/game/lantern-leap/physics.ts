@@ -274,9 +274,9 @@ export function stepPlayer(body: PlayerBody, input: PlayerInput, grid: TileGrid,
   if (body.poundTimer > 0) {
     body.poundTimer -= dt;
     body.vx = 0;
-    body.vy = body.poundTimer > PHYSICS.POUND_HANG - 0.0001 ? 0 : -PHYSICS.POUND_SPEED;
+    body.vy = body.poundTimer > 0 ? 0 : -PHYSICS.POUND_SPEED;
   } else if (input.pound && !body.grounded && body.motion !== "pound") {
-    body.poundTimer = PHYSICS.POUND_HANG + 10; // cleared on landing
+    body.poundTimer = PHYSICS.POUND_HANG;
     body.motion = "pound";
     body.vy = 0;
     body.events.push("pound-start");

@@ -84,7 +84,9 @@ export function LanternLeapCanvas({
       return;
     }
 
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Keep the browser GPU budget predictable on Retina/tablet screens. The
+    // game remains sharp while avoiding expensive 2x/3x render targets.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;

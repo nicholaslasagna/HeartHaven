@@ -64,6 +64,21 @@ const results: string[] = [];
   assert.ok(Math.abs((runPeak - 1) - MAX_RUN_JUMP_HEIGHT) < 0.45, "running jump matches its constant");
   assert.ok(runPeak - 1 > hold, "running jumps clear more than standing ones");
 
+  // Ground pound: the short hang should lead to a landing, never suspend the
+  // keeper for the old accidental ten-second timer.
+  const pounder = createPlayerBody(5, 6);
+  let poundStarted = false;
+  let poundLanded = false;
+  for (let i = 0; i < 240; i += 1) {
+    stepPlayer(pounder, input({ pound: true }), grid, PHYSICS.STEP);
+    poundStarted ||= pounder.events.includes("pound-start");
+    if (pounder.events.includes("pound-land")) {
+      poundLanded = true;
+      break;
+    }
+  }
+  assert.ok(poundStarted && poundLanded && pounder.grounded, "ground pound hangs briefly and lands");
+
   // Coyote time fires just after the ledge, and expires rather than
   // granting a free mid-air jump.
   const ledge = flat();
