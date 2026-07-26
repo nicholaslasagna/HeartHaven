@@ -103,11 +103,11 @@ export const miniGames = [
   },
   {
     id: "moonberry-bowling",
-    title: "Strike Night 3D",
+    title: "Moonberry Bowling",
     reward: "Coins + hearts",
     description: "Aim, charge, curve, and knock pins across a bright eight-lane multiplayer venue.",
     status: "2–8 players",
-    href: "/app/strike-night-3d",
+    href: "/app/moonberry-bowling",
   },
   {
     id: "moonberry-pool",
@@ -212,9 +212,9 @@ export const partyGames = [
   },
   {
     id: "moonberry-bowling-party",
-    title: "Strike Night 3D",
+    title: "Moonberry Bowling",
     mode: "2 / 4 / 8 players",
-    href: "/app/strike-night-3d",
+    href: "/app/moonberry-bowling",
     description: "A bright multiplayer bowling venue with eight visible lanes, alternating turns, pin impacts, and official scoring.",
   },
   {
@@ -278,9 +278,9 @@ export const parkGames = [
   },
   {
     id: "park-bowling",
-    title: "Strike Night Kiosk",
+    title: "Moonberry Lanes",
     mode: "2 / 4 / 8 players",
-    href: "/app/strike-night-3d",
+    href: "/app/moonberry-bowling",
     description: "Step from the park into a colorful shared bowling night with named lanes and live scorecards.",
   },
   {

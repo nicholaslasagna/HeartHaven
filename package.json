@@ -17,8 +17,8 @@
     "upload:cloudflare": "opennextjs-cloudflare upload",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "check:lantern-leap": "esbuild checks/lantern-leap.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-ll.mjs --log-level=error && node node_modules/.cache/check-ll.mjs",
-    "check:strike-night": "esbuild checks/strike-night.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-sn.mjs --log-level=error && node node_modules/.cache/check-sn.mjs",
-    "check": "npm run check:lantern-leap && npm run check:strike-night"
+    "check": "npm run check:lantern-leap && npm run check:moonberry-bowling",
+    "check:moonberry-bowling": "esbuild checks/moonberry-bowling.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mb.mjs --log-level=error && node node_modules/.cache/check-mb.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",

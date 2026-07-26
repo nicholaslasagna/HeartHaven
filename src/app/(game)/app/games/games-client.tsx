@@ -82,7 +82,7 @@ function actionErrorCopy(reason: string) {
 
 function canonicalPartyGameKey(game: (typeof partyGames)[number]) {
   if (game.href === "/app/rock-paper-scissors") return "rock-paper-scissors";
-  if (game.href === "/app/bowling" || game.href === "/app/strike-night-3d") return "bowling";
+  if (game.href === "/app/bowling" || game.href === "/app/moonberry-bowling") return "bowling";
   if (game.href === "/app/pool") return "pool";
   return game.id.replace(/-party$/, "");
 }

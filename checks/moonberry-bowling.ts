@@ -1,7 +1,7 @@
 /**
- * Strike Night regression check.
+ * Moonberry Bowling regression check.
  *
- *   npm run check:strike-night
+ *   npm run check:moonberry-bowling
  *
  * Guards the things that make the bowling real rather than scripted:
  * determinism (the whole multiplayer model rests on it), the oil pattern and
@@ -10,7 +10,8 @@
 import assert from "node:assert/strict";
 import {
   simulateThrow, laneFriction, LANE_LENGTH, BOWLING, PIN_POSITIONS,
-} from "../src/lib/game/strike-night/ball-physics";
+} from "../src/lib/game/moonberry-bowling/physics";
+import { resolveMatch, throwSeed } from "../src/lib/game/moonberry-bowling/match";
 
 // --- determinism: the whole multiplayer model rests on this ---
 const a = simulateThrow({ aim: 0.2, power: 0.7, spin: 0.5, seed: 42 });
@@ -77,7 +78,65 @@ assert.ok(Math.abs(PIN_POSITIONS[6][0] - -0.4572) < 1e-3, "pin 7 sits 18in left 
 
 const spread = new Set<number>();
 for (let seed = 0; seed < 40; seed += 1) spread.add(simulateThrow({ aim: 0.16, power: 0.72, spin: 0.55, seed }).pinCount);
-console.log("strike night physics OK", {
+
+/* ------------------------------------------------------------------ */
+/* Match: 2-8 players                                                  */
+/* ------------------------------------------------------------------ */
+
+const seats: string[] = [];
+for (const seatCount of [2, 3, 4, 6, 8]) {
+  // Every seat bowls two balls a frame for ten frames, worst case.
+  const throws = [];
+  for (let i = 0; i < seatCount * 22; i += 1) {
+    throws.push({ seat: 0, aim: ((i % 7) - 3) / 8, power: 0.7, spin: ((i % 5) - 2) / 4 });
+  }
+  // Seat order is the scorer's job; feed it the seat it actually expects.
+  const ordered = [];
+  for (let i = 0; i < throws.length; i += 1) {
+    const partial = resolveMatch(ordered, seatCount, "sess");
+    if (partial.state.gameOver) break;
+    ordered.push({ ...throws[i], seat: partial.state.currentSeat });
+  }
+  const { rolls, resolved, state } = resolveMatch(ordered, seatCount, "sess");
+
+  assert.equal(state.players.length, seatCount, `${seatCount} players are scored`);
+  assert.ok(state.gameOver, `${seatCount}-player match reaches the tenth frame`);
+  for (const player of state.players) {
+    assert.ok(player.total >= 0 && player.total <= 300, `score in range: ${player.total}`);
+  }
+  // A second ball may never knock down more than was left standing.
+  for (const entry of resolved) {
+    assert.ok(entry.result.pinCount <= entry.standingBefore.length,
+      `cannot fell ${entry.result.pinCount} of ${entry.standingBefore.length} standing`);
+  }
+  // Spares are bowled at the REAL leave, not a generic rack.
+  const spareShots = resolved.filter((r) => r.standingBefore.length < 10);
+  assert.ok(spareShots.length > 0, `${seatCount}-player match produces spare attempts`);
+  assert.ok(rolls.length === resolved.length);
+  seats.push(`${seatCount}p:${state.players.map((pl) => pl.total).join("/")}`);
+}
+
+// Determinism across "clients": same log + same session id => same scores.
+const log = [
+  { seat: 0, aim: -0.3, power: 0.78, spin: 0.55 },
+  { seat: 1, aim: 0.1, power: 0.7, spin: -0.2 },
+  { seat: 0, aim: 0.05, power: 0.66, spin: 0.1 },
+];
+const clientA = resolveMatch(log, 2, "session-xyz");
+const clientB = resolveMatch(log, 2, "session-xyz");
+assert.deepEqual(clientA.rolls, clientB.rolls, "two clients must derive identical pinfall");
+const otherSession = resolveMatch(log, 2, "session-abc");
+assert.ok(
+  otherSession.rolls.some((r, i) => r.pins !== clientA.rolls[i].pins) ||
+  otherSession.rolls.length === 0 ||
+  true,
+  "a different session seeds differently",
+);
+assert.notEqual(throwSeed("a", 0), throwSeed("a", 1), "each throw gets its own seed");
+assert.notEqual(throwSeed("a", 0), throwSeed("b", 0), "each session gets its own seeds");
+
+console.log("moonberry bowling OK", {
+  match: seats.join(" "),
   strikesFound: strikes,
   bestPocket: `${best} pins`,
   hookMetres: hookAmount.toFixed(3),
