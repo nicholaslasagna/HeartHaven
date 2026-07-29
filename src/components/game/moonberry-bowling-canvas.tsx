@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import * as THREE from "three";
 import { MoonberryRenderer } from "@/lib/game/moonberry-bowling/renderer";
-import { simulateThrow, type ThrowResult } from "@/lib/game/moonberry-bowling/physics";
+import {
+  createPins,
+  HEAD_PIN_Z,
+  simulateThrow,
+  type ThrowResult,
+} from "@/lib/game/moonberry-bowling/physics";
 import { resolveMatch, throwSeed, type LoggedThrow } from "@/lib/game/moonberry-bowling/match";
 import {
   describeResult,
@@ -96,43 +101,66 @@ export function MoonberryBowlingCanvas({
   const [status, setStatus] = useState("Swipe up the lane to bowl.");
   const [preview, setPreview] = useState<MoonberryThrow | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [playbackBusy, setPlaybackBusy] = useState(false);
 
   const isMyTurn = mySeatIndex === null || currentSeat === mySeatIndex;
-  const canBowl = isMyTurn && !gameOver && !submitting;
+  const canBowl = isMyTurn && !gameOver && !submitting && !playbackBusy;
 
   const match = useMemo(
     () => resolveMatch(throws, seatCount, sessionId),
     [throws, seatCount, sessionId],
   );
+  const liveRef = useRef({ match, canBowl, currentSeat, preview, seatNames });
+  useEffect(() => {
+    liveRef.current = { match, canBowl, currentSeat, preview, seatNames };
+  }, [match, canBowl, currentSeat, preview, seatNames]);
 
-  /* Playback queue. A throw that lands in the log while we are watching the
-     previous one waits its turn rather than cutting it short. */
-  const playedRef = useRef(0);
-  const queueRef = useRef<Array<{ result: ThrowResult; callout: string | null }>>([]);
+  /* Playback queue. Move indexes are stable across polling hydrations, so a
+     server roll can enter this queue once and only once. */
+  const playbackRef = useRef({
+    initialized: false,
+    lastMoveIndex: -1,
+    sessionId: null as string | null,
+  });
+  const queueRef = useRef<Array<{ result: ThrowResult; callout: string | null; seat: number }>>([]);
 
   useEffect(() => {
-    const resolved = match.resolved;
-    if (resolved.length < playedRef.current) {
-      // Log shrank (a reset): drop everything and show the fresh rack.
-      playedRef.current = 0;
+    const playback = playbackRef.current;
+    if (playback.sessionId !== sessionId) {
+      playback.initialized = false;
+      playback.lastMoveIndex = -1;
+      playback.sessionId = sessionId;
       queueRef.current = [];
+      setPlaybackBusy(false);
+    }
+
+    if (!playback.initialized) {
+      playback.initialized = true;
+      playback.lastMoveIndex = throws.reduce(
+        (highest, entry, index) => Math.max(highest, entry.moveIndex ?? index),
+        -1,
+      );
       return;
     }
-    for (let i = playedRef.current; i < resolved.length; i += 1) {
-      const entry = resolved[i];
-      const ball = (match.rolls[i]?.pins ?? 0) === 10 && entry.standingBefore.length === 10 ? 0 : 1;
+
+    for (let index = 0; index < match.resolved.length; index += 1) {
+      const moveIndex = throws[index]?.moveIndex ?? index;
+      if (moveIndex <= playback.lastMoveIndex) continue;
+      const entry = match.resolved[index];
       queueRef.current.push({
         result: entry.result,
+        seat: entry.roll.seat,
         callout: describeResult(
           entry.result.pinCount,
           entry.standingBefore.length,
           entry.result.standing,
-          ball as 0 | 1,
+          entry.ballBefore as 0 | 1 | 2,
         ),
       });
+      playback.lastMoveIndex = moveIndex;
+      setPlaybackBusy(true);
     }
-    playedRef.current = resolved.length;
-  }, [match]);
+  }, [match.resolved, sessionId, throws]);
 
   /* -- scene -- */
   useEffect(() => {
@@ -143,12 +171,14 @@ export function MoonberryBowlingCanvas({
     try {
       webgl = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     } catch {
-      setError("Moonberry Bowling needs WebGL, and this browser refused to start it.");
+      queueMicrotask(() => {
+        setError("Moonberry Bowling needs WebGL, and this browser refused to start it.");
+      });
       return;
     }
     webgl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     webgl.shadowMap.enabled = true;
-    webgl.shadowMap.type = THREE.PCFSoftShadowMap;
+    webgl.shadowMap.type = THREE.PCFShadowMap;
     // The renderer authors its lights for physical tone mapping.
     webgl.toneMapping = THREE.ACESFilmicToneMapping;
     webgl.toneMappingExposure = 1.05;
@@ -159,7 +189,8 @@ export function MoonberryBowlingCanvas({
     try {
       scene = new MoonberryRenderer(seatCount);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Moonberry Bowling could not build the alley.");
+      const message = err instanceof Error ? err.message : "Moonberry Bowling could not build the alley.";
+      queueMicrotask(() => setError(message));
       webgl.dispose();
       mount.removeChild(webgl.domElement);
       return;
@@ -175,14 +206,10 @@ export function MoonberryBowlingCanvas({
     const observer = new ResizeObserver(resize);
     observer.observe(mount);
 
-    const idlePins: PinView[] = Array.from({ length: 10 }, (_, id) => ({
-      id, x: 0, z: 0, tilt: 0, tiltAxis: 0, spin: 0,
-    }));
-
     let raf = 0;
     let last = performance.now();
     let time = 0;
-    let playing: { result: ThrowResult; callout: string | null } | null = null;
+    let playing: { result: ThrowResult; callout: string | null; seat: number } | null = null;
     let playHead = 0;
     let settleHold = 0;
 
@@ -200,7 +227,8 @@ export function MoonberryBowlingCanvas({
       }
 
       let shot: CameraShot = "idle";
-      let pins = idlePins;
+      const live = liveRef.current;
+      let pins = restingRack(live.match);
       let ball = { x: 0, z: 0, roll: 0, inGutter: false };
       let callout: string | null = null;
 
@@ -211,33 +239,46 @@ export function MoonberryBowlingCanvas({
         const frame = frames[index];
         ball = frame.ball;
         pins = frame.pins;
-        const progress = index / Math.max(1, frames.length - 1);
-        shot = progress < 0.12 ? "aim" : progress < 0.62 ? "follow" : progress < 0.9 ? "pins" : "result";
-        callout = progress > 0.82 ? playing.callout : null;
+        const laneProgress = clamp(frame.ball.z / HEAD_PIN_Z, 0, 1);
+        const resultWindow = index >= Math.max(0, frames.length - 70);
+        shot = laneProgress < 0.05
+          ? "aim"
+          : laneProgress < 0.82
+            ? "follow"
+            : resultWindow
+              ? "result"
+              : "pins";
+        callout = resultWindow ? playing.callout : null;
 
         if (index >= frames.length - 1) {
           settleHold += dt;
-          if (settleHold > 1.8) playing = null;
+          if (settleHold > 1.8) {
+            playing = null;
+            if (queueRef.current.length === 0) setPlaybackBusy(false);
+          }
         }
-      } else if (canBowl) {
+      } else if (live.canBowl) {
         shot = "aim";
       }
+      const displaySeat = playing?.seat ?? live.currentSeat;
 
       const snapshot: BowlingSnapshot = {
         lane: {
           ball,
           pins,
-          aimGuide: !playing && canBowl ? { x: preview?.aim ?? 0, spin: preview?.spin ?? 0 } : null,
+          aimGuide: !playing && live.canBowl
+            ? { x: live.preview?.aim ?? 0, spin: live.preview?.spin ?? 0 }
+            : null,
           shot,
-          seat: currentSeat,
-          seatName: seatNames[currentSeat] ?? `Player ${currentSeat + 1}`,
+          seat: displaySeat,
+          seatName: live.seatNames[displaySeat] ?? `Player ${displaySeat + 1}`,
         },
-        scores: match.state.players.map((player, seat) => ({
+        scores: live.match.state.players.map((player, seat) => ({
           seat,
-          name: seatNames[seat] ?? `Player ${seat + 1}`,
+          name: live.seatNames[seat] ?? `Player ${seat + 1}`,
           total: player.total,
           frames: player.frames.map((f) => ({ rolls: f.rolls, running: f.cumulative })),
-          active: seat === currentSeat,
+          active: seat === displaySeat,
         })),
         time,
         callout,
@@ -367,6 +408,23 @@ export function MoonberryBowlingCanvas({
       </p>
     </div>
   );
+}
+
+function restingRack(match: ReturnType<typeof resolveMatch>): PinView[] {
+  const freshRack = match.state.ballInFrame === 0 || match.state.standingPins === 10;
+  const standing = freshRack
+    ? new Set(Array.from({ length: 10 }, (_, id) => id))
+    : new Set(match.resolved[match.resolved.length - 1]?.result.standing ?? []);
+  return createPins()
+    .filter((pin) => standing.has(pin.id))
+    .map((pin) => ({
+      id: pin.id,
+      x: pin.x,
+      z: pin.z,
+      tilt: 0,
+      tiltAxis: 0,
+      spin: 0,
+    }));
 }
 
 export { throwSeed, simulateThrow };

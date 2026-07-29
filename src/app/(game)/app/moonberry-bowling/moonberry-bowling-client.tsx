@@ -9,18 +9,21 @@ import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { resolveMatch, type LoggedThrow } from "@/lib/game/moonberry-bowling/match";
 import { seatCss } from "@/lib/game/moonberry-bowling/types";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 /**
  * Moonberry Bowling — session wiring for 2-8 keepers.
  *
  * The move log is the only source of truth. Each throw stores just what the
  * player did (aim, power, spin); every client replays those through the same
- * deterministic simulation to get identical pinfall and identical scores, so
- * nothing about the deck ever travels over the wire.
+ * deterministic simulation for the presentation, then reconciles it to the
+ * server-owned pin count. The lane therefore looks physical without allowing
+ * clients to invent scores or advance turns.
  */
 export function MoonberryBowlingClient() {
   const game = useMiniGameSession("bowling", { maxPlayers: 8 });
-  const { sessionId, seats, mySeat, moves, submitMove, handleReward } = game;
+  const { sessionId, seats, mySeat, moves, handleReward, refresh } = game;
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,12 +34,25 @@ export function MoonberryBowlingClient() {
       moves
         .filter((move) => move.move_type === "roll")
         .map((move) => {
-          const payload = move.payload as { aim?: number; power?: number; spin?: number };
+          const payload = move.payload as {
+            aim?: number;
+            power?: number;
+            spin?: number;
+            pins?: number;
+            rollSeed?: number;
+            standingBefore?: number;
+          };
           return {
+            moveIndex: move.move_index,
             seat: Number(move.seat_index ?? 0),
             aim: Number(payload?.aim ?? 0),
             power: Number(payload?.power ?? 0),
             spin: Number(payload?.spin ?? 0),
+            pins: Number.isFinite(payload?.pins) ? Number(payload.pins) : undefined,
+            rollSeed: Number.isFinite(payload?.rollSeed) ? Number(payload.rollSeed) : undefined,
+            standingBefore: Number.isFinite(payload?.standingBefore)
+              ? Number(payload.standingBefore)
+              : undefined,
           };
         }),
     [moves],
@@ -72,6 +88,10 @@ export function MoonberryBowlingClient() {
 
   const claimedRef = useRef(false);
   useEffect(() => {
+    claimedRef.current = false;
+  }, [sessionId]);
+
+  useEffect(() => {
     if (!match.state.gameOver || claimedRef.current) return;
     claimedRef.current = true;
     handleReward({
@@ -94,23 +114,59 @@ export function MoonberryBowlingClient() {
 
       pendingCountRef.current = throws.length + 1;
       setSubmitting(true);
-      const result = await submitMove("roll", {
-        aim: Number(details.aim.toFixed(4)),
-        power: Number(details.power.toFixed(4)),
-        spin: Number(details.spin.toFixed(4)),
-        frame: match.state.currentFrame,
-        ball: match.state.ballInFrame,
-      });
-      if (!result.ok) {
+      if (!sessionId || !isSupabaseConfigured()) {
         pendingCountRef.current = null;
         setSubmitting(false);
-        setError(result.reason ?? "That throw could not be saved.");
-        return { ok: false, reason: result.reason ?? "That throw could not be saved." };
+        const reason = "Moonberry Bowling needs an online lane so every player receives the same result.";
+        setError(reason);
+        return { ok: false, reason };
       }
+
+      const supabase = getSupabaseBrowserClient();
+      const aim = Number(details.aim.toFixed(4));
+      const power = Number(details.power.toFixed(4));
+      const spin = Number(details.spin.toFixed(4));
+      let rpc = await supabase.rpc("submit_bowling_roll", {
+        p_session_id: sessionId,
+        p_pins: 0,
+        p_aim: aim,
+        p_power: power,
+        p_frame: match.state.currentFrame,
+        p_ball: match.state.ballInFrame,
+        p_spin: spin,
+      });
+
+      // Migration 0079 adds p_spin. Until a deployment has applied it, use
+      // the established six-argument RPC and fold hook into the accepted
+      // line instead of silently falling back to generic, unguarded moves.
+      if (rpc.error && /p_spin|function.*submit_bowling_roll|schema cache|could not find/i.test(rpc.error.message)) {
+        rpc = await supabase.rpc("submit_bowling_roll", {
+          p_session_id: sessionId,
+          p_pins: 0,
+          p_aim: Math.max(-1, Math.min(1, aim + spin * 0.16)),
+          p_power: power,
+          p_frame: match.state.currentFrame,
+          p_ball: match.state.ballInFrame,
+        });
+      }
+
+      const row = (Array.isArray(rpc.data) ? rpc.data[0] : rpc.data) as {
+        ok?: boolean;
+        error_message?: string | null;
+      } | null;
+      if (rpc.error || !row?.ok) {
+        const reason = rpc.error?.message || String(row?.error_message ?? "That throw could not be saved.");
+        pendingCountRef.current = null;
+        setSubmitting(false);
+        setError(reason === "not your turn" ? "The lane already advanced to the next bowler." : reason);
+        return { ok: false, reason };
+      }
+
+      await refresh(sessionId);
       setError(null);
       return { ok: true };
     },
-    [submitting, match.state, sessionId, mySeatIndex, throws.length, submitMove],
+    [submitting, match.state, sessionId, mySeatIndex, throws.length, refresh],
   );
 
   const players = match.state.players;

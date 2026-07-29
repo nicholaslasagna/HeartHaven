@@ -41,7 +41,10 @@ export function BowlingPreview() {
         gameOver={false}
         mySeatIndex={null}
         onThrow={async (details) => {
-          setThrows((current) => [...current, { seat: currentSeat, ...details }]);
+          setThrows((current) => [
+            ...current,
+            { moveIndex: current.length, seat: currentSeat, ...details },
+          ]);
           return { ok: true };
         }}
         seatCount={seatCount}

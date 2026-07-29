@@ -6,35 +6,34 @@
  * turning a logged throw into a pin count using the real simulation, and
  * deriving the shared seed that keeps every client's simulation identical.
  *
- * WHY PINS ARE DERIVED, NOT STORED
+ * WHY THE SERVER RESULT AND BROWSER SIMULATION BOTH EXIST
  *
- * The old `submit_bowling_roll` RPC computed pins server-side from a simple
- * SQL model. That cannot run the rigid-body simulation, so the number the
- * server produced and the pins the player actually watched fall would
- * disagree — the scoreboard would contradict the screen.
- *
- * Instead the log stores only what the player did (aim, power, spin) and
- * every client replays `simulateThrow` to get the pinfall. The function is
- * deterministic and the seed comes from the session id and the throw's
- * position in the log, so all eight clients independently agree without
- * syncing a single pin.
- *
- * The trade this makes, stated plainly: pin counts are no longer computed
- * by the server, so a modified client could log an aim/power/spin it never
- * really performed. That exposure already existed — aim and power were
- * always client-supplied — and the reward path is unaffected, since payouts
- * are still capped server-side by the game's reward spec. It is a real
- * change in where trust sits, and worth knowing about.
+ * `submit_bowling_roll` owns membership, turn order, frame/ball validation,
+ * canonical pinfall and the roll seed. Browsers replay the richer rigid-body
+ * animation from that seed, then reconcile which pins fall to the canonical
+ * count. That keeps every score trustworthy and every client visually in
+ * agreement without streaming physics transforms sixty times per second.
  */
 
 import { computeBowlingState, type BowlingRoll, type BowlingState } from "@/lib/game/bowling-scoring";
-import { simulateThrow, type ThrowResult } from "./physics";
+import {
+  createPins,
+  HEAD_PIN_Z,
+  simulateThrow,
+  type ThrowFrame,
+  type ThrowResult,
+} from "./physics";
 
 export type LoggedThrow = {
+  moveIndex?: number;
   seat: number;
   aim: number;
   power: number;
   spin: number;
+  /** Canonical server result. Local preview throws omit this. */
+  pins?: number;
+  rollSeed?: number;
+  standingBefore?: number;
 };
 
 /**
@@ -57,6 +56,8 @@ export type ResolvedThrow = {
   /** Pins standing before this ball. */
   standingBefore: number[];
   roll: BowlingRoll;
+  frameBefore: number;
+  ballBefore: number;
 };
 
 /**
@@ -84,28 +85,123 @@ export function resolveMatch(
       ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
       : standingFromCount(before.standingPins, resolved[index - 1]);
 
-    const result = simulateThrow(
+    const seed = Number.isFinite(entry.rollSeed)
+      ? Number(entry.rollSeed)
+      : throwSeed(sessionId, entry.moveIndex ?? index);
+    const simulated = simulateThrow(
       {
         aim: entry.aim,
         power: entry.power,
         spin: entry.spin,
-        seed: throwSeed(sessionId, index),
+        seed,
       },
       standingBefore,
     );
+    const result = Number.isFinite(entry.pins)
+      ? reconcileCanonicalPinfall(simulated, standingBefore, Number(entry.pins))
+      : simulated;
 
     const roll: BowlingRoll = {
       seat: entry.seat,
       pins: result.pinCount,
       aim: entry.aim,
       power: entry.power,
-      rollSeed: throwSeed(sessionId, index),
+      rollSeed: seed,
     };
     rolls.push(roll);
-    resolved.push({ result, standingBefore, roll });
+    resolved.push({
+      result,
+      standingBefore,
+      roll,
+      frameBefore: before.currentFrame,
+      ballBefore: before.ballInFrame,
+    });
   }
 
   return { rolls, resolved, state: computeBowlingState(rolls, seatCount) };
+}
+
+/**
+ * The server owns the official pin count. The browser owns the richer rigid
+ * body playback, so reconcile the visual simulation to the accepted count
+ * instead of letting the scorecard and the deck disagree.
+ */
+function reconcileCanonicalPinfall(
+  result: ThrowResult,
+  standingBefore: number[],
+  canonicalPins: number,
+): ThrowResult {
+  const wanted = Math.max(0, Math.min(standingBefore.length, Math.floor(canonicalPins)));
+  const standingSet = new Set(standingBefore);
+  const simulatedKnocked = result.knocked.filter((id) => standingSet.has(id));
+  const chosen = simulatedKnocked.slice(0, wanted);
+  if (chosen.length < wanted) {
+    const original = createPins();
+    const remaining = standingBefore
+      .filter((id) => !chosen.includes(id))
+      .sort((a, b) => {
+        const pinA = original[a];
+        const pinB = original[b];
+        const aDistance = Math.abs(pinA.x - result.entryX) + (pinA.z - HEAD_PIN_Z) * 0.18;
+        const bDistance = Math.abs(pinB.x - result.entryX) + (pinB.z - HEAD_PIN_Z) * 0.18;
+        return aDistance - bDistance;
+      });
+    chosen.push(...remaining.slice(0, wanted - chosen.length));
+  }
+
+  const knockedSet = new Set(chosen);
+  const originalPins = createPins();
+  const impactIndex = Math.max(
+    0,
+    result.frames.findIndex((frame) => frame.ball.z >= HEAD_PIN_Z - 0.7),
+  );
+  const frames = result.frames.map((frame, frameIndex) => {
+    const progress = frameIndex < impactIndex
+      ? 0
+      : Math.min(1, (frameIndex - impactIndex) / 22);
+    return {
+      ...frame,
+      pins: frame.pins.map((pin) => reconcilePinFrame(
+        pin,
+        originalPins[pin.id],
+        standingSet.has(pin.id),
+        knockedSet.has(pin.id),
+        progress,
+      )),
+    } satisfies ThrowFrame;
+  });
+  const standing = standingBefore.filter((id) => !knockedSet.has(id));
+  return {
+    ...result,
+    frames,
+    knocked: chosen,
+    standing,
+    pinCount: wanted,
+    gutter: wanted === 0 && result.gutter,
+  };
+}
+
+function reconcilePinFrame(
+  pin: ThrowFrame["pins"][number],
+  original: ReturnType<typeof createPins>[number],
+  existedBefore: boolean,
+  shouldFall: boolean,
+  progress: number,
+): ThrowFrame["pins"][number] {
+  if (!existedBefore) return { ...pin, x: 999, z: 999, tilt: 1, spin: 0 };
+  if (!shouldFall) {
+    return { ...pin, x: original.x, z: original.z, tilt: 0, tiltAxis: 0, spin: 0 };
+  }
+  if (pin.tilt > 0 || progress <= 0) return pin;
+  const direction = pin.id % 2 === 0 ? 1 : -1;
+  return {
+    ...pin,
+    x: original.x + direction * progress * 0.13,
+    z: original.z + progress * 0.2,
+    tilt: progress,
+    tiltAxis: direction * 0.82,
+    spin: direction * progress * 3.2,
+  };
 }
 
 /**

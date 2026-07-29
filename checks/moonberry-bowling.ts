@@ -125,6 +125,21 @@ const log = [
 const clientA = resolveMatch(log, 2, "session-xyz");
 const clientB = resolveMatch(log, 2, "session-xyz");
 assert.deepEqual(clientA.rolls, clientB.rolls, "two clients must derive identical pinfall");
+
+// The database owns official pinfall. Visual rigid-body variation must never
+// change the accepted score or leave a different rack on another client.
+const canonicalLog = [
+  { moveIndex: 0, seat: 0, aim: -0.16, power: 0.72, spin: 0.4, pins: 3, rollSeed: 915 },
+  { moveIndex: 1, seat: 0, aim: 0.2, power: 0.68, spin: -0.3, pins: 7, rollSeed: 916 },
+];
+const canonicalA = resolveMatch(canonicalLog, 2, "server-session");
+const canonicalB = resolveMatch(canonicalLog, 2, "server-session");
+assert.deepEqual(canonicalA.rolls, canonicalB.rolls, "canonical rolls must match across clients");
+assert.deepEqual(canonicalA.rolls.map((roll) => roll.pins), [3, 7], "server pin counts must win");
+assert.deepEqual(canonicalA.resolved[0].result.standing.length, 7, "first canonical ball leaves seven");
+assert.deepEqual(canonicalA.resolved[1].result.standing, [], "canonical spare clears the remaining rack");
+assert.equal(canonicalA.state.players[0].frames[0].isSpare, true, "canonical 3/7 scores a spare");
+
 const otherSession = resolveMatch(log, 2, "session-abc");
 assert.ok(
   otherSession.rolls.some((r, i) => r.pins !== clientA.rolls[i].pins) ||
