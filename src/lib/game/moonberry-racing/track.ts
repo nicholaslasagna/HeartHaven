@@ -165,6 +165,47 @@ export function projectToCourse(course: Course, x: number, z: number, hint?: num
   return { t: bestT, distance: bestDist, offset: side, point, tangent };
 }
 
+/**
+ * What is under a kart at (x, z)?
+ *
+ * Everything the handling model needs, derived from the centreline: whether
+ * they are on the road or in the verge, how slick it is, the ground height
+ * (so banking and elevation are felt, not just seen), and how far past the
+ * edge they are, which drives the steering assist.
+ *
+ * `hintT` should be the kart's last known loop position; it keeps the
+ * projection cheap and stops a kart snapping to the wrong side of a crossover.
+ */
+export function surfaceAt(course: Course, x: number, z: number, hintT?: number) {
+  const projected = projectToCourse(course, x, z, hintT);
+  const half = projected.point.width / 2;
+  const overrun = Math.max(0, Math.abs(projected.offset) - half);
+  const kind = projected.point.surface ?? "road";
+
+  // Banking tilts the surface, so height depends on how far out you are.
+  const bank = projected.point.bank ?? 0;
+  const groundY = projected.point.y + Math.sin(bank) * projected.offset;
+
+  return {
+    // Past the tarmac is verge: slower, but still driveable.
+    offroad: overrun > 0 || kind === "offroad",
+    ice: kind === "ice",
+    conveyor: kind === "conveyor" ? 9 : undefined,
+    groundY,
+    edgeOverrun: overrun,
+    // Point back along the racing line when assisting.
+    edgeHeading: Math.atan2(projected.tangent.x, projected.tangent.z),
+    t: projected.t,
+    offset: projected.offset,
+    width: projected.point.width,
+    /** True once a kart is far enough off to be considered lost. */
+    lost: overrun > VERGE_LIMIT || groundY - 40 > 0,
+  };
+}
+
+/** How far beyond the verge a kart may stray before it is recovered. */
+export const VERGE_LIMIT = 14;
+
 /* ------------------------------------------------------------------ */
 /* Lap and checkpoint validation                                       */
 /* ------------------------------------------------------------------ */

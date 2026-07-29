@@ -24,6 +24,7 @@ import {
 } from "../src/lib/game/moonberry-racing/powerups";
 import { MOONBERRY_COURSES } from "../src/lib/game/moonberry-racing/courses";
 import { Race, COUNTDOWN_MS, FINISH_GRACE_MS } from "../src/lib/game/moonberry-racing/race";
+import { MoonberryRacingRenderer } from "../src/lib/game/moonberry-racing/renderer";
 
 const input = (o: Partial<KartInput> = {}): KartInput => ({ ...NO_KART_INPUT, ...o });
 const road: SurfaceInfo = { offroad: false, ice: false, groundY: 0 };
@@ -540,6 +541,92 @@ const results: string[] = [];
   assert.equal(again.racers.get("s")!.progress.lap, 0, "progress cleared");
 
   results.push("race      countdown 3-2-1 shared · host overrules claims · disconnect never stalls · DNF kept · rematch resets");
+}
+
+/* ------------------------------------------------------------------ */
+/* Renderer: framing and stage loading                                 */
+/* ------------------------------------------------------------------ */
+{
+  const course = MOONBERRY_COURSES[0];
+  const renderer = new MoonberryRacingRenderer(course);
+  const grid = startingGrid(course, 4);
+
+  const kartView = (i: number, over: Record<string, unknown> = {}) => ({
+    id: `p${i}`, seat: i, name: `P${i}`,
+    x: grid[i].position.x, y: grid[i].position.y, z: grid[i].position.z,
+    heading: grid[i].heading,
+    lean: 0, driftSide: 0 as const, driftCharge: 0, boosting: false,
+    airborne: false, spinning: false, local: i === 0, position: i + 1, finished: false,
+    ...over,
+  });
+  const snapshot = (karts = [0, 1, 2, 3].map((i) => kartView(i))) => ({
+    karts, raceTime: 1, followId: "p0", rearView: false, itemBoxesTaken: new Set<number>(),
+  });
+
+  renderer.update(snapshot() as never, 16 / 9, 0.016);
+  renderer.update(snapshot() as never, 16 / 9, 0.016);
+
+  const pole = grid[0].position;
+  const cam = renderer.camera.position;
+  const distance = Math.hypot(cam.x - pole.x, cam.y - pole.y, cam.z - pole.z);
+  assert.ok(distance > 7 && distance < 14, `chase camera sits 7-14m back, got ${distance.toFixed(1)}m`);
+
+  // Behind, not in front: the camera must never end up looking at the grille.
+  const fx = Math.sin(grid[0].heading);
+  const fz = Math.cos(grid[0].heading);
+  const alongHeading = (cam.x - pole.x) * fx + (cam.z - pole.z) * fz;
+  assert.ok(alongHeading < -5, `camera must be behind the kart, got ${alongHeading.toFixed(1)}`);
+  assert.ok(cam.y - pole.y > 2, "and raised above it");
+
+  // The kart must not swallow the frame.
+  const hfov = 2 * Math.atan(Math.tan((renderer.camera.fov * Math.PI / 180) / 2) * 16 / 9);
+  const frameWidth = 2 * distance * Math.tan(hfov / 2);
+  const fill = 1.9 / frameWidth;
+  assert.ok(fill < 0.2, `kart should fill under 20% of frame width, got ${(fill * 100).toFixed(0)}%`);
+
+  /* The grid must not put other karts between the camera and the pole
+     sitter, or the player cannot see their own kart on the line. */
+  for (let i = 1; i < 4; i += 1) {
+    const other = grid[i].position;
+    const toOther = (other.x - cam.x) * fx + (other.z - cam.z) * fz;
+    const toPole = (pole.x - cam.x) * fx + (pole.z - cam.z) * fz;
+    const lateral = Math.abs((other.x - cam.x) * -fz + (other.z - cam.z) * fx);
+    // Only a kart BETWEEN the camera and the pole sitter can block the view;
+    // one behind the camera is simply out of shot.
+    if (toOther > 0 && toOther < toPole) {
+      assert.ok(lateral > 1.6, `grid slot ${i} blocks the view of the pole sitter`);
+    }
+  }
+
+  const beforeFov = renderer.camera.fov;
+  for (let i = 0; i < 50; i += 1) {
+    renderer.update(snapshot([kartView(0, { boosting: true }), kartView(1), kartView(2), kartView(3)]) as never, 16 / 9, 0.016);
+  }
+  assert.ok(renderer.camera.fov > beforeFov + 4, "the field of view widens while boosting");
+  renderer.dispose();
+
+  // EVERY stage must load through the same path, with real geometry.
+  const built: string[] = [];
+  for (const stage of MOONBERRY_COURSES) {
+    const r = new MoonberryRacingRenderer(stage);
+    let meshes = 0;
+    r.scene.traverse((object) => { if ((object as { isMesh?: boolean }).isMesh) meshes += 1; });
+    assert.ok(meshes >= 8, `${stage.id} builds real geometry, got ${meshes} meshes`);
+    // A snapshot must render without throwing for any seat count.
+    for (const seats of [2, 8]) {
+      const g = startingGrid(stage, seats);
+      const karts = g.map((pose, i) => ({
+        id: `k${i}`, seat: i, name: `K${i}`,
+        x: pose.position.x, y: pose.position.y, z: pose.position.z, heading: pose.heading,
+        lean: 0, driftSide: 0 as const, driftCharge: 0.6, boosting: i === 0,
+        airborne: false, spinning: false, local: i === 0, position: i + 1, finished: false,
+      }));
+      r.update({ karts, raceTime: 5, followId: "k0", rearView: false, itemBoxesTaken: new Set([0]) } as never, 16 / 9, 0.016);
+    }
+    built.push(`${stage.id}(${meshes}m)`);
+    r.dispose();
+  }
+  results.push(`render    chase ${distance.toFixed(1)}m behind · kart ${(fill * 100).toFixed(0)}% of frame · stages ${built.join(" ")}`);
 }
 
 console.log(`\nMoonberry Racing: all checks passed\n${results.map((l) => `  ${l}`).join("\n")}\n`);
