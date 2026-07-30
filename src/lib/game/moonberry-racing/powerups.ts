@@ -178,17 +178,27 @@ export function stepEffects(effects: ActiveEffect[], dt: number): ActiveEffect[]
   return out;
 }
 
-/** Speed multiplier from everything currently affecting a racer. */
+/**
+ * Speed multiplier from everything currently affecting a racer.
+ *
+ * The STRONGEST boost and the strongest slow apply, rather than every effect
+ * multiplying together. Two speed items held at once used to compound to
+ * 2.25x, which turned the 38 m/s boost ceiling into 85 and let a lucky item
+ * run outrun the entire field. Stacking is capped by construction here, not
+ * by hoping the combination never comes up.
+ */
 export function speedMultiplier(effects: ActiveEffect[]) {
-  let multiplier = 1;
+  let boost = 1;
+  let slow = 1;
   for (const effect of effects) {
     if (effect.warning > 0) continue;
-    if (effect.id === "moonberry-burst") multiplier *= 1.45;
-    else if (effect.id === "shooting-star") multiplier *= 1.55;
-    else if (effect.id === "jam-bubble") multiplier *= 0.62;
-    else if (effect.id === "taffy-trail") multiplier *= 0.55;
+    if (effect.id === "moonberry-burst") boost = Math.max(boost, 1.45);
+    else if (effect.id === "shooting-star") boost = Math.max(boost, 1.55);
+    else if (effect.id === "jam-bubble") slow = Math.min(slow, 0.62);
+    else if (effect.id === "taffy-trail") slow = Math.min(slow, 0.55);
   }
-  return multiplier;
+  // A slow still bites while boosted, so a hit is never simply ignored.
+  return boost * slow;
 }
 
 /** True while an effect is actively taking control away. */

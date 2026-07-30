@@ -73,6 +73,16 @@ export const KART = {
   /** Gentle nudge away from the track edge; assistance, not autopilot. */
   EDGE_ASSIST: 1.6,
   RESPAWN_INVULN: 2.0,
+
+  /** A kart within this of the surface is ON it, not flying.
+      Without a real tolerance here, any slope or crest drops the ground away
+      from under a moving kart and it is flagged airborne for a frame — which
+      silently cancelled the drift and made drift boosts almost unobtainable
+      while actually racing. */
+  GROUND_SNAP: 0.4,
+  /** A drift survives this much genuine airtime, so a bump does not end it
+      but a real jump off a ramp still does. */
+  DRIFT_AIR_GRACE: 0.22,
 } as const;
 
 export type DriftSide = 0 | 1 | -1;
@@ -115,6 +125,8 @@ export type KartBody = {
 
   /** Held-action edge detection. */
   actionHeld: boolean;
+  /** Seconds continuously off the ground, for drift tolerance. */
+  airTime: number;
   events: KartEvent[];
 };
 
@@ -124,7 +136,7 @@ export function createKart(x: number, y: number, z: number, heading: number): Ka
     speed: 0, vy: 0, airborne: false,
     driftSide: 0, driftCharge: 0,
     boostTimer: 0, spinTimer: 0, invulnTimer: 0,
-    actionHeld: false, events: [],
+    actionHeld: false, airTime: 0, events: [],
   };
 }
 
@@ -199,7 +211,9 @@ export function stepKart(
 
   if (kart.driftSide !== 0) {
     // A drift ends the moment the button or the speed goes.
-    const stillDrifting = input.drift && kart.speed > KART.DRIFT_MIN_SPEED * 0.7 && !kart.airborne;
+    // Brief airtime over a bump must not cancel a drift; a real jump does.
+    const flying = kart.airborne && kart.airTime > KART.DRIFT_AIR_GRACE;
+    const stillDrifting = input.drift && kart.speed > KART.DRIFT_MIN_SPEED * 0.7 && !flying;
 
     if (stillDrifting) {
       kart.driftCharge += dt / KART.DRIFT_CHARGE_TIME;
@@ -305,21 +319,31 @@ function integrate(kart: KartBody, surface: SurfaceInfo, dt: number) {
   kart.x += Math.sin(moveHeading) * kart.speed * dt;
   kart.z += Math.cos(moveHeading) * kart.speed * dt;
 
-  if (kart.airborne || kart.y > surface.groundY + 0.001) {
+  /* Ground contact. The tolerance matters: a kart following a descending
+     road is momentarily above the new surface height every frame, and
+     treating that as flight both cancelled drifts and fired spurious landing
+     effects. Only a genuine gap counts as airborne. */
+  const gap = kart.y - surface.groundY;
+  if (kart.airborne || gap > KART.GROUND_SNAP) {
     kart.vy -= KART.GRAVITY * dt;
     kart.y += kart.vy * dt;
     kart.airborne = true;
+    kart.airTime += dt;
     if (kart.y <= surface.groundY) {
       kart.y = surface.groundY;
       kart.vy = 0;
       kart.airborne = false;
+      kart.airTime = 0;
       // Landing keeps almost all momentum: ramps should reward, not punish.
       kart.speed *= KART.LANDING_MOMENTUM_KEEP;
       kart.events.push("land");
     }
   } else {
+    // Stick to the surface, following slopes and banking.
     kart.y = surface.groundY;
     kart.vy = 0;
+    kart.airborne = false;
+    kart.airTime = 0;
   }
 }
 

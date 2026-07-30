@@ -10,13 +10,14 @@
 
 import assert from "node:assert/strict";
 import {
-  KART, NO_KART_INPUT, chargeBand, createKart, stepKart,
+  KART, NO_KART_INPUT, chargeBand, createKart, stepKart, angleDelta,
   applyBoostPad, applyCollision, applySpinout, respawnKart,
   type KartInput, type SurfaceInfo,
 } from "../src/lib/game/moonberry-racing/kart";
 import {
   createLapProgress, updateLapProgress, racePositions, respawnPose, startingGrid,
-  validateCourse, sampleCourse, courseLength, courseTangent, projectToCourse, hazardPosition, type Course,
+  validateCourse, sampleCourse, courseLength, courseTangent, projectToCourse, hazardPosition,
+  surfaceAt, VERGE_LIMIT, type Course,
 } from "../src/lib/game/moonberry-racing/track";
 import {
   POWER_UPS, MAX_CONTROL_LOSS, rollPowerUp, pickupSeed, positionFraction,
@@ -26,6 +27,9 @@ import { MOONBERRY_COURSES } from "../src/lib/game/moonberry-racing/courses";
 import { Race, COUNTDOWN_MS, FINISH_GRACE_MS } from "../src/lib/game/moonberry-racing/race";
 import { MoonberryRacingRenderer } from "../src/lib/game/moonberry-racing/renderer";
 import { Arena, type CombatRacer } from "../src/lib/game/moonberry-racing/combat";
+import {
+  canStartRace, deriveRaceSetup, DEFAULT_LAPS, MAX_LAPS, MIN_LAPS,
+} from "../src/lib/game/moonberry-racing/session";
 
 const input = (o: Partial<KartInput> = {}): KartInput => ({ ...NO_KART_INPUT, ...o });
 const road: SurfaceInfo = { offroad: false, ice: false, groundY: 0 };
@@ -869,6 +873,331 @@ const results: string[] = [];
 
   results.push(`combat    crates grant+cooldown · projectile warns then slows · shield eats one · hazards hit (hop clears) · bumps shove not trap`);
   results.push(`mp items  remote karts claim nothing locally · broadcast pickup+use replicate · same event, same projectile · victim keeps authority`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Lobby settings and readiness                                        */
+/* ------------------------------------------------------------------ */
+{
+  const move = (type: string, profile: string, payload: unknown = {}) => ({
+    move_type: type, profile_id: profile, payload,
+  });
+  const first = MOONBERRY_COURSES[0].id;
+
+  // Defaults with an empty log.
+  const empty = deriveRaceSetup([], first);
+  assert.equal(empty.courseId, first);
+  assert.equal(empty.laps, DEFAULT_LAPS);
+  assert.equal(empty.items, true);
+  assert.equal(empty.startAt, null);
+  assert.equal(empty.readyIds.size, 0);
+
+  // Course, laps and power-ups all fold out of the log.
+  const configured = deriveRaceSetup([
+    move("course", "host", { courseId: MOONBERRY_COURSES[2].id }),
+    move("settings", "host", { laps: 5 }),
+    move("settings", "host", { items: false }),
+  ], first);
+  assert.equal(configured.courseId, MOONBERRY_COURSES[2].id);
+  assert.equal(configured.laps, 5);
+  assert.equal(configured.items, false);
+
+  // Lap count is CLAMPED, not trusted — the payload is client-supplied.
+  assert.equal(deriveRaceSetup([move("settings", "h", { laps: 999 })], first).laps, MAX_LAPS);
+  assert.equal(deriveRaceSetup([move("settings", "h", { laps: -4 })], first).laps, MIN_LAPS);
+  assert.equal(deriveRaceSetup([move("settings", "h", { laps: 2.7 })], first).laps, 2);
+  assert.equal(deriveRaceSetup([move("settings", "h", { laps: "x" })], first).laps, DEFAULT_LAPS);
+
+  // Ready toggles on and off per racer.
+  let setup = deriveRaceSetup([
+    move("ready", "a", { ready: true }),
+    move("ready", "b", { ready: true }),
+    move("ready", "a", { ready: false }),
+  ], first);
+  assert.ok(setup.readyIds.has("b"));
+  assert.ok(!setup.readyIds.has("a"), "cancelling ready clears it");
+
+  // Start gating.
+  assert.equal(canStartRace(["a"], new Set()), true, "solo needs no confirmation");
+  assert.equal(canStartRace(["a", "b"], new Set(["a"])), false, "one of two is not enough");
+  assert.equal(canStartRace(["a", "b"], new Set(["a", "b"])), true, "both confirmed starts");
+  const eight = ["a", "b", "c", "d", "e", "f", "g", "h"];
+  assert.equal(canStartRace(eight, new Set(eight.slice(0, 7))), false, "seven of eight waits");
+  assert.equal(canStartRace(eight, new Set(eight)), true, "all eight starts");
+
+  // A START clears readiness, so a rematch makes everyone confirm again —
+  // otherwise the second race begins the instant the host clicks.
+  setup = deriveRaceSetup([
+    move("ready", "a", { ready: true }),
+    move("ready", "b", { ready: true }),
+    move("start", "host", { startAt: 1000 }),
+  ], first);
+  assert.equal(setup.startAt, 1000);
+  assert.equal(setup.readyIds.size, 0, "a start clears readiness for the rematch");
+  assert.equal(canStartRace(["a", "b"], setup.readyIds), false, "so a rematch waits for confirmations");
+
+  // A later start supersedes an earlier one, whatever order they arrive in.
+  const rematch = deriveRaceSetup([
+    move("start", "host", { startAt: 5000 }),
+    move("start", "host", { startAt: 9000 }),
+  ], first);
+  assert.equal(rematch.startAt, 9000);
+  const outOfOrder = deriveRaceSetup([
+    move("start", "host", { startAt: 9000 }),
+    move("start", "host", { startAt: 5000 }),
+  ], first);
+  assert.equal(outOfOrder.startAt, 9000, "an older stamp never rewinds the race");
+
+  // An unknown course id falls back rather than throwing.
+  const bogus = deriveRaceSetup([move("course", "h", { courseId: "no-such-course" })], first);
+  assert.equal(MOONBERRY_COURSES.find((c) => c.id === bogus.courseId), undefined);
+
+  // Every client folding the same log reaches the same setup.
+  const log = [
+    move("course", "host", { courseId: MOONBERRY_COURSES[1].id }),
+    move("settings", "host", { laps: 4, items: false }),
+    move("ready", "a", { ready: true }),
+    move("ready", "b", { ready: true }),
+  ];
+  const clientA = deriveRaceSetup(log, first);
+  const clientB = deriveRaceSetup(log, first);
+  assert.equal(clientA.courseId, clientB.courseId);
+  assert.equal(clientA.laps, clientB.laps);
+  assert.equal(clientA.items, clientB.items);
+  assert.deepEqual([...clientA.readyIds].sort(), [...clientB.readyIds].sort());
+
+  // The chosen lap count must actually reach the race rules.
+  const base = MOONBERRY_COURSES[0];
+  const withLaps = { ...base, laps: clientA.laps };
+  const raced = new Race(withLaps, true);
+  raced.join("a", "A", 0, true);
+  assert.equal(raced.course.laps, 4, "the lobby's lap count overrides the course default");
+
+  results.push(`lobby     course+laps+items fold from the log · laps clamped ${MIN_LAPS}-${MAX_LAPS} · start needs all ready · rematch re-confirms`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Autopilot: are the tracks actually DRIVABLE?                        */
+/* ------------------------------------------------------------------ */
+{
+  /**
+   * A racing line follower using the REAL physics, not a shortcut.
+   *
+   * Geometry checks prove a circuit closes and has no impossible corner.
+   * They cannot prove it can be driven — that a kart at speed holds the
+   * road, that the corners can be taken, that three laps complete. So this
+   * drives each course with `stepKart`, `surfaceAt`, `Race` and `Arena`
+   * exactly as the browser does, and reports what happened.
+   *
+   * Steering is pure pursuit: aim at a point on the centreline some distance
+   * ahead, scaled by speed so it looks further on the straights. Drift is
+   * held through sustained corners and released in the sweet spot.
+   */
+  const autopilot = (course: Course, itemsEnabled = true) => {
+    const race = new Race(course, true);
+    race.join("ai", "Autopilot", 0, true);
+    race.beginCountdown(0);
+    race.tick(COUNTDOWN_MS + 1, 0.016);
+    const me = race.racers.get("ai")!;
+    const arena = new Arena(course, itemsEnabled);
+    const loop = courseLength(course);
+
+    const dt = KART.STEP;
+    let elapsed = 0;
+    let hint: number | undefined;
+    let respawns = 0;
+    let driftBoosts = 0;
+    let driftStarts = 0;
+    let earlyReleases = 0;
+    let spinouts = 0;
+    let pickups = 0;
+    let uses = 0;
+    let offroadSteps = 0;
+    let stalledSteps = 0;
+    let actionHeld = false;
+    let peakSpeed = 0;
+
+    const maxSteps = 240 * 400;
+    for (let step = 0; step < maxSteps && !me.progress.finished; step += 1) {
+      elapsed += dt;
+      race.raceTime = elapsed;
+
+      const surface = surfaceAt(course, me.kart.x, me.kart.z, hint);
+      hint = surface.t;
+      if (surface.offroad) offroadSteps += 1;
+
+      // Aim at the centreline ahead; further ahead the faster we go.
+      const lookahead = 12 + Math.abs(me.kart.speed) * 0.55;
+      const target = sampleCourse(course, surface.t + lookahead / loop);
+      const desired = Math.atan2(target.x - me.kart.x, target.z - me.kart.z);
+      const err = angleDelta(desired, me.kart.heading);
+      const steer = Math.max(-1, Math.min(1, err * 2.2));
+
+      // Drift through a sustained corner, and release inside the window.
+      const cornering = Math.abs(err) > 0.22;
+      const fastEnough = me.kart.speed > KART.DRIFT_MIN_SPEED + 1.5;
+      const wantDrift = cornering && fastEnough;
+      const band = chargeBand(me.kart.driftCharge);
+      const release = me.kart.driftSide !== 0 && band === "sweet";
+
+      // Named distinctly: shadowing the file-level `input` helper made this
+      // look self-referential to the compiler.
+      const aiInput: KartInput = {
+        steer,
+        throttle: 1,
+        brake: 0,
+        drift: wantDrift || (me.kart.driftSide !== 0 && !release && band !== "over"),
+        // Rising edge only, or the boost never fires.
+        action: release && !actionHeld,
+        item: false,
+      };
+      actionHeld = aiInput.action;
+
+      stepKart(me.kart, aiInput, surface, dt, Arena.speedFactor(me as never));
+      for (const event of me.kart.events) {
+        if (event === "drift-start") driftStarts += 1;
+        if (event === "boost-sweet") driftBoosts += 1;
+        if (event === "boost-early") earlyReleases += 1;
+        if (event === "spinout") spinouts += 1;
+      }
+      peakSpeed = Math.max(peakSpeed, me.kart.speed);
+
+      // Boost pads, exactly as the canvas applies them.
+      for (const pad of course.boostPads) {
+        const at = sampleCourse(course, pad.t);
+        if (Math.hypot(me.kart.x - at.x, me.kart.z - at.z) < pad.width * 0.6) applyBoostPad(me.kart);
+      }
+
+      for (const event of arena.step([me as never], elapsed, dt)) {
+        if (event.type === "pickup") pickups += 1;
+        if (event.type === "used") uses += 1;
+      }
+      // Fire whatever we picked up, so the item path is genuinely exercised.
+      if (me.item) {
+        arena.useItem(me as never, []);
+        uses += 1;
+      }
+
+      race.advanceProgress(me);
+
+      if (surface.edgeOverrun > VERGE_LIMIT || me.kart.y < -30) {
+        race.respawn("ai");
+        respawns += 1;
+        hint = undefined;
+      }
+      stalledSteps = Math.abs(me.kart.speed) < 1 ? stalledSteps + 1 : 0;
+      // Wedged against something for two solid seconds is a stuck track.
+      assert.ok(stalledSteps < 240 * 2, `${course.id}: kart wedged at (${me.kart.x.toFixed(0)}, ${me.kart.z.toFixed(0)})`);
+    }
+
+    return {
+      finished: me.progress.finished,
+      laps: me.progress.lap,
+      seconds: elapsed,
+      respawns,
+      driftBoosts,
+      driftStarts,
+      earlyReleases,
+      spinouts,
+      pickups,
+      uses,
+      offroadFraction: offroadSteps / Math.max(1, elapsed / dt),
+      peakSpeed,
+      bestLapMs: me.bestLapMs,
+    };
+  };
+
+  const summaries: string[] = [];
+  for (const course of MOONBERRY_COURSES) {
+    const run = autopilot(course);
+
+    // THE headline assertion: the track can be completed.
+    assert.ok(run.finished, `${course.id} must be completable — got ${run.laps}/${course.laps} laps in ${run.seconds.toFixed(0)}s`);
+    assert.equal(run.laps, course.laps, `${course.id}: all laps counted`);
+
+    // A drivable line should not need constant rescuing.
+    assert.ok(run.respawns <= 6, `${course.id}: too many recoveries (${run.respawns}) — the line falls off the road`);
+    // Nor should it spend most of its life in the verge.
+    assert.ok(run.offroadFraction < 0.35, `${course.id}: ${(run.offroadFraction * 100).toFixed(0)}% off-road — the track is too tight to follow`);
+
+    // DRIFT must actually work on these roads, not just in a lab.
+    // Drift must convert while racing. Conversion, not raw count: a gentle
+    // course simply offers fewer corners that need one.
+    if (run.driftStarts >= 8) {
+      const conversion = run.driftBoosts / run.driftStarts;
+      assert.ok(conversion > 0.25,
+        `${course.id}: drifts must reach the sweet spot while racing (${run.driftBoosts}/${run.driftStarts})`);
+    }
+    /* Top speed must stay inside the design ceiling. This is the guard that
+       catches speed effects compounding again: two items once multiplied to
+       2.25x and turned the 38 m/s boost cap into 85. */
+    assert.ok(run.peakSpeed <= KART.BOOST_SPEED * 1.6,
+      `${course.id}: peak ${run.peakSpeed.toFixed(1)} exceeds the design ceiling — speed effects are stacking`);
+    // And the kart must reach real speed, so boosts are meaningful.
+    assert.ok(run.peakSpeed > KART.MAX_SPEED, `${course.id}: should exceed base top speed via boost (peak ${run.peakSpeed.toFixed(1)})`);
+
+    // ITEMS must be collectable and usable while driving.
+    assert.ok(run.pickups >= 1, `${course.id}: crates must be reachable on the racing line (got ${run.pickups})`);
+    assert.ok(run.uses >= 1, `${course.id}: items must be usable while racing`);
+
+    // A sane lap time, so the circuit is neither trivial nor a slog.
+    assert.ok(run.seconds > 20 && run.seconds < 400, `${course.id}: race took ${run.seconds.toFixed(0)}s`);
+
+    summaries.push(
+      `${course.id.replace("moonberry-", "")}(${run.seconds.toFixed(0)}s ${run.driftBoosts}d ${run.pickups}i ${run.respawns}r)`,
+    );
+  }
+
+  /* DELIBERATE drifting on open road. A sweeping course may never force a
+     drift, but a player must still be able to start one on a wide straight
+     and be paid for timing it — that is the whole skill ceiling. */
+  for (const course of MOONBERRY_COURSES) {
+    // Widest control point: the most "open road" this course has.
+    let widest = 0;
+    course.points.forEach((point, index) => {
+      if (point.width > course.points[widest].width) widest = index;
+    });
+    const t = widest / course.points.length;
+    const at = sampleCourse(course, t);
+    const tangent = courseTangent(course, t);
+
+    const kart = createKart(at.x, at.y, at.z, Math.atan2(tangent.x, tangent.z));
+    let hint: number | undefined;
+    const drive = (over: Partial<KartInput>): void => {
+      const surface = surfaceAt(course, kart.x, kart.z, hint);
+      hint = surface.t;
+      stepKart(kart, { ...NO_KART_INPUT, ...over }, surface, KART.STEP);
+    };
+
+    // Build to racing speed on the straight.
+    for (let i = 0; i < 480; i += 1) drive({ throttle: 1 });
+    assert.ok(kart.speed > KART.DRIFT_MIN_SPEED,
+      `${course.id}: must reach drift speed on its widest road (got ${kart.speed.toFixed(1)})`);
+
+    // Hold a drift deliberately, then release in the sweet spot.
+    let engaged = false;
+    let boosted = false;
+    let held = false;
+    for (let i = 0; i < 400 && !boosted; i += 1) {
+      const band = chargeBand(kart.driftCharge);
+      const release = kart.driftSide !== 0 && band === "sweet";
+      drive({ throttle: 1, steer: 0.6, drift: true, action: release && !held });
+      held = release && !held;
+      if (kart.events.includes("drift-start")) engaged = true;
+      if (kart.events.includes("boost-sweet")) boosted = true;
+      if (kart.events.includes("spinout")) break;
+    }
+    assert.ok(engaged, `${course.id}: a drift must engage on open road`);
+    assert.ok(boosted, `${course.id}: a well-timed drift on open road must pay a boost`);
+    assert.ok(kart.boostTimer > 0, `${course.id}: and the boost must be live`);
+  }
+
+  // With power-ups off, nothing is collected and the race still completes.
+  const clean = autopilot(MOONBERRY_COURSES[0], false);
+  assert.ok(clean.finished, "a race with power-ups off still completes");
+  assert.equal(clean.pickups, 0, "and hands out no items at all");
+
+  results.push(`drivable  ${summaries.join(" ")} · items-off run completes clean`);
 }
 
 console.log(`\nMoonberry Racing: all checks passed\n${results.map((l) => `  ${l}`).join("\n")}\n`);

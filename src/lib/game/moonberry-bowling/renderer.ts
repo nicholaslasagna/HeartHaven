@@ -13,7 +13,6 @@ import {
   HEAD_PIN_Z,
   LANE_LENGTH,
   LANE_WIDTH,
-  PIN_HEIGHT,
 } from "./physics";
 import { seatColor, type BowlingSnapshot, type CameraShot, type PinView } from "./types";
 

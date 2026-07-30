@@ -8,6 +8,7 @@ import { Race, type RacerReport } from "@/lib/game/moonberry-racing/race";
 import { Arena, type CombatRacer } from "@/lib/game/moonberry-racing/combat";
 import type { PowerUp, PowerUpId } from "@/lib/game/moonberry-racing/powerups";
 import { sampleCourse, surfaceAt, VERGE_LIMIT, type Course } from "@/lib/game/moonberry-racing/track";
+import { playCozyCue } from "@/lib/game/cozy-audio";
 import { cn } from "@/lib/utils";
 
 /**
@@ -206,6 +207,8 @@ export function MoonberryRacingCanvas({
     let lastPadIndex = -1;
     let itemHeld = false;
     let heldItem: PowerUp | null = null;
+    let lastLap = 0;
+    let lastCountdownTick = -1;
 
     const loop = () => {
       raf = requestAnimationFrame(loop);
@@ -217,6 +220,14 @@ export function MoonberryRacingCanvas({
       const shared = startAtRef.current;
       if (shared !== null && race.startAt !== shared) race.adoptStart(shared);
       race.tick(Date.now(), dt);
+
+      if (race.phase === "countdown" && race.startAt !== null) {
+        const tick = Math.max(0, Math.ceil((race.startAt - Date.now()) / 1000));
+        if (tick !== lastCountdownTick) {
+          lastCountdownTick = tick;
+          playCozyCue(tick === 0 ? "lightsOut" : "countdown");
+        }
+      }
 
       const me = race.racers.get(localId);
       const racing = race.phase === "racing";
@@ -230,6 +241,7 @@ export function MoonberryRacingCanvas({
           steps += 1;
           const surface = surfaceAt(course, me.kart.x, me.kart.z, surfaceHint);
           surfaceHint = surface.t;
+          const wasDrifting = me.kart.driftSide !== 0;
           stepKart(
             me.kart,
             racing && !me.finishedAt ? input : NO_KART_INPUT,
@@ -237,6 +249,19 @@ export function MoonberryRacingCanvas({
             KART.STEP,
             Arena.speedFactor(me),
           );
+
+          /* Audio is driven off the physics events rather than the input, so
+             what you hear is what actually happened to the kart. */
+          for (const event of me.kart.events) {
+            if (event === "boost-sweet") playCozyCue("boost");
+            else if (event === "boost-early") playCozyCue("boostFail");
+            else if (event === "spinout") playCozyCue("spinout");
+            else if (event === "land") playCozyCue("landing");
+            else if (event === "collide") playCozyCue("bump");
+            else if (event === "pad") playCozyCue("boost");
+          }
+          // A scrub loop would retrigger every step, so throttle it.
+          if (me.kart.driftSide !== 0 && !wasDrifting) playCozyCue("drift");
 
           if (racing) {
             // Fire on the rising edge only, so holding the key is one use.
@@ -257,9 +282,13 @@ export function MoonberryRacingCanvas({
 
             const combatants = [...race.racers.values()] as CombatRacer[];
             for (const event of arena.step(combatants, race.raceTime, KART.STEP)) {
+              if (event.type === "hazard" && event.racerId === localId) playCozyCue("spinout");
               if (event.racerId !== localId) continue;
+              if (event.type === "used") playCozyCue("itemUse");
+              if (event.type === "hit") playCozyCue("bump");
               if (event.type === "pickup") {
                 heldItem = me.item;
+                playCozyCue("itemGet");
                 // Tell everyone which crate went, so it hides on their screen too.
                 callbacksRef.current.onItemEvent?.({
                   kind: "pickup",
@@ -293,8 +322,15 @@ export function MoonberryRacingCanvas({
 
         if (racing) race.advanceProgress(me);
 
+        if (me.progress.lap > lastLap) {
+          lastLap = me.progress.lap;
+          // The final lap gets its own fanfare; earlier laps a checkpoint ping.
+          playCozyCue(me.progress.lap === course.laps - 1 ? "finalLap" : "checkpoint");
+        }
+
         if (me.finishedAt !== null && !reportedFinish) {
           reportedFinish = true;
+          playCozyCue("finish");
           callbacksRef.current.onFinish?.(me.finishedAt, me.position);
         }
 

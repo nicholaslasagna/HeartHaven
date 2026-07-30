@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { ArrowLeft, Flag, Play, Trophy, Users } from "lucide-react";
+import { ArrowLeft, Check, Flag, Play, Trophy, Users } from "lucide-react";
 import { MoonberryRacingLoader } from "@/components/game/moonberry-racing-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { MOONBERRY_COURSES } from "@/lib/game/moonberry-racing/courses";
+import { canStartRace, deriveRaceSetup, MAX_LAPS, MIN_LAPS } from "@/lib/game/moonberry-racing/session";
 import { kartColor } from "@/lib/game/moonberry-racing/renderer";
 import type { RacerReport } from "@/lib/game/moonberry-racing/race";
 import type { ItemEvent } from "@/components/game/moonberry-racing-canvas";
@@ -46,24 +47,16 @@ export function MoonberryRacingClient() {
   const isHost = (mySeatIndex ?? 0) === 0;
 
   /* -- derived race state, straight off the ordered move log -- */
-  const raceSetup = useMemo(() => {
-    let courseId = MOONBERRY_COURSES[0].id;
-    let startAt: number | null = null;
-    for (const move of moves) {
-      const payload = move.payload as { courseId?: string; startAt?: number };
-      if (move.move_type === "course" && payload?.courseId) courseId = payload.courseId;
-      if (move.move_type === "start" && Number(payload?.startAt) > 0) {
-        // Later stamps win, so a rematch supersedes the previous race.
-        startAt = Math.max(startAt ?? 0, Number(payload.startAt));
-      }
-    }
-    return { courseId, startAt };
-  }, [moves]);
-
-  const course = useMemo(
-    () => MOONBERRY_COURSES.find((c) => c.id === raceSetup.courseId) ?? MOONBERRY_COURSES[0],
-    [raceSetup.courseId],
+  const raceSetup = useMemo(
+    () => deriveRaceSetup(moves, MOONBERRY_COURSES[0].id),
+    [moves],
   );
+
+  const course = useMemo(() => {
+    const base = MOONBERRY_COURSES.find((c) => c.id === raceSetup.courseId) ?? MOONBERRY_COURSES[0];
+    // A course ships a default lap count; the lobby's choice overrides it.
+    return base.laps === raceSetup.laps ? base : { ...base, laps: raceSetup.laps };
+  }, [raceSetup.courseId, raceSetup.laps]);
 
   const results = useMemo(
     () =>
@@ -152,6 +145,16 @@ export function MoonberryRacingClient() {
     if (!result.ok) setError(result.reason ?? "Could not change the course.");
   }, [submitMove]);
 
+  const setSettings = useCallback(async (next: { laps?: number; items?: boolean }) => {
+    const result = await submitMove("settings", next);
+    if (!result.ok) setError(result.reason ?? "Could not change the race settings.");
+  }, [submitMove]);
+
+  const toggleReady = useCallback(async (ready: boolean) => {
+    const result = await submitMove("ready", { ready });
+    if (!result.ok) setError(result.reason ?? "Could not update your ready state.");
+  }, [submitMove]);
+
   const claimedRef = useRef(false);
   const onFinish = useCallback(
     (ms: number, position: number) => {
@@ -167,6 +170,13 @@ export function MoonberryRacingClient() {
   useEffect(() => { claimedRef.current = false; }, [raceSetup.startAt]);
 
   const started = raceSetup.startAt !== null;
+  const myProfileId = mySeat?.profile_id ?? null;
+  const iAmReady = myProfileId !== null && raceSetup.readyIds.has(myProfileId);
+  const readyCount = racingSeats.filter((seat) => raceSetup.readyIds.has(seat.id)).length;
+  const everyoneReady = canStartRace(racingSeats.map((seat) => seat.id), raceSetup.readyIds);
+  const didNotFinish = racingSeats.filter(
+    (seat) => !results.some((entry) => entry.profileId === seat.id),
+  );
 
   return (
     <div className="grid gap-4">
@@ -175,7 +185,7 @@ export function MoonberryRacingClient() {
           <p className="text-sm font-extrabold uppercase tracking-normal text-lavender-700">Party circuit</p>
           <h1 className="mt-1 font-display text-3xl text-ink-900 sm:text-4xl">Moonberry Racing</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
-            Two to eight keepers, three laps, three courses. Hold <span className="font-black">Shift</span> to drift and
+            Two to eight keepers, three original circuits. Hold <span className="font-black">Shift</span> to drift and
             hit <span className="font-black">Space</span> in the sweet spot for a boost.
           </p>
         </div>
@@ -200,6 +210,7 @@ export function MoonberryRacingClient() {
         onReport={onReport}
         seats={racingSeats.length > 0 ? racingSeats : [{ id: "local", name: "You", seat: 0, local: true }]}
         startAt={raceSetup.startAt}
+        itemsEnabled={raceSetup.items}
         subscribeItems={subscribeItems}
         subscribeRemote={subscribeRemote}
       />
@@ -212,34 +223,74 @@ export function MoonberryRacingClient() {
           <p className="text-xs font-black uppercase tracking-normal text-ink-600">{course.name}</p>
         </div>
 
-        {isHost && !started && (
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+        {isHost && (
+          <div className="grid gap-2 sm:grid-cols-3 sm:items-end">
             <label className="grid gap-1 text-sm font-extrabold text-ink-800">
               Course
               <select
                 className="rounded-md border border-cream-300 bg-cream-50 px-3 py-2"
                 onChange={(event) => void pickCourse(event.target.value)}
-                value={course.id}
+                value={raceSetup.courseId}
               >
                 {MOONBERRY_COURSES.map((entry) => (
                   <option key={entry.id} value={entry.id}>{entry.name}</option>
                 ))}
               </select>
             </label>
-            <Button onClick={() => void startRace()}>
-              <Play /> Start race
-            </Button>
+            <label className="grid gap-1 text-sm font-extrabold text-ink-800">
+              Laps
+              <select
+                className="rounded-md border border-cream-300 bg-cream-50 px-3 py-2"
+                onChange={(event) => void setSettings({ laps: Number(event.target.value) })}
+                value={raceSetup.laps}
+              >
+                {Array.from({ length: MAX_LAPS - MIN_LAPS + 1 }, (_, i) => MIN_LAPS + i).map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 rounded-md border border-cream-300 bg-cream-50 px-3 py-2 text-sm font-extrabold text-ink-800">
+              <input
+                checked={raceSetup.items}
+                onChange={(event) => void setSettings({ items: event.target.checked })}
+                type="checkbox"
+              />
+              Power-ups
+            </label>
           </div>
         )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {racingSeats.length > 1 && (
+            <Button
+              onClick={() => void toggleReady(!iAmReady)}
+              variant={iAmReady ? "secondary" : "default"}
+            >
+              <Check /> {iAmReady ? "Ready — tap to cancel" : "I'm ready"}
+            </Button>
+          )}
+          {isHost && (
+            <Button disabled={!everyoneReady} onClick={() => void startRace()}>
+              {started ? <><Flag /> Rematch</> : <><Play /> Start race</>}
+            </Button>
+          )}
+          {racingSeats.length > 1 && (
+            <span className="text-xs font-black uppercase tracking-normal text-ink-500">
+              {readyCount}/{racingSeats.length} ready
+            </span>
+          )}
+        </div>
+
         {!isHost && !started && (
           <p className="rounded-md bg-cream-100 px-3 py-2 text-xs font-extrabold text-ink-600">
-            Waiting for the host to pick a course and start the race.
+            {course.name} · {raceSetup.laps} lap{raceSetup.laps === 1 ? "" : "s"} ·{" "}
+            {raceSetup.items ? "power-ups on" : "power-ups off"} — waiting for the host to start.
           </p>
         )}
-        {isHost && started && (
-          <Button onClick={() => void startRace()} variant="secondary">
-            <Flag /> Restart race
-          </Button>
+        {isHost && !everyoneReady && racingSeats.length > 1 && (
+          <p className="rounded-md bg-cream-100 px-3 py-2 text-xs font-extrabold text-ink-600">
+            Waiting for every racer to confirm before the lights go out.
+          </p>
         )}
 
         <ol className="grid gap-1.5">
@@ -259,7 +310,13 @@ export function MoonberryRacingClient() {
                   {seat.local && <span className="text-xs text-ink-500">(you)</span>}
                 </span>
                 <span className="font-mono text-xs">
-                  {finished ? `${(finished.ms / 1000).toFixed(2)}s` : started ? "racing" : "ready"}
+                  {finished
+                    ? `${(finished.ms / 1000).toFixed(2)}s`
+                    : started
+                      ? "racing"
+                      : raceSetup.readyIds.has(seat.id)
+                        ? "ready"
+                        : "waiting"}
                 </span>
               </li>
             );
@@ -269,11 +326,38 @@ export function MoonberryRacingClient() {
         {results.length > 0 && (
           <div className="grid gap-1.5 rounded-md border border-honey-500/30 bg-honey-100/50 p-3">
             <p className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-honey-800">
-              <Trophy className="size-3.5" /> Results
+              <Trophy className="size-3.5" /> Results · {course.name}
             </p>
             {results.map((entry, index) => (
-              <p className="text-sm font-extrabold text-ink-800" key={entry.profileId}>
-                {index + 1}. {entry.name} — {(entry.ms / 1000).toFixed(2)}s
+              <p
+                className="flex items-center justify-between gap-2 text-sm font-extrabold text-ink-800"
+                key={entry.profileId}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <span
+                    className="inline-block size-2.5 rounded-full"
+                    style={{ backgroundColor: `#${kartColor(entry.seatIndex).toString(16).padStart(6, "0")}` }}
+                  />
+                  {index + 1}. {entry.name}
+                </span>
+                <span className="font-mono text-xs">
+                  {(entry.ms / 1000).toFixed(2)}s
+                  {/* Gap to the winner reads faster than four absolute times. */}
+                  {index > 0 && (
+                    <span className="ml-2 text-ink-500">
+                      +{((entry.ms - results[0].ms) / 1000).toFixed(2)}
+                    </span>
+                  )}
+                </span>
+              </p>
+            ))}
+            {didNotFinish.map((seat) => (
+              <p
+                className="flex items-center justify-between gap-2 text-sm font-extrabold text-ink-500"
+                key={seat.id}
+              >
+                <span>{seat.name}</span>
+                <span className="font-mono text-xs">DNF</span>
               </p>
             ))}
           </div>

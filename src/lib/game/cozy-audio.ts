@@ -31,7 +31,22 @@ export type CozyCue =
   | "emote"
   | "laser"
   /** New: short, soft chime when a chat message is sent or received. */
-  | "speech";
+  | "speech"
+  /* Moonberry Racing. All synthesised from tones and filtered noise like the
+     rest of this file, so the game ships no audio assets at all. */
+  | "countdown"
+  | "lightsOut"
+  | "drift"
+  | "boost"
+  | "boostFail"
+  | "spinout"
+  | "landing"
+  | "bump"
+  | "checkpoint"
+  | "finalLap"
+  | "itemGet"
+  | "itemUse"
+  | "finish";
 
 type CozyAudioState = {
   context: AudioContext | null;
@@ -233,6 +248,68 @@ export function playCozyCue(cue: CozyCue) {
   const now = state.context.currentTime;
 
   switch (cue) {
+    /* -- Moonberry Racing -- */
+    case "countdown":
+      // A dry tick, so three of them read as a countdown rather than music.
+      playTone(state, 440, now, 0.09, "square", 0.05);
+      break;
+    case "lightsOut":
+      // Higher and longer than the ticks: unmistakably "go".
+      playTone(state, 880, now, 0.26, "square", 0.075);
+      playTone(state, 1174.66, now + 0.04, 0.3, "triangle", 0.05);
+      break;
+    case "drift":
+      // Filtered noise reads as tyres scrubbing; short, because it retriggers.
+      playNoise(state, now, 0.16, 0.05, 1400);
+      break;
+    case "boost":
+      // A rising pair — the reward for hitting the sweet spot.
+      playTone(state, 392, now, 0.12, "sawtooth", 0.07);
+      playTone(state, 659.25, now + 0.07, 0.22, "sawtooth", 0.08);
+      playNoise(state, now, 0.22, 0.045, 2600);
+      break;
+    case "boostFail":
+      // Deliberately dull and downward, so a mistimed release is audible.
+      playTone(state, 174.61, now, 0.16, "triangle", 0.06);
+      playTone(state, 138.59, now + 0.09, 0.14, "sine", 0.045);
+      break;
+    case "spinout":
+      playNoise(state, now, 0.42, 0.075, 900);
+      playTone(state, 233.08, now, 0.3, "sawtooth", 0.05);
+      playTone(state, 174.61, now + 0.16, 0.26, "sawtooth", 0.04);
+      break;
+    case "landing":
+      playNoise(state, now, 0.1, 0.055, 500);
+      break;
+    case "bump":
+      playNoise(state, now, 0.08, 0.06, 700);
+      playTone(state, 110, now, 0.09, "square", 0.04);
+      break;
+    case "checkpoint":
+      playTone(state, 659.25, now, 0.1, "triangle", 0.06);
+      playTone(state, 987.77, now + 0.07, 0.14, "sine", 0.05);
+      break;
+    case "finalLap":
+      // Three rising notes, so the last lap announces itself.
+      playTone(state, 523.25, now, 0.14, "triangle", 0.07);
+      playTone(state, 659.25, now + 0.12, 0.14, "triangle", 0.07);
+      playTone(state, 880, now + 0.24, 0.24, "sine", 0.075);
+      break;
+    case "itemGet":
+      playTone(state, 783.99, now, 0.08, "triangle", 0.055);
+      playTone(state, 1046.5, now + 0.06, 0.12, "sine", 0.05);
+      break;
+    case "itemUse":
+      playTone(state, 587.33, now, 0.1, "sawtooth", 0.055);
+      playNoise(state, now, 0.12, 0.035, 2000);
+      break;
+    case "finish":
+      playTone(state, 523.25, now, 0.16, "triangle", 0.08);
+      playTone(state, 659.25, now + 0.13, 0.16, "triangle", 0.08);
+      playTone(state, 783.99, now + 0.26, 0.16, "triangle", 0.08);
+      playTone(state, 1046.5, now + 0.39, 0.36, "sine", 0.085);
+      break;
+
     case "move":
       playTone(state, 392, now, 0.08, "sine", 0.11);
       playTone(state, 523.25, now + 0.06, 0.11, "triangle", 0.08);

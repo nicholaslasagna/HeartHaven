@@ -302,7 +302,6 @@ export function MoonberryBowlingCanvas({
     };
     // The alley is rebuilt only when the lane count changes; per-frame data
     // arrives through refs so this never tears down mid-throw.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seatCount]);
 
   /* -- swipe -- */
