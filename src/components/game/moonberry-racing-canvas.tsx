@@ -161,7 +161,14 @@ export function MoonberryRacingCanvas({
     const readInput = () => {
       const left = held.has("a") || held.has("arrowleft");
       const right = held.has("d") || held.has("arrowright");
-      input.steer = Number(right) - Number(left);
+      /* Left is POSITIVE steer, which looks backwards until you follow it
+         through. The simulation turns toward world +X as heading increases,
+         and the chase camera puts world +X on the LEFT of the screen — so
+         positive steer is a left turn on screen. The physics convention is
+         self-consistent and the autopilot depends on it, so the translation
+         from "player pressed D" to a steer value belongs here, at the input
+         boundary, rather than by flipping a sign inside stepKart. */
+      input.steer = Number(left) - Number(right);
       input.throttle = held.has("w") || held.has("arrowup") ? 1 : 0;
       input.brake = held.has("s") || held.has("arrowdown") ? 1 : 0;
       input.drift = held.has("shift");
@@ -239,7 +246,7 @@ export function MoonberryRacingCanvas({
         while (accumulator >= KART.STEP && steps < 20) {
           accumulator -= KART.STEP;
           steps += 1;
-          const surface = surfaceAt(course, me.kart.x, me.kart.z, surfaceHint);
+          const surface = surfaceAt(course, me.kart.x, me.kart.z, surfaceHint, me.kart.y);
           surfaceHint = surface.t;
           const wasDrifting = me.kart.driftSide !== 0;
           stepKart(

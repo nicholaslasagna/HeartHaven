@@ -17,6 +17,7 @@ import {
   courseTangent,
   hazardPosition,
   sampleCourse,
+  sampleShortcut,
   type Course,
   type SurfaceKind,
 } from "./track";
@@ -127,6 +128,7 @@ export class MoonberryRacingRenderer {
 
     this.buildLights();
     this.buildTrack();
+    this.buildShortcuts();
     this.buildRails();
     this.buildFeatures();
     this.buildSurround();
@@ -263,6 +265,74 @@ export class MoonberryRacingRenderer {
     verge.receiveShadow = true;
     verge.position.y -= 0.05;
     this.scene.add(verge);
+  }
+
+  /**
+   * Shortcut branches, drawn as their own ribbon.
+   *
+   * Tinted toward the course accent and slightly raised, so a shortcut reads
+   * as an alternate ROUTE rather than scenery — a player should be able to see
+   * the opportunity coming, which is the whole point of a risk/reward line.
+   */
+  private buildShortcuts() {
+    for (const shortcut of this.course.shortcuts) {
+      if (shortcut.points.length < 2) continue;
+
+      const samples = shortcut.points.length * SAMPLES_PER_POINT;
+      const positions: number[] = [];
+      const indices: number[] = [];
+
+      for (let i = 0; i <= samples; i += 1) {
+        const u = i / samples;
+        const point = sampleShortcut(shortcut, u);
+        const step = 1 / (samples * 2);
+        const ahead = sampleShortcut(shortcut, Math.min(1, u + step));
+        const behind = sampleShortcut(shortcut, Math.max(0, u - step));
+        const dx = ahead.x - behind.x;
+        const dz = ahead.z - behind.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const px = -(dz / len);
+        const pz = dx / len;
+        const half = point.width / 2;
+
+        for (const side of [-1, 1]) {
+          positions.push(point.x + px * half * side, point.y + 0.04, point.z + pz * half * side);
+        }
+        if (i < samples) {
+          const a = i * 2;
+          indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+        }
+      }
+
+      const geometry = this.track(new THREE.BufferGeometry());
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+
+      const material = this.track(new THREE.MeshStandardMaterial({
+        color: new THREE.Color(this.course.palette.road).lerp(new THREE.Color(this.course.palette.accent), 0.35),
+        roughness: 0.5,
+        metalness: 0.05,
+      }));
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+
+      // A lit arch at the mouth, so the entrance is findable at speed.
+      const mouth = sampleShortcut(shortcut, 0);
+      const gate = new THREE.Mesh(
+        this.track(new THREE.TorusGeometry(mouth.width * 0.55, 0.3, 8, 20, Math.PI)),
+        this.track(new THREE.MeshStandardMaterial({
+          color: this.course.palette.accent,
+          emissive: new THREE.Color(this.course.palette.accent).multiplyScalar(0.6),
+          roughness: 0.35,
+        })),
+      );
+      const next = sampleShortcut(shortcut, 0.05);
+      gate.position.set(mouth.x, mouth.y, mouth.z);
+      gate.rotation.y = Math.atan2(next.x - mouth.x, next.z - mouth.z);
+      this.scene.add(gate);
+    }
   }
 
   /** Glowing rails, instanced. They read as barriers AND as the racing line. */

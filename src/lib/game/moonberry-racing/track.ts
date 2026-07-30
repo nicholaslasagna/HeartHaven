@@ -166,6 +166,79 @@ export function projectToCourse(course: Course, x: number, z: number, hint?: num
 }
 
 /**
+ * Catmull-Rom along an OPEN path, clamped at both ends.
+ *
+ * Shortcuts are branches, not loops, so they cannot use `sampleCourse` — that
+ * wraps, which would join a shortcut's exit back to its entrance and produce
+ * a phantom closed circuit.
+ */
+export function sampleShortcut(shortcut: ShortcutSpec, u: number): ControlPoint {
+  const points = shortcut.points;
+  const n = points.length;
+  if (n === 0) throw new Error("A shortcut needs at least one control point.");
+  if (n === 1) return points[0];
+
+  const clamped = u < 0 ? 0 : u > 1 ? 1 : u;
+  const scaled = clamped * (n - 1);
+  const i = Math.min(n - 2, Math.floor(scaled));
+  const f = scaled - i;
+
+  const p0 = points[Math.max(0, i - 1)];
+  const p1 = points[i];
+  const p2 = points[i + 1];
+  const p3 = points[Math.min(n - 1, i + 2)];
+
+  const cr = (a: number, b: number, c: number, d: number) => {
+    const f2 = f * f;
+    const f3 = f2 * f;
+    return 0.5 * ((2 * b) + (-a + c) * f + (2 * a - 5 * b + 4 * c - d) * f2 + (-a + 3 * b - 3 * c + d) * f3);
+  };
+
+  return {
+    x: cr(p0.x, p1.x, p2.x, p3.x),
+    y: cr(p0.y, p1.y, p2.y, p3.y),
+    z: cr(p0.z, p1.z, p2.z, p3.z),
+    width: cr(p0.width, p1.width, p2.width, p3.width),
+    bank: cr(p0.bank ?? 0, p1.bank ?? 0, p2.bank ?? 0, p3.bank ?? 0),
+    surface: p1.surface ?? "road",
+  };
+}
+
+/** Nearest point along a shortcut, as a 0..1 fraction of its length. */
+export function projectToShortcut(shortcut: ShortcutSpec, x: number, z: number) {
+  const coarse = 48;
+  let bestU = 0;
+  let bestDist = Infinity;
+  const consider = (u: number) => {
+    const point = sampleShortcut(shortcut, u);
+    const dist = Math.hypot(point.x - x, point.z - z);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestU = u < 0 ? 0 : u > 1 ? 1 : u;
+    }
+  };
+  for (let i = 0; i <= coarse; i += 1) consider(i / coarse);
+  for (let i = -6; i <= 6; i += 1) consider(bestU + i / (coarse * 6));
+
+  const point = sampleShortcut(shortcut, bestU);
+  const step = 1 / (coarse * 2);
+  const ahead = sampleShortcut(shortcut, Math.min(1, bestU + step));
+  const behind = sampleShortcut(shortcut, Math.max(0, bestU - step));
+  const dx = ahead.x - behind.x;
+  const dz = ahead.z - behind.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const tangent = { x: dx / len, y: 0, z: dz / len };
+  const offset = (x - point.x) * tangent.z - (z - point.z) * tangent.x;
+  return { u: bestU, distance: bestDist, offset, point, tangent };
+}
+
+/** Loop fraction a shortcut maps to, so checkpoints still advance in order. */
+function shortcutToLoopT(shortcut: ShortcutSpec, u: number) {
+  const span = ((shortcut.to - shortcut.from) + 1) % 1;
+  return ((shortcut.from + span * u) % 1 + 1) % 1;
+}
+
+/**
  * What is under a kart at (x, z)?
  *
  * Everything the handling model needs, derived from the centreline: whether
@@ -176,30 +249,88 @@ export function projectToCourse(course: Course, x: number, z: number, hint?: num
  * `hintT` should be the kart's last known loop position; it keeps the
  * projection cheap and stops a kart snapping to the wrong side of a crossover.
  */
-export function surfaceAt(course: Course, x: number, z: number, hintT?: number) {
-  const projected = projectToCourse(course, x, z, hintT);
-  const half = projected.point.width / 2;
-  const overrun = Math.max(0, Math.abs(projected.offset) - half);
-  const kind = projected.point.surface ?? "road";
+export function surfaceAt(course: Course, x: number, z: number, hintT?: number, y?: number) {
+  const main = projectToCourse(course, x, z, hintT);
 
+  type Candidate = {
+    point: ControlPoint;
+    offset: number;
+    tangent: Vec3;
+    overrun: number;
+    t: number;
+    onShortcut: boolean;
+  };
+
+  /* A shortcut is REAL ROAD, not verge. Projecting onto the main centreline
+     alone left a kart on a shortcut reading as ~11m off-line, capped at the
+     off-road speed, making every shortcut strictly slower than the lap it
+     saved — nobody would ever take one. */
+  const candidates: Candidate[] = [{
+    point: main.point,
+    offset: main.offset,
+    tangent: main.tangent,
+    overrun: Math.max(0, Math.abs(main.offset) - main.point.width / 2),
+    t: main.t,
+    onShortcut: false,
+  }];
+
+  for (const shortcut of course.shortcuts) {
+    if (shortcut.points.length === 0) continue;
+    const branch = projectToShortcut(shortcut, x, z);
+    candidates.push({
+      point: branch.point,
+      offset: branch.offset,
+      tangent: branch.tangent,
+      overrun: Math.max(0, Math.abs(branch.offset) - branch.point.width / 2),
+      // Map onto the loop so lap and checkpoint order still hold.
+      t: shortcutToLoopT(shortcut, branch.u),
+      onShortcut: true,
+    });
+  }
+
+  /* Choosing between overlapping surfaces needs HEIGHT, not just plan
+     distance. Sugargear's shortcut is a bridge directly above the main line:
+     in XZ a kart on it is squarely within the road below, so a purely 2D test
+     snapped it to the tarmac underneath and it fell through the bridge.
+     Prefer a surface the kart is actually on top of. */
+  const surfaceHeight = (candidate: Candidate) =>
+    candidate.point.y + Math.sin(candidate.point.bank ?? 0) * candidate.offset;
+
+  let chosen = candidates[0];
+  let bestScore = Infinity;
+  for (const candidate of candidates) {
+    const height = surfaceHeight(candidate);
+    // How far above its surface is the kart? Below it scores far worse, so a
+    // kart under a bridge is never claimed by the bridge.
+    const rise = y === undefined ? 0 : y - height;
+    const vertical = y === undefined ? 0 : rise >= -0.5 ? Math.min(rise, 40) : 200;
+    const score = candidate.overrun * 4 + vertical;
+    if (score < bestScore) {
+      bestScore = score;
+      chosen = candidate;
+    }
+  }
+
+  const kind = chosen.point.surface ?? "road";
   // Banking tilts the surface, so height depends on how far out you are.
-  const bank = projected.point.bank ?? 0;
-  const groundY = projected.point.y + Math.sin(bank) * projected.offset;
+  const bank = chosen.point.bank ?? 0;
+  const groundY = chosen.point.y + Math.sin(bank) * chosen.offset;
 
   return {
     // Past the tarmac is verge: slower, but still driveable.
-    offroad: overrun > 0 || kind === "offroad",
+    offroad: chosen.overrun > 0 || kind === "offroad",
     ice: kind === "ice",
     conveyor: kind === "conveyor" ? 9 : undefined,
     groundY,
-    edgeOverrun: overrun,
-    // Point back along the racing line when assisting.
-    edgeHeading: Math.atan2(projected.tangent.x, projected.tangent.z),
-    t: projected.t,
-    offset: projected.offset,
-    width: projected.point.width,
+    edgeOverrun: chosen.overrun,
+    // Point back along whichever surface we are on when assisting.
+    edgeHeading: Math.atan2(chosen.tangent.x, chosen.tangent.z),
+    t: chosen.t,
+    offset: chosen.offset,
+    width: chosen.point.width,
+    onShortcut: chosen.onShortcut,
     /** True once a kart is far enough off to be considered lost. */
-    lost: overrun > VERGE_LIMIT || groundY - 40 > 0,
+    lost: chosen.overrun > VERGE_LIMIT || groundY - 40 > 0,
   };
 }
 
@@ -517,12 +648,65 @@ export function validateCourse(course: Course, maxCorneringRadius = 9): CourseIs
   if (course.hazards.length === 0) add("no moving hazard");
   if (course.shortcuts.length === 0) add("no optional shortcut");
 
-  // A shortcut must not let a racer skip a checkpoint entirely.
+  /* Shortcut rules. The span check alone is not enough: it only reads the
+     DECLARED from/to, so a branch whose geometry sits somewhere else entirely
+     passed happily. Sugargear shipped exactly that — endpoints 9m off the
+     racing line, running backwards, declared at 0.62-0.70 while its geometry
+     projected to 0.29 and 0.22. Every rule below checks the geometry itself. */
   const perCheckpoint = 1 / course.checkpoints;
   for (const shortcut of course.shortcuts) {
     const span = ((shortcut.to - shortcut.from) + 1) % 1;
     if (span > perCheckpoint * 1.5) {
       add(`shortcut from ${shortcut.from.toFixed(2)} to ${shortcut.to.toFixed(2)} skips a checkpoint`);
+    }
+    if (shortcut.points.length < 2) {
+      add("a shortcut needs at least two control points to be drivable");
+      continue;
+    }
+
+    const mouth = sampleShortcut(shortcut, 0);
+    const tail = sampleShortcut(shortcut, 1);
+    const mouthOn = projectToCourse(course, mouth.x, mouth.z);
+    const tailOn = projectToCourse(course, tail.x, tail.z);
+
+    // Both ends must actually MEET the road, or the branch is unreachable.
+    const joinLimit = Math.max(mouthOn.point.width, tailOn.point.width) * 0.75;
+    if (mouthOn.distance > joinLimit) {
+      add(`shortcut entrance is ${mouthOn.distance.toFixed(1)}m off the racing line — nothing can enter it`);
+    }
+    if (tailOn.distance > joinLimit) {
+      add(`shortcut exit is ${tailOn.distance.toFixed(1)}m off the racing line — it rejoins nowhere`);
+    }
+
+    // The declaration must describe where the geometry actually is.
+    const declaredGap = Math.min(
+      Math.abs(mouthOn.t - shortcut.from),
+      1 - Math.abs(mouthOn.t - shortcut.from),
+    );
+    if (declaredGap > perCheckpoint) {
+      add(`shortcut declares from=${shortcut.from.toFixed(3)} but its entrance is at t=${mouthOn.t.toFixed(3)}`);
+    }
+
+    // It must run WITH the traffic, not against it.
+    const geometrySpan = ((tailOn.t - mouthOn.t) + 1) % 1;
+    if (geometrySpan > 0.5) {
+      add("shortcut runs against the direction of travel — its points are reversed");
+    }
+
+    // And it must genuinely be shorter than the line it replaces, or nobody
+    // would ever take it and it is decoration rather than a route.
+    let branchLength = 0;
+    let previous = mouth;
+    for (let i = 1; i <= 200; i += 1) {
+      const point = sampleShortcut(shortcut, i / 200);
+      branchLength += Math.hypot(point.x - previous.x, point.y - previous.y, point.z - previous.z);
+      previous = point;
+    }
+    const replaced = courseLength(course) * geometrySpan;
+    if (branchLength >= replaced) {
+      add(
+        `shortcut is ${branchLength.toFixed(0)}m but replaces only ${replaced.toFixed(0)}m of track — it is a detour, not a shortcut`,
+      );
     }
   }
 

@@ -9,6 +9,7 @@
  */
 
 import assert from "node:assert/strict";
+import * as THREE from "three";
 import {
   KART, NO_KART_INPUT, chargeBand, createKart, stepKart, angleDelta,
   applyBoostPad, applyCollision, applySpinout, respawnKart,
@@ -17,7 +18,7 @@ import {
 import {
   createLapProgress, updateLapProgress, racePositions, respawnPose, startingGrid,
   validateCourse, sampleCourse, courseLength, courseTangent, projectToCourse, hazardPosition,
-  surfaceAt, VERGE_LIMIT, type Course,
+  surfaceAt, VERGE_LIMIT, sampleShortcut, type Course,
 } from "../src/lib/game/moonberry-racing/track";
 import {
   POWER_UPS, MAX_CONTROL_LOSS, rollPowerUp, pickupSeed, positionFraction,
@@ -166,7 +167,20 @@ const results: string[] = [];
     ramps: [{ t: 0.5, offset: 0, width: 6, height: 2, length: 8 }],
     hazards: [{ kind: "roller", t: 0.7, offset: 0, period: 5 }],
     itemBoxes: [{ t: 0.1, offset: -2 }, { t: 0.1, offset: 2 }],
-    shortcuts: [{ from: 0.40, to: 0.48, points: [], gate: "narrow", risk: "tight" }],
+    // A real chord across the oval: shorter than the arc it replaces, with
+    // both ends on the racing line, so it satisfies the shortcut rules.
+    shortcuts: [{
+      from: 0.40,
+      to: 0.48,
+      points: [
+      { x: -97.1, y: 0, z: 47.0, width: 6 },
+      { x: -104.4, y: 0, z: 34.7, width: 6 },
+      { x: -111.7, y: 0, z: 22.4, width: 6 },
+      { x: -119.1, y: 0, z: 10.0, width: 6 },
+      ],
+      gate: "narrow",
+      risk: "tight",
+    }],
     palette: { sky: 0x101a3a, fog: 0x223a6a, road: 0x444a5a, accent: 0xff88bb, rail: 0x99ddff },
     laps: 3,
   };
@@ -1198,6 +1212,182 @@ const results: string[] = [];
   assert.equal(clean.pickups, 0, "and hands out no items at all");
 
   results.push(`drivable  ${summaries.join(" ")} · items-off run completes clean`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Shortcuts: real road, and they still count                          */
+/* ------------------------------------------------------------------ */
+{
+  const summaries: string[] = [];
+  for (const course of MOONBERRY_COURSES) {
+    const shortcut = course.shortcuts[0];
+    assert.ok(shortcut.points.length >= 2, `${course.id}: a shortcut needs authored geometry`);
+
+    /* Driving a shortcut must put the kart on ROAD, not in the verge. Left
+       projecting onto the main centreline only, a kart on a shortcut read as
+       ~11m off-line, was capped at the off-road speed, and every shortcut was
+       strictly slower than the lap it saved. */
+    let worstOverrun = 0;
+    let offroadSamples = 0;
+    const samples = 40;
+    for (let i = 0; i <= samples; i += 1) {
+      const at = sampleShortcut(shortcut, i / samples);
+      const surface = surfaceAt(course, at.x, at.z, undefined, at.y);
+      worstOverrun = Math.max(worstOverrun, surface.edgeOverrun);
+      if (surface.offroad) offroadSamples += 1;
+      assert.ok(!surface.lost, `${course.id}: a shortcut must never trigger recovery`);
+      assert.ok(surface.onShortcut || surface.edgeOverrun === 0,
+        `${course.id}: point ${i} on the shortcut is neither on the branch nor on the main road`);
+    }
+    assert.equal(worstOverrun, 0, `${course.id}: the shortcut centre must be on-surface (worst ${worstOverrun.toFixed(1)}m)`);
+
+    /* Lap progress must keep advancing THROUGH a shortcut, mapped into the
+       span it replaces, or taking one would stall the checkpoint chain. */
+    const mouth = sampleShortcut(shortcut, 0);
+    const tail = sampleShortcut(shortcut, 1);
+    const entry = surfaceAt(course, mouth.x, mouth.z, undefined, mouth.y);
+    const exit = surfaceAt(course, tail.x, tail.z, undefined, tail.y);
+    const span = ((shortcut.to - shortcut.from) + 1) % 1;
+    /* The mouth and exit OVERLAP the main line — standing at the entrance you
+       are still on the road — so a junction sample may map a hair before
+       `from` or a hair past `to`. Accept that slack; what matters is that it
+       never lands somewhere unrelated on the lap. */
+    const within = (t: number) => {
+      const rel = ((t - shortcut.from) + 1) % 1;
+      return rel <= span + 0.03 || rel >= 1 - 0.03;
+    };
+    assert.ok(within(entry.t), `${course.id}: shortcut entry maps inside its own span (t=${entry.t.toFixed(3)})`);
+    assert.ok(within(exit.t), `${course.id}: shortcut exit maps inside its own span (t=${exit.t.toFixed(3)})`);
+
+    // Progress must move FORWARD along the branch, never backwards.
+    let progress = { ...createLapProgress(), checkpoint: Math.floor(shortcut.from * course.checkpoints) };
+    let advanced = 0;
+    for (let i = 0; i <= samples; i += 1) {
+      const at = sampleShortcut(shortcut, i / samples);
+      const surface = surfaceAt(course, at.x, at.z, undefined, at.y);
+      const before = progress.progress;
+      progress = updateLapProgress(progress, course, surface.t, 1);
+      if (progress.progress > before) advanced += 1;
+    }
+    assert.ok(advanced > samples * 0.5, `${course.id}: progress must advance along a shortcut (${advanced}/${samples})`);
+    assert.equal(progress.lap, 0, `${course.id}: a shortcut must not award a lap`);
+
+    // The branch must actually be shorter than the main line it replaces.
+    let branchLength = 0;
+    let previous = sampleShortcut(shortcut, 0);
+    for (let i = 1; i <= 200; i += 1) {
+      const point = sampleShortcut(shortcut, i / 200);
+      branchLength += Math.hypot(point.x - previous.x, point.y - previous.y, point.z - previous.z);
+      previous = point;
+    }
+    const mainLength = courseLength(course) * span;
+    summaries.push(
+      `${course.id.replace("moonberry-", "").slice(0, 9)}(${branchLength.toFixed(0)}m vs ${mainLength.toFixed(0)}m${offroadSamples > 0 ? " rough" : ""})`,
+    );
+  }
+  /* The validator must CATCH the shape of bug that shipped: a branch whose
+     geometry sits nowhere near its declaration. Sugargear had exactly this —
+     declared 0.62-0.70 while its points projected to 0.29 and 0.22, running
+     backwards, 9m off the road, and 62% longer than the line it replaced. */
+  {
+    const base = MOONBERRY_COURSES[1];
+    const broken = {
+      ...base,
+      shortcuts: [{
+        from: 0.62,
+        to: 0.7,
+        points: [
+          { x: -69, y: 11, z: 88, width: 5 },
+          { x: -27, y: 12.5, z: 93, width: 4.5 },
+          { x: 18, y: 12.5, z: 93, width: 4.5 },
+          { x: 60, y: 11, z: 88, width: 5 },
+        ],
+        gate: "narrow" as const,
+        risk: "the original, broken data",
+      }],
+    };
+    const issues = validateCourse(broken).map((issue) => issue.problem).join(" | ");
+    assert.ok(issues.length > 0, "the original broken shortcut must be rejected");
+    assert.match(issues, /off the racing line|detour|reversed|declares/,
+      `expected a geometry complaint, got: ${issues}`);
+
+    // A branch longer than the line it replaces is a detour, not a shortcut.
+    const detour = {
+      ...base,
+      shortcuts: [{
+        ...base.shortcuts[0],
+        points: base.shortcuts[0].points.map((point, i) => ({
+          ...point,
+          // Bow it far out sideways so it is unambiguously longer.
+          x: point.x + Math.sin((i / 3) * Math.PI) * 90,
+        })),
+      }],
+    };
+    assert.match(
+      validateCourse(detour).map((issue) => issue.problem).join(" | "),
+      /detour|off the racing line/,
+      "a bowed-out branch must be rejected as a detour",
+    );
+  }
+
+  results.push(`shortcuts on-road not verge · progress advances through · no free lap · ${summaries.join(" ")}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Steering matches the screen                                         */
+/* ------------------------------------------------------------------ */
+{
+  /* An inverted turn is invisible to every other check here: the physics is
+     self-consistent, laps still count, the autopilot still drives. It only
+     shows up when a human presses a key and the kart goes the other way. So
+     this projects the turn through the REAL chase camera and asserts the
+     direction on screen. */
+  const flat = { offroad: false, ice: false, groundY: 0 };
+  const kart = createKart(0, 0, 0, 0);
+  for (let i = 0; i < 300; i += 1) stepKart(kart, input({ throttle: 1 }), flat, KART.STEP);
+
+  const before = kart.heading;
+  // Positive steer, as the keyboard mapping produces for LEFT.
+  for (let i = 0; i < 60; i += 1) stepKart(kart, input({ throttle: 1, steer: 1 }), flat, KART.STEP);
+  const towardPlusX = kart.heading > before;
+
+  const renderer = new MoonberryRacingRenderer(MOONBERRY_COURSES[0]);
+  const view = {
+    id: "p", seat: 0, name: "P", x: 0, y: 0, z: 0, heading: 0,
+    lean: 0, driftSide: 0 as const, driftCharge: 0, boosting: false,
+    airborne: false, spinning: false, local: true, position: 1, finished: false,
+  };
+  renderer.update(
+    { karts: [view], raceTime: 0, followId: "p", rearView: false, itemBoxesTaken: new Set() } as never,
+    16 / 9,
+    0.016,
+  );
+  renderer.camera.updateMatrixWorld(true);
+  const screenXOfWorldPlusX = new THREE.Vector3(10, 0, 0).project(renderer.camera).x;
+  renderer.dispose();
+
+  // Positive steer must move the kart LEFT on screen, because that is what the
+  // keyboard mapping sends when the player presses A.
+  const plusXIsOnScreenRight = screenXOfWorldPlusX > 0;
+  assert.equal(
+    towardPlusX && plusXIsOnScreenRight, false,
+    "positive steer must not turn right on screen — A/D would be inverted",
+  );
+  assert.ok(towardPlusX, "positive steer turns toward world +X (the physics convention)");
+  assert.ok(!plusXIsOnScreenRight, `world +X must render left of centre (got ${screenXOfWorldPlusX.toFixed(2)})`);
+
+  // And a drift initiated by positive steer must slide the kart the other way,
+  // which is what makes a drift look like one.
+  const drifter = createKart(0, 0, 0, 0);
+  for (let i = 0; i < 400; i += 1) stepKart(drifter, input({ throttle: 1 }), flat, KART.STEP);
+  const beforeX = drifter.x;
+  for (let i = 0; i < 60; i += 1) {
+    stepKart(drifter, input({ throttle: 1, steer: 1, drift: true }), flat, KART.STEP);
+  }
+  assert.equal(drifter.driftSide, 1, "positive steer drifts to side +1");
+  assert.ok(drifter.x < beforeX, "and the rear slides opposite the turn");
+
+  results.push("steering  positive steer = left on screen · A/D not inverted · drift slides opposite the turn");
 }
 
 console.log(`\nMoonberry Racing: all checks passed\n${results.map((l) => `  ${l}`).join("\n")}\n`);

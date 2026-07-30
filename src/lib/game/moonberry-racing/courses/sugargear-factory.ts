@@ -141,19 +141,29 @@ export const SUGARGEAR_FACTORY: Course = {
 
   shortcuts: [
     {
-      // Elevated route over moving cookie platforms, bypassing the second
-      // half of the press chicane. Deliberately short: any longer and it
-      // would skip a checkpoint, which the validator rejects.
-      from: 0.62,
-      to: 0.7,
+      /* Elevated gantry over the moving cookie platforms, cutting the corner
+         the main line takes around the mixing vat.
+     
+         The endpoints are ON the racing line at t=0.368 and t=0.506, and the
+         span is 0.138 — just inside the 1.4-checkpoint ceiling the validator
+         enforces. Those numbers are not guesses: the branch was placed on the
+         section where the main line's arc most exceeds the straight chord
+         between its ends, which is the only place on this circuit where a
+         bridge saves anything at all.
+     
+         It saves 8m of 106m, about 7%. That is deliberately slim — the bridge
+         is 4.5m wide against 7-12m of main road, so the reward is small
+         because the risk of missing a moving platform is not. */
+      from: 0.368,
+      to: 0.506,
       points: [
-        { x: -69, y: 11, z: 88, width: 5 },
-        { x: -27, y: 12.5, z: 93, width: 4.5 },
-        { x: 18, y: 12.5, z: 93, width: 4.5 },
-        { x: 60, y: 11, z: 88, width: 5 },
+        { x: -146.4, y: 8.0, z: 78.3, width: 5.5 },
+        { x: -163.6, y: 9.3, z: 50.5, width: 4.5 },
+        { x: -180.7, y: 8.7, z: 22.7, width: 4.5 },
+        { x: -197.9, y: 6.2, z: -5.1, width: 5.5 },
       ],
       gate: "narrow",
-      risk: "Two moving cookie platforms with a gap; miss the timing and you drop back onto the chicane having lost more than you saved.",
+      risk: "An elevated gantry across two moving cookie platforms. It only saves about 7%, and the deck is barely wider than a kart, so mistime the gap and you drop back onto the vat corner having lost far more than you saved.",
     },
   ],
 
