@@ -94,14 +94,26 @@ export const FROSTING_FALLS: Course = {
     { x: 0.0, y: 41.0, z: 330.0, width: 7, surface: "road" }, // bridge span, narrowest point on course
     { x: -58.0, y: 39.5, z: 324.4, width: 8, surface: "road" },
 
-    // Downhill descent back toward the valley: wide, fast, boosted.
-    { x: -112.0, y: 35.7, z: 307.9, width: 11, surface: "road" },
-    { x: -158.4, y: 30.7, z: 281.7, width: 12, surface: "road" },
-    { x: -194.0, y: 25.2, z: 247.5, width: 13, surface: "road" },
-    { x: -216.4, y: 19.9, z: 207.7, width: 13, surface: "road" }, // steepest grade is around here
-    { x: -224.0, y: 15.0, z: 165.0, width: 12, surface: "road" }, // west vertex
-    { x: -216.4, y: 10.6, z: 122.3, width: 11, surface: "road" },
-    { x: -194.0, y: 6.7, z: 82.5, width: 11, surface: "road" },
+    /* Downhill descent: two real switchbacks rather than one long arc.
+       The rest of this circuit is a wide ellipse whose gentlest radius is
+       still over 100m — beautiful to look at and completely undriftable,
+       because a kart never has to change direction hard enough to break
+       traction. These points are spaced ~35m apart instead of ~50m and
+       alternate which side of the mountain they hug, which brings the
+       corner radius down to the 30-40m band where a drift charges and
+       actually pays. Wide (11-13m) so they stay overtaking corners. */
+    { x: -118.0, y: 35.5, z: 300.0, width: 11, surface: "road" },
+    { x: -176.0, y: 29.0, z: 276.0, width: 12, surface: "road" },
+    /* Spacing is kept even (~36-48m) through the switchbacks. Catmull-Rom
+       overshoots where a short segment follows a long one, and an earlier
+       pass put a 30m segment after a 44m one — the spline cusped to an 8m
+       radius, tighter than a kart can hold, even though every control point
+       looked reasonable on its own. */
+    { x: -204.0, y: 24.9, z: 248.0, width: 12, surface: "road" }, // turn-in
+    { x: -200.0, y: 21.1, z: 212.0, width: 11, surface: "road" }, // apex of the first switchback
+    { x: -220.0, y: 16.8, z: 176.0, width: 12, surface: "road" }, // swings back out to the west vertex
+    { x: -190.0, y: 11.8, z: 138.0, width: 12, surface: "road" }, // apex of the second
+    { x: -192.0, y: 7.5, z: 96.0, width: 11, surface: "road" },
 
     // Final bend back toward the line: wide and gentle again (mirrors
     // turn 1 on the other side of the oval) — the third ice section.

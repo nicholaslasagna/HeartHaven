@@ -227,7 +227,9 @@ export function LanternLeapClient() {
       channelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [sessionId, myProfileId]);
+    // refillList is a useCallback with no deps of its own, so declaring it
+    // here is honest without re-subscribing the channel on every render.
+  }, [sessionId, myProfileId, refillList]);
 
   /* Offline / solo still needs a clock and a HUD tick. */
   useEffect(() => {

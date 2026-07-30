@@ -1149,6 +1149,11 @@ const results: string[] = [];
       `${course.id}: peak ${run.peakSpeed.toFixed(1)} exceeds the design ceiling — speed effects are stacking`);
     // And the kart must reach real speed, so boosts are meaningful.
     assert.ok(run.peakSpeed > KART.MAX_SPEED, `${course.id}: should exceed base top speed via boost (peak ${run.peakSpeed.toFixed(1)})`);
+    // ...but never past what a boost plus the strongest item can justify.
+    assert.ok(
+      run.peakSpeed <= KART.BOOST_SPEED * 1.55 + 1,
+      `${course.id}: peak ${run.peakSpeed.toFixed(1)} m/s exceeds what boost x items allows`,
+    );
 
     // ITEMS must be collectable and usable while driving.
     assert.ok(run.pickups >= 1, `${course.id}: crates must be reachable on the racing line (got ${run.pickups})`);
@@ -1388,6 +1393,61 @@ const results: string[] = [];
   assert.ok(drifter.x < beforeX, "and the rear slides opposite the turn");
 
   results.push("steering  positive steer = left on screen · A/D not inverted · drift slides opposite the turn");
+}
+
+/* ------------------------------------------------------------------ */
+/* No item combination may break the speed cap                         */
+/* ------------------------------------------------------------------ */
+{
+  /* Speed effects used to multiply together, so holding two of them more
+     than doubled top speed and a kart hit 100 m/s against a 38 m/s boost
+     cap — uncontrollable, and invisible to every other check because the
+     race still completed. They now combine as "best boost x worst slow",
+     and this walks EVERY subset of the item set to prove no combination,
+     present or future, can climb past the ceiling. */
+  const ids = Object.keys(POWER_UPS) as Array<keyof typeof POWER_UPS>;
+  const CEILING = 1.55;
+  let worst = 0;
+  let worstCombo = "";
+
+  for (let mask = 0; mask < (1 << ids.length); mask += 1) {
+    const live: ActiveEffect[] = [];
+    for (let bit = 0; bit < ids.length; bit += 1) {
+      if (mask & (1 << bit)) {
+        live.push({ id: ids[bit], remaining: 5, warning: 0, sourceId: null });
+      }
+    }
+    const multiplier = speedMultiplier(live);
+    if (multiplier > worst) {
+      worst = multiplier;
+      worstCombo = live.map((e) => e.id).join(" + ") || "nothing";
+    }
+    assert.ok(
+      multiplier <= CEILING + 1e-9,
+      `${live.map((e) => e.id).join(" + ")} reaches x${multiplier.toFixed(2)}, past the x${CEILING} ceiling`,
+    );
+    assert.ok(multiplier > 0, "a multiplier must never stop a kart dead");
+  }
+
+  // Duplicates of the same item must not compound either.
+  const doubled: ActiveEffect[] = [
+    { id: "moonberry-burst", remaining: 5, warning: 0, sourceId: null },
+    { id: "moonberry-burst", remaining: 5, warning: 0, sourceId: null },
+    { id: "shooting-star", remaining: 5, warning: 0, sourceId: null },
+  ];
+  assert.ok(speedMultiplier(doubled) <= CEILING + 1e-9, "duplicate boosts do not compound");
+
+  // A slow must still bite while boosted, or a hit would simply be ignored.
+  const boostedAndSlowed: ActiveEffect[] = [
+    { id: "shooting-star", remaining: 5, warning: 0, sourceId: null },
+    { id: "taffy-trail", remaining: 5, warning: 0, sourceId: null },
+  ];
+  assert.ok(
+    speedMultiplier(boostedAndSlowed) < speedMultiplier([boostedAndSlowed[0]]),
+    "a slow must still cost speed even while boosted",
+  );
+
+  results.push(`speedcap  every item subset stays under x${CEILING} (worst ${worstCombo} x${worst.toFixed(2)}) · slows bite through boosts`);
 }
 
 console.log(`\nMoonberry Racing: all checks passed\n${results.map((l) => `  ${l}`).join("\n")}\n`);

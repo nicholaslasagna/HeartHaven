@@ -94,6 +94,18 @@ function createCanvasSprite(width: number, height: number) {
   return { canvas, context, texture, material, sprite };
 }
 
+/**
+ * Which way is "looking at the pins".
+ *
+ * The avatar is modelled facing local -Z — the eyes, the chest stripe and the
+ * toes of the shoes all sit on the -Z side — while the deck is down-lane at
+ * +Z. Facing the pins is therefore a half turn, and a rotation of 0 puts the
+ * bowler's back to the deck. That is what had the active bowler throwing over
+ * their own shoulder while the players still on the bench faced the lane
+ * correctly.
+ */
+const FACING_PINS = Math.PI;
+
 function createAvatar(seat: number): AvatarRig {
   const color = seatColor(seat);
   const root = new THREE.Group();
@@ -471,12 +483,13 @@ export class MoonberryRenderer {
 
     for (let seat = 0; seat < this.seatCount; seat += 1) {
       const avatar = createAvatar(seat);
+      avatar.root.name = `avatar-${seat}`;
       avatar.root.position.set(
         2.1 + (seat % 4) * 0.62,
         0,
         -3.95 - Math.floor(seat / 4) * 0.72,
       );
-      avatar.root.rotation.y = Math.PI;
+      avatar.root.rotation.y = FACING_PINS;
       this.avatars.push(avatar);
       this.scene.add(avatar.root);
     }
@@ -615,7 +628,12 @@ export class MoonberryRenderer {
       const targetZ = active ? -1.45 : -3.95 - Math.floor(avatar.seat / 4) * 0.72;
       avatar.root.position.x = damp(avatar.root.position.x, targetX, 6, dt);
       avatar.root.position.z = damp(avatar.root.position.z, targetZ, 6, dt);
-      avatar.root.rotation.y = damp(avatar.root.rotation.y, active ? 0 : Math.PI, 7, dt);
+      avatar.root.rotation.y = damp(
+        avatar.root.rotation.y,
+        active ? FACING_PINS : FACING_PINS - 0.22,
+        7,
+        dt,
+      );
 
       const bowling = active && (snapshot.lane.shot === "aim" || snapshot.lane.shot === "follow");
       const celebrating = active && snapshot.lane.shot === "result" && Boolean(snapshot.callout);
@@ -631,13 +649,19 @@ export class MoonberryRenderer {
     const ball = snapshot.lane.ball;
     let fov = 42;
     switch (shot) {
+      /* The bowler stands at z = -1.45, head around y = 1.84. Both of these
+         shots sit BEHIND them, so the camera has to ride high enough that the
+         sight line to the deck passes over the head — otherwise the player
+         spends the whole approach looking at the back of their own skull.
+         Worked through: from y = 3.6 at z = -7.4 toward (0, 0.5, 7.2), the
+         ray is at y = 2.34 above the bowler, clearing by half a metre. */
       case "idle":
-        this.desiredCamera.set(-2.35, 3.05, -6.8);
+        this.desiredCamera.set(-2.8, 3.6, -7.4);
         this.desiredLook.set(0, 0.5, 7.2);
         fov = 44;
         break;
       case "aim":
-        this.desiredCamera.set(-1.35, 2.05, -4.7);
+        this.desiredCamera.set(-1.9, 2.8, -5.2);
         this.desiredLook.set(ball.x * 0.22, 0.32, 8);
         fov = 42;
         break;
