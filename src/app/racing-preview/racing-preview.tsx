@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { MoonberryRacingLoader } from "@/components/game/moonberry-racing-loader";
 import { MOONBERRY_COURSES } from "@/lib/game/moonberry-racing/courses";
-import type { RacerReport } from "@/lib/game/moonberry-racing/race";
 
 /**
  * Local harness: real courses, real handling, seats held in React state
@@ -28,9 +27,9 @@ export function RacingPreview() {
     [seatCount],
   );
 
-  // Stand-in for the transport: remote karts simply hold their grid slots.
+  /* Stand-in for the transport: no network, so remote karts simply hold
+     their grid slots. Real multiplayer lives on the app route. */
   const subscribeRemote = () => () => {};
-  const onReport = (_report: RacerReport) => {};
 
   return (
     <main className="mx-auto grid max-w-6xl gap-4 p-6">
@@ -69,7 +68,6 @@ export function RacingPreview() {
         course={course}
         isHost
         localId="p0"
-        onReport={onReport}
         seats={seats}
         startAt={startAt}
         subscribeRemote={subscribeRemote}

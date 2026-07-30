@@ -206,6 +206,73 @@ export function surfaceAt(course: Course, x: number, z: number, hintT?: number) 
 /** How far beyond the verge a kart may stray before it is recovered. */
 export const VERGE_LIMIT = 14;
 
+/** How far a swinging hazard travels either side of its anchor. */
+export const HAZARD_SWING = 6;
+
+/**
+ * Where a hazard is at a given race time.
+ *
+ * A pure function of race time, which is what lets eight clients agree on
+ * hazard positions without a single byte of traffic. It lives here rather
+ * than in the renderer so the COLLISION and the VISUAL read the same numbers
+ * — a hazard you can see but not hit (or hit but not see) is worse than no
+ * hazard at all.
+ */
+export function hazardPosition(course: Course, spec: HazardSpec, raceTime: number) {
+  const point = sampleCourse(course, spec.t);
+  const tangent = courseTangent(course, spec.t);
+  const phase = (raceTime / spec.period + (spec.phase ?? 0)) * Math.PI * 2;
+  const swing = Math.sin(phase) * HAZARD_SWING;
+  // Perpendicular to the racing line, so it sweeps ACROSS the track.
+  const px = -tangent.z;
+  const pz = tangent.x;
+  const radius = spec.radius ?? 1.6;
+  return {
+    x: point.x + px * (spec.offset + swing),
+    y: point.y + radius + Math.abs(Math.cos(phase)) * 0.6,
+    z: point.z + pz * (spec.offset + swing),
+    radius,
+  };
+}
+
+/**
+ * How far behind the line to begin the starting grid.
+ *
+ * Courses are free to put a ramp or a climb just before the start — Moonberry
+ * Speedway ends on a big jump — and laying a grid straight onto that slope
+ * stands the back row metres above the front, which looks broken and gives
+ * the rows uneven traction. So instead of a fixed offset, this walks back
+ * along the centreline and picks the flattest stretch long enough to hold the
+ * whole grid. Every course gets a level start line without any per-course
+ * special casing.
+ */
+function flattestGridStart(course: Course, gridLength: number) {
+  const MIN_LEAD = 8;
+  const MAX_LEAD = 90;
+  let bestLead = MIN_LEAD;
+  let bestRise = Infinity;
+
+  for (let lead = MIN_LEAD; lead <= MAX_LEAD; lead += 2) {
+    // Height spread across the stretch this grid would occupy.
+    let lowest = Infinity;
+    let highest = -Infinity;
+    for (let along = 0; along <= gridLength; along += 3) {
+      const y = sampleCourse(course, retreatByDistance(course, 0, lead + along)).y;
+      lowest = Math.min(lowest, y);
+      highest = Math.max(highest, y);
+    }
+    const rise = highest - lowest;
+    // Prefer the nearest acceptable stretch rather than the flattest overall,
+    // so the grid stays close to the line when the run-up is already level.
+    if (rise < bestRise - 0.05) {
+      bestRise = rise;
+      bestLead = lead;
+    }
+    if (rise < 0.35) break;
+  }
+  return bestLead;
+}
+
 /* ------------------------------------------------------------------ */
 /* Lap and checkpoint validation                                       */
 /* ------------------------------------------------------------------ */
@@ -338,12 +405,20 @@ export function respawnPose(course: Course, progress: LapProgress, laneOffset = 
  * ground. Anything that needs even physical spacing has to walk the curve.
  */
 export function retreatByDistance(course: Course, t: number, metres: number) {
+  if (metres <= 0) return ((t % 1) + 1) % 1;
   const steps = 240;
-  let current = t;
+  const stride = 1 / (course.points.length * steps);
+  /* Budget enough sub-steps to walk the WHOLE loop. Arc length is not spread
+     evenly over t — a tight chicane or a ramp packs control points close
+     together — so a fixed small budget silently saturates in exactly those
+     places and returns a point far nearer than asked for. That put the back
+     rows of the starting grid on top of each other. */
+  const guard = course.points.length * steps;
+  let current = ((t % 1) + 1) % 1;
   let remaining = metres;
   let previous = sampleCourse(course, current);
-  for (let i = 0; i < steps * 4 && remaining > 0; i += 1) {
-    const next = current - 1 / (course.points.length * steps);
+  for (let i = 0; i < guard && remaining > 0; i += 1) {
+    const next = current - stride;
     const point = sampleCourse(course, next);
     remaining -= Math.hypot(point.x - previous.x, point.z - previous.z);
     previous = point;
@@ -360,15 +435,24 @@ export function retreatByDistance(course: Course, t: number, metres: number) {
  */
 export function startingGrid(course: Course, seatCount: number): RespawnPose[] {
   const poses: RespawnPose[] = [];
-  const ROW_GAP = 6;
+  /* Rows must be spaced further apart than the chase camera sits behind the
+     kart it follows (~9.5m), or the row behind the pole sitter parks itself
+     directly in the camera's sight line and the player cannot see their own
+     kart on the grid. Alternate rows are also nudged sideways, which both
+     reads as a proper staggered grid and keeps the sight line clear. */
+  const ROW_GAP = 11;
+  const rows = Math.ceil(seatCount / 2);
+  const gridLength = ROW_GAP * Math.max(1, rows - 1);
+  const lead = flattestGridStart(course, gridLength);
+
   for (let i = 0; i < seatCount; i += 1) {
     const row = Math.floor(i / 2);
     const side = i % 2 === 0 ? -1 : 1;
-    // Behind the line, alternating left and right.
-    const t = retreatByDistance(course, 0, 8 + row * ROW_GAP);
+    const t = retreatByDistance(course, 0, lead + row * ROW_GAP);
     const point = sampleCourse(course, t);
     const tangent = courseTangent(course, t);
-    const lateral = side * Math.min(2.4, point.width * 0.45);
+    const stagger = row % 2 === 1 ? 1.1 : 0;
+    const lateral = side * Math.min(2.4, point.width * 0.45) + stagger;
     poses.push({
       position: {
         x: point.x - tangent.z * lateral,

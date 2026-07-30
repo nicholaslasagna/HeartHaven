@@ -15,6 +15,7 @@
 import * as THREE from "three";
 import {
   courseTangent,
+  hazardPosition,
   sampleCourse,
   type Course,
   type SurfaceKind,
@@ -45,8 +46,12 @@ export type KartView = {
   finished: boolean;
 };
 
+export type ShotView = { id: number; kind: string; x: number; z: number; trap: boolean };
+
 export type RacingSnapshot = {
   karts: KartView[];
+  /** Live projectiles and dropped traps. */
+  shots?: ShotView[];
   /** Seconds of race time; hazards are pure functions of it. */
   raceTime: number;
   /** Which kart the camera follows. */
@@ -61,6 +66,33 @@ const SEAT_COLORS = [
   0xc79af0, 0xf09a6a, 0x6ad9c4, 0xe86a8f,
 ];
 export const kartColor = (seat: number) => SEAT_COLORS[Math.abs(seat) % SEAT_COLORS.length];
+
+
+/**
+ * Triangular prism in track-local space: flat at the near edge, rising to
+ * `height` at the far lip, with local +Z pointing the way the karts travel.
+ */
+function rampGeometry(width: number, height: number, length: number) {
+  const w = width / 2;
+  const l = length / 2;
+  const v = new Float32Array([
+    -w, 0, -l,   w, 0, -l,           // near edge, on the road
+    -w, height, l,   w, height, l,   // lip
+    -w, 0, l,   w, 0, l,             // base under the lip
+  ]);
+  const index = [
+    0, 1, 3, 0, 3, 2,   // the ramp surface itself
+    2, 3, 5, 2, 5, 4,   // vertical back face
+    0, 4, 5, 0, 5, 1,   // underside
+    0, 2, 4,            // left cheek
+    1, 5, 3,            // right cheek
+  ];
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(v, 3));
+  geometry.setIndex(index);
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 /** Per-surface look. Ice is glossy, off-road is matte and darker. */
 function surfaceTint(kind: SurfaceKind | undefined, base: THREE.Color) {
@@ -146,7 +178,10 @@ export class MoonberryRacingRenderer {
     const colors: number[] = [];
     const uvs: number[] = [];
     const indices: number[] = [];
-    const base = new THREE.Color(this.course.palette.road);
+    /* Lift the road off its raw palette value. A night course's road colour
+       is chosen to sit behind the scenery, but used directly as a vertex
+       colour it renders as near-black and the racing surface disappears. */
+    const base = new THREE.Color(this.course.palette.road).lerp(new THREE.Color(0xffffff), 0.28);
 
     for (let i = 0; i <= count; i += 1) {
       const t = i / count;
@@ -303,16 +338,18 @@ export class MoonberryRacingRenderer {
 
     for (const ramp of this.course.ramps) {
       const at = place(ramp.t, ramp.offset);
+      /* A wedge, not a tilted box. A box rotated about X still presents its
+         full height as a wall to an approaching kart — it reads as a barrier
+         across the track rather than something to launch off. The wedge rises
+         from nothing at the near edge to `height` at the lip. */
       const mesh = new THREE.Mesh(
-        this.track(new THREE.BoxGeometry(ramp.width, ramp.height, ramp.length)),
+        this.track(rampGeometry(ramp.width, ramp.height, ramp.length)),
         this.track(new THREE.MeshStandardMaterial({
           color: this.course.palette.accent, roughness: 0.5,
         })),
       );
-      mesh.position.set(at.x, at.y + ramp.height / 2 - 0.1, at.z);
+      mesh.position.set(at.x, at.y, at.z);
       mesh.rotation.y = at.yaw;
-      // Tilt so the leading edge meets the road rather than forming a step.
-      mesh.rotation.x = -Math.atan2(ramp.height, ramp.length);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.scene.add(mesh);
@@ -549,19 +586,47 @@ export class MoonberryRacingRenderer {
       mesh.rotation.x += dt * 0.6;
     });
 
-    // Hazards are pure functions of race time, which is why they need no
-    // network traffic: eight clients compute identical positions.
+    /* Hazard motion comes from `hazardPosition` in track.ts, the same
+       function the collision test uses, so what you see is exactly what can
+       hit you. It is a pure function of race time, hence no network traffic. */
     for (const { mesh, spec } of this.hazardMeshes) {
-      const home = mesh.userData.home as THREE.Vector3;
-      const yaw = mesh.userData.yaw as number;
-      const phase = ((snapshot.raceTime / spec.period) + (spec.phase ?? 0)) * Math.PI * 2;
-      const swing = Math.sin(phase) * 6;
-      mesh.position.set(
-        home.x + -Math.cos(yaw) * swing,
-        home.y + Math.abs(Math.cos(phase)) * 0.6,
-        home.z + Math.sin(yaw) * swing,
-      );
+      const at = hazardPosition(this.course, spec, snapshot.raceTime);
+      mesh.position.set(at.x, at.y, at.z);
       mesh.rotation.y += dt * 1.2;
+    }
+  }
+
+  private readonly shotMeshes = new Map<number, THREE.Mesh>();
+
+  /** Projectiles and traps, pooled by id so they appear and vanish cleanly. */
+  private syncShots(snapshot: RacingSnapshot) {
+    const shots = snapshot.shots ?? [];
+    const seen = new Set<number>();
+    for (const shot of shots) {
+      seen.add(shot.id);
+      let mesh = this.shotMeshes.get(shot.id);
+      if (!mesh) {
+        mesh = new THREE.Mesh(
+          this.track(shot.trap
+            ? new THREE.CylinderGeometry(0.8, 0.9, 0.18, 14)
+            : new THREE.SphereGeometry(0.55, 14, 12)),
+          this.track(new THREE.MeshStandardMaterial({
+            color: shot.trap ? 0xf0a94a : 0xc94f8a,
+            emissive: shot.trap ? 0x6a4410 : 0x5a1030,
+            emissiveIntensity: 0.8,
+            roughness: 0.3,
+          })),
+        );
+        mesh.castShadow = !shot.trap;
+        this.scene.add(mesh);
+        this.shotMeshes.set(shot.id, mesh);
+      }
+      mesh.position.set(shot.x, shot.trap ? 0.12 : 0.65, shot.z);
+    }
+    for (const [id, mesh] of this.shotMeshes) {
+      if (seen.has(id)) continue;
+      this.scene.remove(mesh);
+      this.shotMeshes.delete(id);
     }
   }
 
@@ -623,6 +688,7 @@ export class MoonberryRacingRenderer {
   update(snapshot: RacingSnapshot, aspect: number, dt: number) {
     this.camera.aspect = aspect;
     this.syncKarts(snapshot, dt);
+    this.syncShots(snapshot);
     this.syncFeatures(snapshot, dt);
     this.updateCamera(snapshot, dt);
   }
@@ -633,6 +699,7 @@ export class MoonberryRacingRenderer {
     this.kartRigs.clear();
     this.itemBoxMeshes.length = 0;
     this.hazardMeshes.length = 0;
+    this.shotMeshes.clear();
     this.scene.clear();
   }
 }

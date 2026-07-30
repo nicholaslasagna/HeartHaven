@@ -4,9 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { MoonberryRacingRenderer, kartColor, type KartView, type RacingSnapshot } from "@/lib/game/moonberry-racing/renderer";
 import { KART, NO_KART_INPUT, applyBoostPad, chargeBand, stepKart, type KartInput } from "@/lib/game/moonberry-racing/kart";
-import { Race, COUNTDOWN_MS, type RacerReport } from "@/lib/game/moonberry-racing/race";
+import { Race, type RacerReport } from "@/lib/game/moonberry-racing/race";
+import { Arena, type CombatRacer } from "@/lib/game/moonberry-racing/combat";
+import type { PowerUp, PowerUpId } from "@/lib/game/moonberry-racing/powerups";
 import { sampleCourse, surfaceAt, VERGE_LIMIT, type Course } from "@/lib/game/moonberry-racing/track";
 import { cn } from "@/lib/utils";
+
+/**
+ * Item traffic. Poses are fire-and-forget, but a pickup or a use changes
+ * state every client must agree on, so these carry the pose they happened at
+ * rather than letting each machine guess from a stale copy.
+ */
+export type ItemEvent =
+  | { kind: "pickup"; racerId: string; box: number; item: PowerUpId; at: number }
+  | { kind: "use"; racerId: string; item: PowerUpId; x: number; z: number; heading: number };
 
 /**
  * Moonberry Racing — canvas, input and HUD.
@@ -34,11 +45,31 @@ type Props = {
   onReport?: (report: RacerReport) => void;
   /** Reports arriving from other players. */
   subscribeRemote?: (handler: (report: RacerReport) => void) => () => void;
+  /** Item pickups and uses, which must replicate or multiplayer items desync. */
+  onItemEvent?: (event: ItemEvent) => void;
+  subscribeItems?: (handler: (event: ItemEvent) => void) => () => void;
   onFinish?: (ms: number, position: number) => void;
   onError?: (message: string) => void;
+  /** Lobby setting: crates and items off for a clean race. */
+  itemsEnabled?: boolean;
 };
 
 const REPORT_HZ = 20;
+
+/** Nearest crate to a position, so a pickup can name which one it took. */
+function crateIndexFor(course: Course, x: number, z: number) {
+  let best = 0;
+  let bestDistance = Infinity;
+  course.itemBoxes.forEach((box, index) => {
+    const at = sampleCourse(course, box.t);
+    const distance = Math.hypot(x - at.x, z - at.z);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = index;
+    }
+  });
+  return best;
+}
 
 export function MoonberryRacingCanvas({
   course,
@@ -48,21 +79,28 @@ export function MoonberryRacingCanvas({
   startAt,
   onReport,
   subscribeRemote,
+  onItemEvent,
+  subscribeItems,
   onFinish,
   onError,
+  itemsEnabled = true,
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const startAtRef = useRef(startAt);
-  const callbacksRef = useRef({ onReport, onFinish });
+  const callbacksRef = useRef({ onReport, onFinish, onItemEvent });
   const [hud, setHud] = useState({
     position: 1, field: seats.length, lap: 1, laps: course.laps,
     timeMs: 0, charge: 0, band: "none" as string, boosting: false,
-    countdown: null as number | null, wrongWay: false, finalLap: false, message: "",
+    countdown: null as number | null, wrongWay: false, finalLap: false,
+    item: null as string | null, itemColor: null as string | null, message: "",
+    blips: [] as Array<{ id: string; x: number; z: number; seat: number; local: boolean }>,
   });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { startAtRef.current = startAt; }, [startAt]);
-  useEffect(() => { callbacksRef.current = { onReport, onFinish }; }, [onReport, onFinish]);
+  useEffect(() => {
+    callbacksRef.current = { onReport, onFinish, onItemEvent };
+  }, [onReport, onFinish, onItemEvent]);
 
   const seatsKey = seats.map((s) => `${s.id}:${s.seat}`).join(",");
 
@@ -88,9 +126,11 @@ export function MoonberryRacingCanvas({
 
     let renderer: MoonberryRacingRenderer;
     let race: Race;
+    let arena: Arena;
     try {
       renderer = new MoonberryRacingRenderer(course);
       race = new Race(course, isHost);
+      arena = new Arena(course, itemsEnabled);
       for (const seat of seats) race.join(seat.id, seat.name, seat.seat, seat.id === localId);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Moonberry Racing could not build the course.";
@@ -103,6 +143,14 @@ export function MoonberryRacingCanvas({
     const unsubscribe = subscribeRemote?.((report) => {
       if (report.racerId === localId) return;
       race.applyRacerReport(report);
+    });
+
+    const unsubscribeItems = subscribeItems?.((event) => {
+      // Our own events already applied locally; replaying them would double up.
+      if (event.racerId === localId) return;
+      const racer = race.racers.get(event.racerId) as CombatRacer | undefined;
+      if (event.kind === "pickup") arena.applyRemotePickup(racer, event.box, event.item, event.at);
+      else arena.applyRemoteUse(racer, event.racerId, event.item, event);
     });
 
     /* -- input -- */
@@ -148,7 +196,6 @@ export function MoonberryRacingCanvas({
     const observer = new ResizeObserver(resize);
     observer.observe(mount);
 
-    const takenBoxes = new Set<number>();
     let raf = 0;
     let last = performance.now();
     let accumulator = 0;
@@ -157,6 +204,8 @@ export function MoonberryRacingCanvas({
     let surfaceHint: number | undefined;
     let reportedFinish = false;
     let lastPadIndex = -1;
+    let itemHeld = false;
+    let heldItem: PowerUp | null = null;
 
     const loop = () => {
       raf = requestAnimationFrame(loop);
@@ -181,7 +230,48 @@ export function MoonberryRacingCanvas({
           steps += 1;
           const surface = surfaceAt(course, me.kart.x, me.kart.z, surfaceHint);
           surfaceHint = surface.t;
-          stepKart(me.kart, racing && !me.finishedAt ? input : NO_KART_INPUT, surface, KART.STEP);
+          stepKart(
+            me.kart,
+            racing && !me.finishedAt ? input : NO_KART_INPUT,
+            surface,
+            KART.STEP,
+            Arena.speedFactor(me),
+          );
+
+          if (racing) {
+            // Fire on the rising edge only, so holding the key is one use.
+            if (input.item && !itemHeld && me.item) {
+              const fired = arena.useItem(me as CombatRacer, []);
+              if (fired) {
+                callbacksRef.current.onItemEvent?.({
+                  kind: "use",
+                  racerId: localId,
+                  item: fired.item,
+                  x: fired.pose.x,
+                  z: fired.pose.z,
+                  heading: fired.pose.heading,
+                });
+              }
+            }
+            itemHeld = input.item;
+
+            const combatants = [...race.racers.values()] as CombatRacer[];
+            for (const event of arena.step(combatants, race.raceTime, KART.STEP)) {
+              if (event.racerId !== localId) continue;
+              if (event.type === "pickup") {
+                heldItem = me.item;
+                // Tell everyone which crate went, so it hides on their screen too.
+                callbacksRef.current.onItemEvent?.({
+                  kind: "pickup",
+                  racerId: localId,
+                  box: crateIndexFor(course, me.kart.x, me.kart.z),
+                  item: event.item,
+                  at: race.raceTime,
+                });
+              }
+              if (event.type === "used") heldItem = null;
+            }
+          }
 
           // Off the map, or fallen: recover at the last checkpoint.
           if (surface.edgeOverrun > VERGE_LIMIT || me.kart.y < -30) {
@@ -199,14 +289,6 @@ export function MoonberryRacingCanvas({
             applyBoostPad(me.kart, pad.strength ?? 1);
             lastPadIndex = index;
           }
-        });
-
-        // Item boxes.
-        course.itemBoxes.forEach((box, index) => {
-          if (takenBoxes.has(index)) return;
-          const at = sampleCourse(course, box.t);
-          const bx = at.x + -0 + box.offset * 0;
-          if (Math.hypot(me.kart.x - bx, me.kart.z - at.z) < 2.4) takenBoxes.add(index);
         });
 
         if (racing) race.advanceProgress(me);
@@ -256,7 +338,11 @@ export function MoonberryRacingCanvas({
         raceTime: race.raceTime,
         followId: localId,
         rearView,
-        itemBoxesTaken: takenBoxes,
+        itemBoxesTaken: arena.takenBoxes(race.raceTime),
+        shots: [
+          ...arena.projectiles.map((shot) => ({ id: shot.id, kind: shot.kind, x: shot.x, z: shot.z, trap: false })),
+          ...arena.traps.map((trap) => ({ id: trap.id, kind: trap.kind, x: trap.x, z: trap.z, trap: true })),
+        ],
       };
 
       const size = new THREE.Vector2();
@@ -283,6 +369,9 @@ export function MoonberryRacingCanvas({
           countdown,
           wrongWay: Boolean(me?.progress.wrongWay),
           finalLap: (me?.progress.lap ?? 0) === course.laps - 1,
+          blips: karts.map((k) => ({ id: k.id, x: k.x, z: k.z, seat: k.seat, local: k.local })),
+          item: heldItem?.name ?? null,
+          itemColor: heldItem ? `#${heldItem.color.toString(16).padStart(6, "0")}` : null,
           message: me?.spectator
             ? "Spectating — you joined after the lights went out."
             : race.phase === "finished"
@@ -299,6 +388,8 @@ export function MoonberryRacingCanvas({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       unsubscribe?.();
+      unsubscribeItems?.();
+      arena.dispose();
       renderer.dispose();
       webgl.dispose();
       if (webgl.domElement.parentNode === mount) mount.removeChild(webgl.domElement);
@@ -306,7 +397,7 @@ export function MoonberryRacingCanvas({
     // Rebuilt only when the course or the field changes; per-frame data
     // arrives through refs so this never tears down mid-race.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [course, seatsKey, localId, isHost]);
+  }, [course, seatsKey, localId, isHost, itemsEnabled]);
 
   const formatTime = useCallback((ms: number) => {
     const total = Math.max(0, ms);
@@ -365,6 +456,17 @@ export function MoonberryRacingCanvas({
           </div>
         )}
 
+        {/* Held item: colour and name, so it is identifiable at a glance. */}
+        {hud.item && (
+          <div
+            className="absolute right-3 top-24 rounded-lg border-2 bg-ink-900/75 px-3 py-1.5 text-center"
+            style={{ borderColor: hud.itemColor ?? "#fff" }}
+          >
+            <p className="text-[10px] font-black uppercase tracking-wide text-cream-200/80">Item · E</p>
+            <p className="text-xs font-black" style={{ color: hud.itemColor ?? "#fff" }}>{hud.item}</p>
+          </div>
+        )}
+
         {hud.boosting && (
           <p className="absolute bottom-4 right-4 rounded-full bg-honey-400/90 px-3 py-1 text-xs font-black uppercase text-ink-900">
             Boost
@@ -398,7 +500,7 @@ export function MoonberryRacingCanvas({
         )}
 
         {/* Minimap: the course centreline plus every kart. */}
-        <Minimap course={course} />
+        <Minimap blips={hud.blips} course={course} />
       </div>
 
       <p className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] font-bold text-cream-200/50">
@@ -408,8 +510,14 @@ export function MoonberryRacingCanvas({
   );
 }
 
-/** Static course outline. Kart dots are drawn by the canvas overlay. */
-function Minimap({ course }: { course: Course }) {
+/** Course outline with a live dot per kart, so the field is readable. */
+function Minimap({
+  blips,
+  course,
+}: {
+  blips: Array<{ id: string; x: number; z: number; seat: number; local: boolean }>;
+  course: Course;
+}) {
   const samples = 160;
   const points: Array<[number, number]> = [];
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -421,13 +529,50 @@ function Minimap({ course }: { course: Course }) {
   }
   const spanX = maxX - minX || 1;
   const spanZ = maxZ - minZ || 1;
+  // Uniform scale on both axes, or a long circuit would be squashed into a
+  // square and stop resembling the track you are driving.
+  const scale = 88 / Math.max(spanX, spanZ);
+  const offsetX = 6 + (88 - spanX * scale) / 2;
+  const offsetZ = 6 + (88 - spanZ * scale) / 2;
+  const toMap = (x: number, z: number) => [
+    (x - minX) * scale + offsetX,
+    (z - minZ) * scale + offsetZ,
+  ] as const;
+
   const path = points
-    .map(([x, z], i) => `${i === 0 ? "M" : "L"}${((x - minX) / spanX) * 88 + 6},${((z - minZ) / spanZ) * 88 + 6}`)
+    .map(([x, z], i) => {
+      const [mx, mz] = toMap(x, z);
+      return `${i === 0 ? "M" : "L"}${mx.toFixed(1)},${mz.toFixed(1)}`;
+    })
     .join(" ");
 
   return (
-    <svg className="absolute bottom-3 left-3 size-24 rounded-lg bg-ink-900/60" viewBox="0 0 100 100" aria-hidden="true">
-      <path d={path} fill="none" stroke={`#${course.palette.accent.toString(16).padStart(6, "0")}`} strokeWidth={3} strokeLinejoin="round" />
+    <svg className="absolute bottom-3 left-3 size-28 rounded-lg bg-ink-900/65" viewBox="0 0 100 100" aria-hidden="true">
+      <path
+        d={path}
+        fill="none"
+        stroke={`#${course.palette.accent.toString(16).padStart(6, "0")}`}
+        strokeWidth={3}
+        strokeLinejoin="round"
+        opacity={0.85}
+      />
+      {blips.map((blip) => {
+        const [mx, mz] = toMap(blip.x, blip.z);
+        const colour = `#${kartColor(blip.seat).toString(16).padStart(6, "0")}`;
+        return (
+          <circle
+            cx={mx}
+            cy={mz}
+            fill={colour}
+            key={blip.id}
+            // The local racer reads larger and outlined, so you can find
+            // yourself instantly in an eight-kart field.
+            r={blip.local ? 4 : 2.8}
+            stroke={blip.local ? "#fffaf0" : "none"}
+            strokeWidth={blip.local ? 1.4 : 0}
+          />
+        );
+      })}
     </svg>
   );
 }

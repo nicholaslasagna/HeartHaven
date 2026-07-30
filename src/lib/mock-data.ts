@@ -197,6 +197,13 @@ export const partyGames = [
     description: "Pass the basket between seated friends, catch petals and hearts, dodge thorns, and build one shared combo.",
   },
   {
+    id: "moonberry-racing-party",
+    title: "Moonberry Racing",
+    mode: "2-8 racers",
+    href: "/app/moonberry-racing",
+    description: "Three original candy circuits over three laps — drift for boost, grab Moonberry Crates, and hold the racing line through moving hazards.",
+  },
+  {
     id: "heartrush-party",
     title: "HeartRush",
     mode: "2-8 racers",

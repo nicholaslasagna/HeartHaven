@@ -16,15 +16,16 @@ import {
 } from "../src/lib/game/moonberry-racing/kart";
 import {
   createLapProgress, updateLapProgress, racePositions, respawnPose, startingGrid,
-  validateCourse, sampleCourse, courseLength, courseTangent, projectToCourse, type Course,
+  validateCourse, sampleCourse, courseLength, courseTangent, projectToCourse, hazardPosition, type Course,
 } from "../src/lib/game/moonberry-racing/track";
 import {
   POWER_UPS, MAX_CONTROL_LOSS, rollPowerUp, pickupSeed, positionFraction,
-  stepEffects, speedMultiplier, absorbHit, isDisabled, type ActiveEffect,
+  stepEffects, speedMultiplier, absorbHit, isDisabled, BOX_RESPAWN, type ActiveEffect,
 } from "../src/lib/game/moonberry-racing/powerups";
 import { MOONBERRY_COURSES } from "../src/lib/game/moonberry-racing/courses";
 import { Race, COUNTDOWN_MS, FINISH_GRACE_MS } from "../src/lib/game/moonberry-racing/race";
 import { MoonberryRacingRenderer } from "../src/lib/game/moonberry-racing/renderer";
+import { Arena, type CombatRacer } from "../src/lib/game/moonberry-racing/combat";
 
 const input = (o: Partial<KartInput> = {}): KartInput => ({ ...NO_KART_INPUT, ...o });
 const road: SurfaceInfo = { offroad: false, ice: false, groundY: 0 };
@@ -232,6 +233,17 @@ const results: string[] = [];
   ]);
   assert.equal(order[0].id, "c", "a finisher outranks anyone still racing");
   assert.equal(order[1].id, "b");
+
+  /* The grid must be LEVEL. A course is free to end on a ramp, but laying
+     the grid on that slope stands the back row metres above the front. */
+  for (const stage of MOONBERRY_COURSES) {
+    for (const seats of [2, 4, 6, 8]) {
+      const grid = startingGrid(stage, seats);
+      const ys = grid.map((pose) => pose.position.y);
+      const spread = Math.max(...ys) - Math.min(...ys);
+      assert.ok(spread < 1.2, `${stage.id} ${seats}-kart grid must be level, spread ${spread.toFixed(2)}m`);
+    }
+  }
 
   results.push(`laps      3 laps counted · reverse-cross blocked · skip blocked · grid 2-8 clear`);
 }
@@ -627,6 +639,236 @@ const results: string[] = [];
     r.dispose();
   }
   results.push(`render    chase ${distance.toFixed(1)}m behind · kart ${(fill * 100).toFixed(0)}% of frame · stages ${built.join(" ")}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Combat: items, hazards, contact                                     */
+/* ------------------------------------------------------------------ */
+{
+  const course = MOONBERRY_COURSES[0];
+  const grid = startingGrid(course, 4);
+
+  const makeRacer = (i: number): CombatRacer => ({
+    id: `c${i}`, seat: i,
+    kart: createKart(grid[i].position.x, grid[i].position.y, grid[i].position.z, grid[i].heading),
+    effects: [], item: null, position: i + 1, spectator: false, finishedAt: null,
+    local: true,
+  });
+
+  /* An item crate must actually hand over an item, once, then go on cooldown. */
+  const arena = new Arena(course);
+  const solo = makeRacer(0);
+  const box = course.itemBoxes[0];
+  const boxAt = sampleCourse(course, box.t);
+  solo.kart.x = boxAt.x;
+  solo.kart.z = boxAt.z;
+  let events = arena.step([solo], 1, KART.STEP);
+  assert.ok(events.some((e) => e.type === "pickup"), "driving over a crate grants an item");
+  assert.ok(solo.item, "and the racer is holding it");
+  const firstItem = solo.item!;
+
+  // Holding something means you pass straight through.
+  solo.item = firstItem;
+  events = arena.step([solo], 1.1, KART.STEP);
+  assert.ok(!events.some((e) => e.type === "pickup"), "a full racer cannot stockpile");
+  // The crate is on cooldown for everyone.
+  assert.ok(arena.takenBoxes(1.1).size > 0, "a collected crate is hidden while it respawns");
+  assert.equal(arena.takenBoxes(1.1 + BOX_RESPAWN + 0.1).size, 0, "and returns after the delay");
+
+  /* A projectile must travel, hit someone else, and never its owner. */
+  const duel = new Arena(course);
+  const shooter = makeRacer(0);
+  const target = makeRacer(1);
+  // Put the target straight ahead of the shooter.
+  target.kart.x = shooter.kart.x + Math.sin(shooter.kart.heading) * 12;
+  target.kart.z = shooter.kart.z + Math.cos(shooter.kart.heading) * 12;
+  shooter.item = POWER_UPS["jam-bubble"];
+  duel.useItem(shooter, []);
+  assert.equal(duel.projectiles.length, 1, "using a projectile item spawns one");
+  assert.equal(shooter.item, null, "and consumes it");
+
+  let hit = false;
+  for (let i = 0; i < 240 && !hit; i += 1) {
+    for (const e of duel.step([shooter, target], 2 + i * KART.STEP, KART.STEP)) {
+      if (e.type === "hit" && e.racerId === target.id) hit = true;
+      assert.notEqual(e.type === "hit" ? e.racerId : "", shooter.id, "a shot never hits its owner");
+    }
+  }
+  assert.ok(hit, "a projectile fired at someone ahead connects");
+  assert.equal(duel.projectiles.length, 0, "and is consumed on impact");
+
+  // A landed slow must WARN before it bites, then actually slow the kart.
+  const slowed = target.effects.find((e) => e.id === "jam-bubble");
+  assert.ok(slowed, "the victim carries the effect");
+  assert.ok(slowed!.warning > 0, "with a warning lead time before it lands");
+  assert.equal(Arena.speedFactor(target), 1, "so it has not slowed them yet");
+  for (let i = 0; i < 120; i += 1) duel.step([shooter, target], 5, KART.STEP);
+  assert.ok(Arena.speedFactor(target) < 0.8, "once the warning elapses it slows them");
+
+  /* A shield eats exactly one hit. */
+  const guarded = makeRacer(2);
+  guarded.item = POWER_UPS["sprinkle-shield"];
+  const shieldArena = new Arena(course);
+  shieldArena.useItem(guarded, []);
+  assert.ok(guarded.effects.some((e) => e.id === "sprinkle-shield"), "the shield is up");
+  const attacker = makeRacer(3);
+  attacker.kart.x = guarded.kart.x;
+  attacker.kart.z = guarded.kart.z - 3;
+  attacker.kart.heading = 0;
+  // Two sparks in a row: the first is blocked, the second gets through.
+  const fire = () => {
+    attacker.item = POWER_UPS["sugar-spark"];
+    shieldArena.useItem(attacker, []);
+    const seen: string[] = [];
+    for (let i = 0; i < 120; i += 1) {
+      for (const e of shieldArena.step([attacker, guarded], 8, KART.STEP)) {
+        if (e.type === "blocked" && e.racerId === guarded.id) seen.push("blocked");
+        if (e.type === "hit" && e.racerId === guarded.id) seen.push("hit");
+      }
+    }
+    return seen;
+  };
+  guarded.kart.invulnTimer = 0;
+  const firstVolley = fire();
+  assert.ok(firstVolley.includes("blocked"), `the shield blocks the first hit (${firstVolley.join(",")})`);
+  assert.ok(!guarded.effects.some((e) => e.id === "sprinkle-shield"), "and is consumed");
+
+  /* HAZARDS must hit, must use the same position the renderer draws, and
+     must be clearable by hopping over a low one. */
+  const hazardArena = new Arena(course);
+  const spec = course.hazards[0];
+  const victim = makeRacer(0);
+  const at = hazardPosition(course, spec, 3);
+  victim.kart.x = at.x;
+  victim.kart.z = at.z;
+  victim.kart.y = at.y - at.radius;
+  victim.kart.invulnTimer = 0;
+  const hazardEvents = hazardArena.step([victim], 3, KART.STEP);
+  assert.ok(hazardEvents.some((e) => e.type === "hazard"), "a hazard you drive into spins you out");
+  assert.ok(victim.kart.spinTimer > 0, "and takes the wheel briefly");
+  assert.ok(victim.kart.spinTimer <= KART.SPINOUT_TIME, `for no longer than ${KART.SPINOUT_TIME}s`);
+
+  // Airborne above it clears it.
+  const hopper = makeRacer(1);
+  hopper.kart.x = at.x;
+  hopper.kart.z = at.z;
+  hopper.kart.y = at.y + at.radius + 1;
+  hopper.kart.invulnTimer = 0;
+  const cleared = new Arena(course).step([hopper], 3, KART.STEP);
+  assert.ok(!cleared.some((e) => e.type === "hazard"), "hopping over a low hazard clears it");
+
+  // Respawn invulnerability blocks a chain hit.
+  const fresh = makeRacer(2);
+  fresh.kart.x = at.x;
+  fresh.kart.z = at.z;
+  fresh.kart.y = at.y - at.radius;
+  fresh.kart.invulnTimer = KART.RESPAWN_INVULN;
+  const protectedRun = new Arena(course).step([fresh], 3, KART.STEP);
+  assert.ok(!protectedRun.some((e) => e.type === "hazard"), "invulnerability after a respawn holds");
+
+  /* Kart contact must shove, never trap. */
+  const bumpArena = new Arena(course);
+  const a = makeRacer(0);
+  const b = makeRacer(1);
+  b.kart.x = a.kart.x + 1.0;
+  b.kart.z = a.kart.z;
+  a.kart.speed = 20;
+  b.kart.speed = 20;
+  const before = Math.hypot(b.kart.x - a.kart.x, b.kart.z - a.kart.z);
+  const bumpEvents = bumpArena.step([a, b], 4, KART.STEP);
+  assert.ok(bumpEvents.some((e) => e.type === "bump"), "touching karts register a bump");
+  const after = Math.hypot(b.kart.x - a.kart.x, b.kart.z - a.kart.z);
+  assert.ok(after > before, "and are pushed apart rather than left overlapping");
+  assert.ok(a.kart.speed > 0 && b.kart.speed > 0, "both keep rolling");
+
+  /* No item may take control away for longer than the cap. */
+  for (const item of Object.values(POWER_UPS)) {
+    if (item.id === "sugar-spark") continue;
+    const probe = makeRacer(0);
+    probe.kart.invulnTimer = 0;
+    const solo2 = new Arena(course);
+    probe.item = item;
+    solo2.useItem(probe, []);
+    solo2.step([probe], 6, KART.STEP);
+    assert.ok(probe.kart.spinTimer <= KART.SPINOUT_TIME, `${item.id} must not exceed the spin cap`);
+  }
+
+  /* MULTIPLAYER ITEMS. Each client runs its own Arena, so the two things
+     that must agree across machines are crate state and what was fired. */
+  {
+    // A remote kart must NOT claim a crate on our machine — otherwise the
+    // same crate is claimed once per client and cooldowns drift apart.
+    const mine = new Arena(course);
+    const remote = makeRacer(0);
+    remote.local = false;
+    const crate = sampleCourse(course, course.itemBoxes[0].t);
+    remote.kart.x = crate.x;
+    remote.kart.z = crate.z;
+    const ghosted = mine.step([remote], 1, KART.STEP);
+    assert.ok(!ghosted.some((e) => e.type === "pickup"), "a remote kart does not claim crates locally");
+    assert.equal(remote.item, null, "and gains nothing here");
+    assert.equal(mine.takenBoxes(1).size, 0, "the crate stays up until their client says otherwise");
+
+    // Their pickup, broadcast to us, marks the same crate spent.
+    mine.applyRemotePickup(remote, 0, "jam-bubble", 1);
+    assert.ok(mine.takenBoxes(1).has(0), "a broadcast pickup hides the crate here too");
+    assert.ok(remote.item, "and shows them holding it");
+
+    // Their item use, broadcast with the pose it fired from, spawns the same
+    // projectile on our machine.
+    const pose = { x: remote.kart.x, z: remote.kart.z, heading: 0 };
+    mine.applyRemoteUse(remote, remote.id, "jam-bubble", pose);
+    assert.equal(mine.projectiles.length, 1, "a broadcast use spawns the projectile here");
+    assert.equal(remote.item, null, "and clears their held item");
+    const shot = mine.projectiles[0];
+    assert.ok(Math.hypot(shot.x - pose.x, shot.z - pose.z) < 3, "spawned at the pose they fired from");
+
+    // Two clients handed the same event produce the same projectile.
+    const theirs = new Arena(course);
+    theirs.applyRemoteUse(undefined, "someone", "jam-bubble", pose);
+    assert.equal(theirs.projectiles.length, 1);
+    assert.ok(
+      Math.abs(theirs.projectiles[0].x - shot.x) < 1e-9 &&
+      Math.abs(theirs.projectiles[0].z - shot.z) < 1e-9,
+      "the same event produces the same projectile on every client",
+    );
+
+    // A remote victim keeps authority over its own kart: we play the visual
+    // but never consume their shield or claim the hit stuck.
+    const victimArena = new Arena(course);
+    const theirKart = makeRacer(1);
+    theirKart.local = false;
+    theirKart.effects = [{ id: "sprinkle-shield", remaining: 6, warning: 0, sourceId: null }];
+    theirKart.kart.invulnTimer = 0;
+    victimArena.applyRemoteUse(undefined, "attacker", "sugar-spark", {
+      x: theirKart.kart.x, z: theirKart.kart.z - 3, heading: 0,
+    });
+    for (let i = 0; i < 120; i += 1) victimArena.step([theirKart], 9, KART.STEP);
+    assert.ok(
+      theirKart.effects.some((e) => e.id === "sprinkle-shield"),
+      "we never spend a remote racer's shield — their machine decides that",
+    );
+
+    // Our own kart still resolves its shield locally.
+    const mineArena = new Arena(course);
+    const myKart = makeRacer(2);
+    myKart.effects = [{ id: "sprinkle-shield", remaining: 6, warning: 0, sourceId: null }];
+    myKart.kart.invulnTimer = 0;
+    mineArena.applyRemoteUse(undefined, "attacker", "sugar-spark", {
+      x: myKart.kart.x, z: myKart.kart.z - 3, heading: 0,
+    });
+    let blocked = false;
+    for (let i = 0; i < 120; i += 1) {
+      for (const e of mineArena.step([myKart], 9, KART.STEP)) {
+        if (e.type === "blocked" && e.racerId === myKart.id) blocked = true;
+      }
+    }
+    assert.ok(blocked, "our own shield does block, and is consumed here");
+    assert.ok(!myKart.effects.some((e) => e.id === "sprinkle-shield"));
+  }
+
+  results.push(`combat    crates grant+cooldown · projectile warns then slows · shield eats one · hazards hit (hop clears) · bumps shove not trap`);
+  results.push(`mp items  remote karts claim nothing locally · broadcast pickup+use replicate · same event, same projectile · victim keeps authority`);
 }
 
 console.log(`\nMoonberry Racing: all checks passed\n${results.map((l) => `  ${l}`).join("\n")}\n`);

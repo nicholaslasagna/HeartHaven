@@ -159,7 +159,14 @@ const approach = (v: number, target: number, delta: number) =>
  *
  * `dt` should be KART.STEP; it is a parameter only so tests can probe.
  */
-export function stepKart(kart: KartBody, input: KartInput, surface: SurfaceInfo, dt: number) {
+export function stepKart(
+  kart: KartBody,
+  input: KartInput,
+  surface: SurfaceInfo,
+  dt: number,
+  /** Multiplier from active items: a burst speeds you up, taffy slows you. */
+  speedScale = 1,
+) {
   kart.events.length = 0;
 
   const actionPressed = input.action && !kart.actionHeld;
@@ -246,14 +253,14 @@ export function stepKart(kart: KartBody, input: KartInput, surface: SurfaceInfo,
   }
 
   /* -- longitudinal -- */
-  const maxSpeed = boosting
+  const maxSpeed = (boosting
     ? KART.BOOST_SPEED
     : surface.offroad
       ? KART.OFFROAD_MAX_SPEED
-      : KART.MAX_SPEED;
+      : KART.MAX_SPEED) * speedScale;
 
   if (boosting) {
-    kart.speed = approach(kart.speed, KART.BOOST_SPEED, KART.BOOST_ACCEL * dt);
+    kart.speed = approach(kart.speed, KART.BOOST_SPEED * speedScale, KART.BOOST_ACCEL * dt);
   } else if (input.throttle > 0) {
     kart.speed = approach(kart.speed, maxSpeed * input.throttle, KART.ACCEL * dt);
   } else if (input.brake > 0) {
@@ -264,8 +271,9 @@ export function stepKart(kart: KartBody, input: KartInput, surface: SurfaceInfo,
   }
 
   // Off-road bleeds speed even on full throttle, but leaves you driving.
-  if (surface.offroad && kart.speed > KART.OFFROAD_MAX_SPEED) {
-    kart.speed = approach(kart.speed, KART.OFFROAD_MAX_SPEED, KART.OFFROAD_DRAG * dt);
+  const offroadCap = KART.OFFROAD_MAX_SPEED * speedScale;
+  if (surface.offroad && kart.speed > offroadCap) {
+    kart.speed = approach(kart.speed, offroadCap, KART.OFFROAD_DRAG * dt);
   }
   if (surface.conveyor) kart.speed += surface.conveyor * dt;
 
