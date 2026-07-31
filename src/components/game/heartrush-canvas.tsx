@@ -47,6 +47,22 @@ import {
  * ~10x the code. Swap in cannon-es only if we ever need slopes/stacking.
  */
 
+/**
+ * Shortest signed turn between two angles, valid for any input.
+ *
+ * The compact `((a - b + 3PI) % 2PI) - PI` form only holds while the
+ * difference stays above -3PI, because JavaScript's `%` keeps the sign of
+ * the dividend. Rotations accumulate, so eventually it returns a value
+ * outside +/-PI and the avatar snaps the long way round.
+ */
+function shortestAngle(a: number, b: number) {
+  const twoPi = Math.PI * 2;
+  let delta = (a - b) % twoPi;
+  if (delta > Math.PI) delta -= twoPi;
+  else if (delta < -Math.PI) delta += twoPi;
+  return delta;
+}
+
 /** Fixed timestep so physics feel identical on 60Hz and 144Hz screens. */
 const STEP = 1 / 60;
 /* Jump/gravity/top-speed live in heartrush-course so the generator sizes its
@@ -650,7 +666,7 @@ class Player {
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
     if (speed > 0.6) {
       const target = Math.atan2(this.velocity.x, this.velocity.z);
-      const delta = ((target - this.group.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      const delta = shortestAngle(target, this.group.rotation.y);
       this.group.rotation.y += delta * Math.min(1, dt * 12);
     }
     this.body.rotation.x = this.diveTimer > 0 ? -1.1 : this.body.rotation.x * (1 - Math.min(1, dt * 8));

@@ -94,6 +94,7 @@ export function MoonberryRacingCanvas({
     timeMs: 0, charge: 0, band: "none" as string, boosting: false,
     countdown: null as number | null, wrongWay: false, finalLap: false,
     item: null as string | null, itemColor: null as string | null, message: "",
+    chain: 0,
     blips: [] as Array<{ id: string; x: number; z: number; seat: number; local: boolean }>,
   });
   const [error, setError] = useState<string | null>(null);
@@ -266,6 +267,8 @@ export function MoonberryRacingCanvas({
             else if (event === "land") playCozyCue("landing");
             else if (event === "collide") playCozyCue("bump");
             else if (event === "pad") playCozyCue("boost");
+            // Landing a real jump pays a boost, so it should sound like one.
+            else if (event === "air-boost") playCozyCue("boost");
           }
           // A scrub loop would retrigger every step, so throttle it.
           if (me.kart.driftSide !== 0 && !wasDrifting) playCozyCue("drift");
@@ -293,6 +296,8 @@ export function MoonberryRacingCanvas({
               if (event.racerId !== localId) continue;
               if (event.type === "used") playCozyCue("itemUse");
               if (event.type === "hit") playCozyCue("bump");
+              // A shield eating a hit is a win, and needs to sound unlike one.
+              if (event.type === "blocked") playCozyCue("combo");
               if (event.type === "pickup") {
                 heldItem = me.item;
                 playCozyCue("itemGet");
@@ -407,7 +412,8 @@ export function MoonberryRacingCanvas({
           laps: course.laps,
           timeMs: Math.round(race.raceTime * 1000),
           charge: me?.kart.driftCharge ?? 0,
-          band: chargeBand(me?.kart.driftCharge ?? 0),
+          band: chargeBand(me?.kart.driftCharge ?? 0, me?.kart.driftChain ?? 0),
+          chain: me?.kart.driftChain ?? 0,
           boosting: (me?.kart.boostTimer ?? 0) > 0,
           countdown,
           wrongWay: Boolean(me?.progress.wrongWay),
@@ -493,8 +499,17 @@ export function MoonberryRacingCanvas({
               <span className="absolute inset-y-0 left-[33%] w-px bg-cream-50/70" />
               <span className="absolute inset-y-0 left-[63%] w-px bg-cream-50/70" />
             </div>
-            <p className="mt-1 text-center text-[11px] font-black uppercase tracking-wide text-cream-100">
-              {hud.band === "sweet" ? "release now" : hud.band === "over" ? "let go!" : "charging"}
+            <p className="mt-1 flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-wide text-cream-100">
+              <span>{hud.band === "sweet" ? "release now" : hud.band === "over" ? "let go!" : "charging"}</span>
+              {/* Pips for the chain: three links per slide, each stronger. */}
+              <span className="flex gap-0.5">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    className={cn("block size-1.5 rounded-full", i < hud.chain ? "bg-honey-300" : "bg-cream-100/30")}
+                    key={i}
+                  />
+                ))}
+              </span>
             </p>
           </div>
         )}

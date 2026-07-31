@@ -61,6 +61,25 @@ export const KART = {
   BOOST_TIME: 1.15,
   PAD_BOOST_TIME: 1.4,
 
+  /* CHAINED BOOSTS. A single drift can be cashed in up to three times: the
+     slide keeps going after each one, the meter refills, and you hit the
+     window again. That is what turns a corner from "hold, release, done"
+     into a rhythm you can be good at, and it is why the whole system is
+     worth the complexity. Each link is a little stronger, so a clean
+     three-chain out of a long corner is a genuine reward. */
+  DRIFT_MAX_CHAIN: 3,
+  CHAIN_BOOST_STEP: 0.28,
+  /* Later links demand tighter timing, or chaining would be free once the
+     first one lands. */
+  CHAIN_WINDOW_TIGHTEN: 0.12,
+
+  /* Airtime pays. Landing from a real jump gives a short boost scaled by
+     how long you were up, which makes ramps and crests worth hunting
+     instead of things to survive. */
+  AIR_BOOST_MIN: 0.55,
+  AIR_BOOST_SCALE: 0.9,
+  AIR_BOOST_MAX: 0.9,
+
   SPINOUT_TIME: 0.85,
   /** Control returns quickly; a long punish is not fun. */
   COLLISION_SPEED_KEEP: 0.55,
@@ -106,7 +125,7 @@ export const NO_KART_INPUT: KartInput = {
 
 export type KartEvent =
   | "hop" | "land" | "drift-start" | "boost-sweet" | "boost-early"
-  | "spinout" | "collide" | "respawn" | "pad";
+  | "spinout" | "collide" | "respawn" | "pad" | "air-boost";
 
 export type KartBody = {
   x: number; y: number; z: number;
@@ -119,13 +138,17 @@ export type KartBody = {
 
   driftSide: DriftSide;
   driftCharge: number;
+  /** Boosts already cashed in during THIS slide, 0..DRIFT_MAX_CHAIN. */
+  driftChain: number;
   boostTimer: number;
   spinTimer: number;
   invulnTimer: number;
 
   /** Held-action edge detection. */
   actionHeld: boolean;
-  /** Seconds continuously off the ground, for drift tolerance. */
+  /** Held-drift edge detection: a new slide needs a fresh press. */
+  driftHeld: boolean;
+  /** Seconds continuously off the ground: drift tolerance and landing boost. */
   airTime: number;
   events: KartEvent[];
 };
@@ -134,17 +157,19 @@ export function createKart(x: number, y: number, z: number, heading: number): Ka
   return {
     x, y, z, heading,
     speed: 0, vy: 0, airborne: false,
-    driftSide: 0, driftCharge: 0,
+    driftSide: 0, driftCharge: 0, driftChain: 0,
     boostTimer: 0, spinTimer: 0, invulnTimer: 0,
-    actionHeld: false, airTime: 0, events: [],
+    actionHeld: false, driftHeld: false, airTime: 0, events: [],
   };
 }
 
 /** Which band the charge meter is in, for the HUD and for scoring a release. */
-export function chargeBand(charge: number): ChargeBand {
+export function chargeBand(charge: number, chain = 0): ChargeBand {
   if (charge <= 0) return "none";
+  // Each link already banked narrows the window from the top.
+  const sweetEnd = KART.DRIFT_SWEET_END - KART.CHAIN_WINDOW_TIGHTEN * chain;
   if (charge < KART.DRIFT_EARLY) return "early";
-  if (charge <= KART.DRIFT_SWEET_END) return "sweet";
+  if (charge <= sweetEnd) return "sweet";
   return "over";
 }
 
@@ -183,6 +208,8 @@ export function stepKart(
 
   const actionPressed = input.action && !kart.actionHeld;
   kart.actionHeld = input.action;
+  const driftWasHeld = kart.driftHeld;
+  kart.driftHeld = input.drift;
   kart.invulnTimer = Math.max(0, kart.invulnTimer - dt);
 
   /* -- spinning out: brief, and completely uninterruptible so it reads as a
@@ -203,7 +230,13 @@ export function stepKart(
   const fastEnough = kart.speed > KART.DRIFT_MIN_SPEED;
   const steering = Math.abs(input.steer) > 0.15;
 
-  if (input.drift && !kart.airborne && fastEnough && steering && kart.driftSide === 0) {
+  /* A slide must be STARTED, not merely held into. Once the third link
+     cashes out and ends a drift, a still-held button would immediately open
+     a fresh slide and the chain could be repeated forever without ever
+     letting go — three links became five, then however many the corner
+     lasted. Requiring a rising edge makes each slide a deliberate act. */
+  const driftPressed = input.drift && !driftWasHeld;
+  if (driftPressed && !kart.airborne && fastEnough && steering && kart.driftSide === 0) {
     kart.driftSide = input.steer > 0 ? 1 : -1;
     kart.driftCharge = 0;
     kart.events.push("drift-start");
@@ -221,6 +254,7 @@ export function stepKart(
       if (kart.driftCharge >= KART.DRIFT_BURST) {
         kart.driftSide = 0;
         kart.driftCharge = 0;
+        kart.driftChain = 0;
         kart.spinTimer = KART.SPINOUT_TIME;
         kart.events.push("spinout");
         integrate(kart, surface, dt);
@@ -231,9 +265,10 @@ export function stepKart(
         releaseDrift(kart);
       }
     } else {
-      // Let go of drift without pressing boost: the charge is simply lost.
+      // Let go of drift: the slide, the charge and the chain all end.
       kart.driftSide = 0;
       kart.driftCharge = 0;
+      kart.driftChain = 0;
     }
   } else if (actionPressed && !kart.airborne) {
     // Space with no drift is a hop, which is also how you enter a drift on
@@ -291,23 +326,45 @@ export function stepKart(
   }
   if (surface.conveyor) kart.speed += surface.conveyor * dt;
 
+  /* Keep heading bounded. It is integrated every step and a spin-out adds
+     several radians a second, so left alone it grows forever — which breaks
+     angle maths downstream and ships a silently useless number over the
+     wire to every other client. */
+  kart.heading = wrapAngle(kart.heading);
+
   integrate(kart, surface, dt);
   return kart;
 }
 
 /** Score a drift release. Both failure modes cost something real. */
 function releaseDrift(kart: KartBody) {
-  const band = chargeBand(kart.driftCharge);
-  kart.driftSide = 0;
+  const band = chargeBand(kart.driftCharge, kart.driftChain);
 
   if (band === "sweet" || band === "over") {
-    kart.boostTimer = KART.BOOST_TIME;
+    kart.driftChain += 1;
+    /* Each link is stronger than the last, and boosts extend rather than
+       replace so a chain reads as one long surge. */
+    const strength = 1 + KART.CHAIN_BOOST_STEP * (kart.driftChain - 1);
+    kart.boostTimer = Math.max(kart.boostTimer, KART.BOOST_TIME * strength);
+    kart.driftCharge = 0;
     kart.events.push("boost-sweet");
-  } else {
-    // Too early: no boost, and the charge is gone. Mashing must not pay.
-    kart.events.push("boost-early");
+
+    /* The slide CONTINUES between links — that is the whole point — but the
+       final link cashes out and ends it. Capping only the counter while
+       still paying out left the boost infinite: hold the slide, tap the
+       window forever, and the kart both never stopped accelerating and slid
+       off the road because nothing ever ended the drift. */
+    if (kart.driftChain >= KART.DRIFT_MAX_CHAIN) {
+      kart.driftSide = 0;
+      kart.driftChain = 0;
+    }
+    return;
   }
+
+  // Too early: no boost, and the CHAIN is gone. Mashing must not pay.
+  kart.driftChain = 0;
   kart.driftCharge = 0;
+  kart.events.push("boost-early");
 }
 
 function integrate(kart: KartBody, surface: SurfaceInfo, dt: number) {
@@ -333,6 +390,15 @@ function integrate(kart: KartBody, surface: SurfaceInfo, dt: number) {
       kart.y = surface.groundY;
       kart.vy = 0;
       kart.airborne = false;
+      /* Airtime pays out on landing, scaled by how long the kart was up.
+         Without this a ramp is pure risk — you give up throttle time and
+         gain nothing — so players learn to avoid the most interesting
+         geometry on the course. The floor keeps a kerb hop from counting. */
+      if (kart.airTime > KART.AIR_BOOST_MIN) {
+        const reward = Math.min(KART.AIR_BOOST_MAX, kart.airTime * KART.AIR_BOOST_SCALE);
+        kart.boostTimer = Math.max(kart.boostTimer, reward);
+        kart.events.push("air-boost");
+      }
       kart.airTime = 0;
       // Landing keeps almost all momentum: ramps should reward, not punish.
       kart.speed *= KART.LANDING_MOMENTUM_KEEP;
@@ -395,7 +461,26 @@ export function respawnKart(kart: KartBody, x: number, y: number, z: number, hea
   kart.events.push("respawn");
 }
 
-/** Shortest signed angle from b to a, in radians. */
+/**
+ * Shortest signed angle from b to a, always within [-PI, PI].
+ *
+ * The obvious one-liner `((a - b + 3PI) % 2PI) - PI` is only correct while
+ * `a - b` stays above -3PI, because JavaScript's `%` keeps the sign of the
+ * dividend rather than returning a positive remainder. Heading accumulates
+ * (a spin-out adds ~2.4PI per second and nothing wrapped it), so after
+ * enough spins the difference fell past that limit and this returned values
+ * outside +/-PI. A steering error of -5.6 rad then pinned the wheel to full
+ * lock, and the kart drove in circles on an open road until it stopped.
+ */
 export function angleDelta(a: number, b: number) {
-  return ((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  const twoPi = Math.PI * 2;
+  let delta = (a - b) % twoPi;
+  if (delta > Math.PI) delta -= twoPi;
+  else if (delta < -Math.PI) delta += twoPi;
+  return delta;
+}
+
+/** Fold an angle into [-PI, PI] so it can never wind up without bound. */
+export function wrapAngle(angle: number) {
+  return angleDelta(angle, 0);
 }

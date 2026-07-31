@@ -13,6 +13,7 @@
  */
 
 import * as THREE from "three";
+import { angleDelta } from "./kart";
 import {
   courseTangent,
   hazardPosition,
@@ -118,6 +119,15 @@ export class MoonberryRacingRenderer {
   private readonly camLook = new THREE.Vector3();
   private camReady = false;
   private baseFov = 68;
+  /** Shared across every live projectile / trap, allocated once. */
+  private readonly projectileAsset: { geometry: THREE.BufferGeometry; material: THREE.Material };
+  private readonly trapAsset: { geometry: THREE.BufferGeometry; material: THREE.Material };
+  private readonly wheelAsset: { geometry: THREE.BufferGeometry; material: THREE.Material };
+
+  /** How many GPU resources are held. Flat over time, or something leaks. */
+  get resourceCount() {
+    return this.disposables.length;
+  }
 
   constructor(readonly course: Course) {
     this.camera = new THREE.PerspectiveCamera(this.baseFov, 16 / 9, 0.3, 900);
@@ -125,6 +135,24 @@ export class MoonberryRacingRenderer {
     const sky = new THREE.Color(course.palette.sky);
     this.scene.background = sky;
     this.scene.fog = new THREE.Fog(course.palette.fog, 90, 420);
+
+    this.projectileAsset = {
+      geometry: this.track(new THREE.SphereGeometry(0.55, 14, 12)),
+      material: this.track(new THREE.MeshStandardMaterial({
+        color: 0xc94f8a, emissive: 0x5a1030, emissiveIntensity: 0.8, roughness: 0.3,
+      })),
+    };
+    this.trapAsset = {
+      geometry: this.track(new THREE.CylinderGeometry(0.8, 0.9, 0.18, 14)),
+      material: this.track(new THREE.MeshStandardMaterial({
+        color: 0xf0a94a, emissive: 0x6a4410, emissiveIntensity: 0.8, roughness: 0.3,
+      })),
+    };
+
+    this.wheelAsset = {
+      geometry: this.track(new THREE.CylinderGeometry(0.42, 0.42, 0.36, 14)),
+      material: this.track(new THREE.MeshStandardMaterial({ color: 0x2a2028, roughness: 0.75 })),
+    };
 
     this.buildLights();
     this.buildTrack();
@@ -555,8 +583,10 @@ export class MoonberryRacingRenderer {
     driver.castShadow = true;
     group.add(driver);
 
-    const wheelGeom = this.track(new THREE.CylinderGeometry(0.42, 0.42, 0.36, 14));
-    const wheelMat = this.track(new THREE.MeshStandardMaterial({ color: 0x2a2028, roughness: 0.75 }));
+    // Wheels are identical on every kart, so they are allocated once for the
+    // whole field rather than four-per-rig times eight racers.
+    const wheelGeom = this.wheelAsset.geometry;
+    const wheelMat = this.wheelAsset.material;
     for (const [wx, wz] of [[-0.82, 0.85], [0.82, 0.85], [-0.82, -0.85], [0.82, -0.85]]) {
       const wheel = new THREE.Mesh(wheelGeom, wheelMat);
       wheel.rotation.z = Math.PI / 2;
@@ -612,7 +642,9 @@ export class MoonberryRacingRenderer {
            same real-world rate instead of one snapping faster. */
         const k = 1 - Math.exp(-9 * dt);
         rig.position.lerp(new THREE.Vector3(view.x, view.y, view.z), k);
-        const delta = ((view.heading - rig.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        // Robust against a heading that has wound past +/-3PI; the naive
+        // modulo form escapes the +/-PI range and spins the kart.
+        const delta = angleDelta(view.heading, rig.rotation.y);
         rig.rotation.y += delta * k;
       }
 
@@ -676,17 +708,14 @@ export class MoonberryRacingRenderer {
       seen.add(shot.id);
       let mesh = this.shotMeshes.get(shot.id);
       if (!mesh) {
-        mesh = new THREE.Mesh(
-          this.track(shot.trap
-            ? new THREE.CylinderGeometry(0.8, 0.9, 0.18, 14)
-            : new THREE.SphereGeometry(0.55, 14, 12)),
-          this.track(new THREE.MeshStandardMaterial({
-            color: shot.trap ? 0xf0a94a : 0xc94f8a,
-            emissive: shot.trap ? 0x6a4410 : 0x5a1030,
-            emissiveIntensity: 0.8,
-            roughness: 0.3,
-          })),
-        );
+        /* Shared geometry and material, not per-shot. Allocating them per
+           projectile pushed a fresh pair into the disposal registry every
+           time an item was fired and never released it until the whole
+           renderer tore down — a race throws 20-40 items, and a rematch
+           loop grew that without bound. The mesh is cheap; the buffers are
+           not. */
+        const pooled = shot.trap ? this.trapAsset : this.projectileAsset;
+        mesh = new THREE.Mesh(pooled.geometry, pooled.material);
         mesh.castShadow = !shot.trap;
         this.scene.add(mesh);
         this.shotMeshes.set(shot.id, mesh);

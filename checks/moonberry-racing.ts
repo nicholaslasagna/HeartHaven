@@ -91,7 +91,7 @@ const results: string[] = [];
     let band = "none";
     for (let i = 0; i < steps; i += 1) {
       stepKart(k, input({ throttle: 1, steer: 1, drift: true }), road, KART.STEP);
-      if (k.driftCharge > 0) band = chargeBand(k.driftCharge);
+      if (k.driftCharge > 0) band = chargeBand(k.driftCharge, k.driftChain);
       if (k.events.includes("spinout")) return { outcome: "spinout" as const, band, kart: k };
     }
     // Press the action button (rising edge) while still drifting.
@@ -1051,7 +1051,7 @@ const results: string[] = [];
       const cornering = Math.abs(err) > 0.22;
       const fastEnough = me.kart.speed > KART.DRIFT_MIN_SPEED + 1.5;
       const wantDrift = cornering && fastEnough;
-      const band = chargeBand(me.kart.driftCharge);
+      const band = chargeBand(me.kart.driftCharge, me.kart.driftChain);
       const release = me.kart.driftSide !== 0 && band === "sweet";
 
       // Named distinctly: shadowing the file-level `input` helper made this
@@ -1060,6 +1060,9 @@ const results: string[] = [];
         steer,
         throttle: 1,
         brake: 0,
+        /* Hold the slide until it is cashed in. The chain caps itself at
+           three links and ends the drift there, so this cannot slide
+           forever the way it could before that cap existed. */
         drift: wantDrift || (me.kart.driftSide !== 0 && !release && band !== "over"),
         // Rising edge only, or the boost never fires.
         action: release && !actionHeld,
@@ -1198,7 +1201,7 @@ const results: string[] = [];
     let boosted = false;
     let held = false;
     for (let i = 0; i < 400 && !boosted; i += 1) {
-      const band = chargeBand(kart.driftCharge);
+      const band = chargeBand(kart.driftCharge, kart.driftChain);
       const release = kart.driftSide !== 0 && band === "sweet";
       drive({ throttle: 1, steer: 0.6, drift: true, action: release && !held });
       held = release && !held;
@@ -1448,6 +1451,185 @@ const results: string[] = [];
   );
 
   results.push(`speedcap  every item subset stays under x${CEILING} (worst ${worstCombo} x${worst.toFixed(2)}) · slows bite through boosts`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Resource lifetime: nothing may grow without bound                   */
+/* ------------------------------------------------------------------ */
+{
+  /* Projectiles and traps come and go constantly — a race throws 20-40
+     items. Allocating geometry per shot leaks silently: the scene looks
+     right, the race completes, and the only symptom is memory climbing
+     until a long session or a rematch loop falls over. So this fires a lot
+     of shots through the renderer and asserts the resource count is flat. */
+  const renderer = new MoonberryRacingRenderer(MOONBERRY_COURSES[0]);
+  const grid = startingGrid(MOONBERRY_COURSES[0], 2);
+  const kart = {
+    id: "p", seat: 0, name: "P",
+    x: grid[0].position.x, y: grid[0].position.y, z: grid[0].position.z,
+    heading: grid[0].heading, lean: 0, driftSide: 0 as const, driftCharge: 0,
+    boosting: false, airborne: false, spinning: false, local: true,
+    position: 1, finished: false,
+  };
+  const frame = (shots: Array<{ id: number; kind: string; x: number; z: number; trap: boolean }>) =>
+    renderer.update(
+      { karts: [kart], shots, raceTime: 1, followId: "p", rearView: false, itemBoxesTaken: new Set() } as never,
+      16 / 9,
+      0.016,
+    );
+
+  frame([]);
+  const baseline = renderer.resourceCount;
+
+  // 200 shots, each living a few frames then expiring — as a long race does.
+  for (let i = 0; i < 200; i += 1) {
+    frame([{ id: i, kind: "jam-bubble", x: kart.x + 3, z: kart.z + 3, trap: i % 3 === 0 }]);
+    frame([]);
+  }
+  assert.equal(
+    renderer.resourceCount, baseline,
+    `firing 200 shots must not allocate GPU resources (${baseline} -> ${renderer.resourceCount})`,
+  );
+
+  // Many shots at once, then all gone: meshes must be released from the scene.
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    id: 1000 + i, kind: "taffy-trail", x: kart.x + i, z: kart.z, trap: i % 2 === 0,
+  }));
+  frame(many);
+  const withShots = renderer.scene.children.length;
+  frame([]);
+  assert.ok(
+    renderer.scene.children.length < withShots,
+    "expired shots must leave the scene graph",
+  );
+  assert.equal(renderer.resourceCount, baseline, "and still allocate nothing");
+
+  /* A kart rig costs a fixed handful of resources, built ONCE. The invariant
+     worth asserting is not the exact number but that re-rendering the same
+     field allocates nothing further — a rig rebuilt per frame is the leak
+     that would actually hurt. */
+  const field = Array.from({ length: 8 }, (_, seat) => ({
+    ...kart, id: `k${seat}`, seat, local: seat === 0,
+  }));
+  const renderField = () =>
+    renderer.update(
+      { karts: field, shots: [], raceTime: 1, followId: "k0", rearView: false, itemBoxesTaken: new Set() } as never,
+      16 / 9, 0.016,
+    );
+  const beforeKarts = renderer.resourceCount;
+  renderField();
+  const afterFirstFrame = renderer.resourceCount;
+  const perKart = (afterFirstFrame - beforeKarts) / 8;
+  assert.ok(perKart > 0 && perKart <= 16, `a kart rig is a bounded cost, got ${perKart.toFixed(1)} each`);
+
+  for (let i = 0; i < 60; i += 1) renderField();
+  assert.equal(
+    renderer.resourceCount, afterFirstFrame,
+    "re-rendering the same field must reuse the rigs, not rebuild them",
+  );
+
+  renderer.dispose();
+  assert.equal(renderer.resourceCount, 0, "dispose releases everything");
+
+  results.push(`leaks     200 shots allocate nothing · 8 rigs built once (${perKart.toFixed(0)} each) · 60 frames add zero · dispose drains to zero`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Chained drift boosts                                                */
+/* ------------------------------------------------------------------ */
+{
+  const flat = { offroad: false, ice: false, groundY: 0 };
+
+  /** Hold a slide and cash it in every time the window opens. */
+  const chainRun = (attempts: number) => {
+    const kart = createKart(0, 0, 0, 0);
+    for (let i = 0; i < 400; i += 1) stepKart(kart, input({ throttle: 1 }), flat, KART.STEP);
+    const boosts: number[] = [];
+    let held = false;
+    let ended = -1;
+    for (let step = 0; step < 240 * 8; step += 1) {
+      const band = chargeBand(kart.driftCharge, kart.driftChain);
+      const cash = kart.driftSide !== 0 && band === "sweet" && boosts.length < attempts;
+      stepKart(
+        kart,
+        input({ throttle: 1, steer: 1, drift: true, action: cash && !held }),
+        flat,
+        KART.STEP,
+      );
+      held = cash;
+      if (kart.events.includes("boost-sweet")) boosts.push(kart.boostTimer);
+      if (ended < 0 && boosts.length > 0 && kart.driftSide === 0) ended = boosts.length;
+      if (kart.events.includes("spinout")) break;
+    }
+    return { boosts, ended, chain: kart.driftChain };
+  };
+
+  const full = chainRun(5);
+  assert.equal(
+    full.boosts.length, KART.DRIFT_MAX_CHAIN,
+    `one slide yields exactly ${KART.DRIFT_MAX_CHAIN} boosts, got ${full.boosts.length}`,
+  );
+  assert.equal(
+    full.ended, KART.DRIFT_MAX_CHAIN,
+    "the final link cashes out and ends the slide, rather than paying forever",
+  );
+  // Each link is stronger than the one before, so a clean chain is a reward.
+  for (let i = 1; i < full.boosts.length; i += 1) {
+    assert.ok(
+      full.boosts[i] > full.boosts[i - 1],
+      `link ${i + 1} must beat link ${i} (${full.boosts[i].toFixed(2)} vs ${full.boosts[i - 1].toFixed(2)})`,
+    );
+  }
+
+  // Stopping early is allowed; you simply bank fewer links.
+  assert.equal(chainRun(1).boosts.length, 1, "cashing once is a valid, smaller reward");
+  assert.equal(chainRun(2).boosts.length, 2);
+
+  // Releasing too early costs the CHAIN, not just the boost.
+  const greedy = createKart(0, 0, 0, 0);
+  for (let i = 0; i < 400; i += 1) stepKart(greedy, input({ throttle: 1 }), flat, KART.STEP);
+  for (let i = 0; i < 90; i += 1) {
+    stepKart(greedy, input({ throttle: 1, steer: 1, drift: true }), flat, KART.STEP);
+  }
+  stepKart(greedy, input({ throttle: 1, steer: 1, drift: true, action: true }), flat, KART.STEP);
+  const banked = greedy.driftChain;
+  assert.ok(banked >= 1, "a good release banks a link");
+  // Now mash immediately, while the meter is still refilling.
+  stepKart(greedy, input({ throttle: 1, steer: 1, drift: true }), flat, KART.STEP);
+  stepKart(greedy, input({ throttle: 1, steer: 1, drift: true, action: true }), flat, KART.STEP);
+  assert.ok(greedy.events.includes("boost-early"), "mashing releases early");
+  assert.equal(greedy.driftChain, 0, "and forfeits the whole chain, not just that link");
+
+  // The window tightens as links bank, so later ones demand better timing.
+  const wide = chargeBand(0.8, 0);
+  const tight = chargeBand(0.8, 2);
+  assert.equal(wide, "sweet", "a fresh slide has the full window");
+  assert.equal(tight, "over", "by the third link that same timing is too late");
+
+  // Airtime pays out on landing, and a kerb hop does not.
+  const jumper = createKart(0, 0, 0, 0);
+  for (let i = 0; i < 400; i += 1) stepKart(jumper, input({ throttle: 1 }), flat, KART.STEP);
+  jumper.vy = 14;
+  jumper.airborne = true;
+  let airBoost = false;
+  for (let i = 0; i < 400 && !airBoost; i += 1) {
+    stepKart(jumper, input({ throttle: 1 }), flat, KART.STEP);
+    if (jumper.events.includes("air-boost")) airBoost = true;
+  }
+  assert.ok(airBoost, "a real jump pays a landing boost");
+
+  const hopper = createKart(0, 0, 0, 0);
+  for (let i = 0; i < 400; i += 1) stepKart(hopper, input({ throttle: 1 }), flat, KART.STEP);
+  hopper.vy = 1.2;
+  hopper.airborne = true;
+  let hopBoost = false;
+  for (let i = 0; i < 200; i += 1) {
+    stepKart(hopper, input({ throttle: 1 }), flat, KART.STEP);
+    if (hopper.events.includes("air-boost")) hopBoost = true;
+  }
+  assert.ok(!hopBoost, "a kerb hop pays nothing");
+
+  results.push(`chaining  ${KART.DRIFT_MAX_CHAIN} links per slide, each stronger · final link ends it · early release forfeits the chain · airtime pays, hops do not`);
 }
 
 console.log(`\nMoonberry Racing: all checks passed\n${results.map((l) => `  ${l}`).join("\n")}\n`);
