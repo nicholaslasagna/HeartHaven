@@ -81,7 +81,15 @@ export class LanternGame {
 
   addPlayer(id: string, name: string, seat: number, local: boolean) {
     const existing = this.players.get(id);
-    if (existing) return existing;
+    if (existing) {
+      // Remote snapshots can arrive before the presence list settles. Keep
+      // the already-simulated body, but refresh presentation/session metadata
+      // so reconnects cannot leave a stale name, seat, or local flag behind.
+      existing.name = name;
+      existing.seat = seat;
+      existing.local = local;
+      return existing;
+    }
     const player: LanternPlayer = {
       id, name, seat, local,
       body: createPlayerBody(this.level.start.x + seat * 0.7, this.level.start.y + 0.2),
@@ -108,13 +116,20 @@ export class LanternGame {
 
   /** Advance by real elapsed seconds, in fixed steps. */
   advance(dt: number) {
-    this.accumulator += Math.min(dt, 0.25);
+    // A hidden tab or a stalled frame can otherwise leave a large backlog. We
+    // keep a bounded catch-up window so returning to the game never produces
+    // a visible physics stutter or a multi-frame ground-pound hang.
+    this.accumulator = Math.min(
+      this.accumulator + Math.min(Math.max(0, dt), 0.25),
+      PHYSICS.STEP * 30,
+    );
     let steps = 0;
     while (this.accumulator >= PHYSICS.STEP && steps < 30) {
       this.accumulator -= PHYSICS.STEP;
       this.step(PHYSICS.STEP);
       steps += 1;
     }
+    if (steps === 30) this.accumulator = Math.min(this.accumulator, PHYSICS.STEP);
   }
 
   private step(dt: number) {
@@ -126,6 +141,16 @@ export class LanternGame {
 
     for (const player of this.players.values()) {
       if (player.finished) continue;
+
+      /* Remote bodies arrive as snapshots from their own simulation. Do not
+         run their input/physics a second time here: doing so can overwrite a
+         valid network motion (especially a ground pound) or make a remote
+         player drift between broadcasts. Their body still participates in
+         pickup overlap checks so shared collectibles remain consistent. */
+      if (!player.local) {
+        if (!player.bubbled) this.resolvePickups(player);
+        continue;
+      }
 
       if (player.bubbled) {
         player.bubbleTimer += dt;
@@ -232,6 +257,12 @@ export class LanternGame {
     if (player.bubbled) return;
     player.bubbled = true;
     player.bubbleTimer = 0;
+    // A fall or hazard can interrupt a pound before the next grounded frame.
+    // Clear that transient pose when the player becomes a bubble so the
+    // renderer cannot keep showing a suspended ground-pound forever.
+    player.body.motion = "fall";
+    player.body.poundTimer = 0;
+    player.body.pounding = false;
     player.body.vx = 0;
     player.body.vy = 0;
     this.events.push({ type: "bubble", playerId: player.id });

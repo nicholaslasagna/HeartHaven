@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { ArrowLeft, Shirt, Sparkles } from "lucide-react";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { FashionShowCanvasLoader } from "@/components/game/fashion-show-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Button } from "@/components/ui/button";
 import { useSoloGameRewards } from "@/lib/game/use-solo-game-rewards";
 
@@ -21,7 +23,8 @@ export function FashionShowClient() {
             earn coins and hearts for the shop loop.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <CompanionCameo copy="is ready for the runway" />
           <Button asChild variant="secondary">
             <Link href="/app/games">
               <ArrowLeft /> Games hub
@@ -32,6 +35,7 @@ export function FashionShowClient() {
           </Button>
         </div>
       </section>
+      <WorldZoneDock active="games" />
       <FashionShowCanvasLoader onReward={game.handleReward} />
       <RewardWalletPanel />
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/70 p-4 text-sm font-bold text-ink-700">

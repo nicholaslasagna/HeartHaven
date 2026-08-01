@@ -58,6 +58,7 @@ export type Racer = {
   id: string;
   seat: number;
   name: string;
+  companion?: RacerCompanion;
   /** Local player on this machine. */
   local: boolean;
   kart: KartBody;
@@ -88,6 +89,13 @@ export type RaceEvent =
   | { type: "start" }
   | { type: "race-over" };
 
+/** Appearance-only payload. It is never used for race authority or scoring. */
+export type RacerCompanion = {
+  speciesId: string;
+  toneId: string;
+  accessory: string;
+};
+
 export type RacerReport = {
   racerId: string;
   x: number;
@@ -97,6 +105,7 @@ export type RacerReport = {
   speed: number;
   driftCharge: number;
   boosting: boolean;
+  companion?: RacerCompanion;
 };
 
 export class Race {
@@ -116,10 +125,14 @@ export class Race {
   /* Roster                                                          */
   /* -------------------------------------------------------------- */
 
-  join(id: string, name: string, seat: number, local: boolean) {
+  join(id: string, name: string, seat: number, local: boolean, companion?: RacerCompanion) {
     const existing = this.racers.get(id);
     if (existing) {
       // A reconnect keeps the racer's progress; they pick up where they were.
+      existing.name = name;
+      existing.seat = seat;
+      existing.local = local;
+      if (companion) existing.companion = companion;
       if (!existing.connected) {
         existing.connected = true;
         existing.lastSeenMs = this.raceTime * 1000;
@@ -135,7 +148,7 @@ export class Race {
     const pose = grid[Math.min(seat, grid.length - 1)];
 
     const racer: Racer = {
-      id, seat, name, local,
+      id, seat, name, local, companion,
       kart: createKart(pose.position.x, pose.position.y, pose.position.z, pose.heading),
       progress: createLapProgress(),
       effects: [],
@@ -252,6 +265,7 @@ export class Race {
     racer.kart.heading = report.heading;
     racer.kart.speed = report.speed;
     racer.kart.driftCharge = report.driftCharge;
+    if (report.companion) racer.companion = report.companion;
 
     this.advanceProgress(racer);
   }

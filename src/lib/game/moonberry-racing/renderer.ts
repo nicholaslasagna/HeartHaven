@@ -14,6 +14,8 @@
 
 import * as THREE from "three";
 import { angleDelta } from "./kart";
+import { companionArtAsset } from "@/lib/game/companion-art";
+import type { RacerCompanion } from "./race";
 import {
   courseTangent,
   hazardPosition,
@@ -46,6 +48,7 @@ export type KartView = {
   local: boolean;
   position: number;
   finished: boolean;
+  companion?: RacerCompanion;
 };
 
 export type ShotView = { id: number; kind: string; x: number; z: number; trap: boolean };
@@ -113,6 +116,8 @@ export class MoonberryRacingRenderer {
   readonly camera: THREE.PerspectiveCamera;
   private readonly disposables: Array<{ dispose: () => void }> = [];
   private readonly kartRigs = new Map<string, THREE.Group>();
+  private readonly companionTextures = new Map<string, THREE.Texture>();
+  private readonly companionTextureLoader = new THREE.TextureLoader();
   private readonly itemBoxMeshes: THREE.Mesh[] = [];
   private readonly hazardMeshes: Array<{ mesh: THREE.Object3D; spec: Course["hazards"][number] }> = [];
   private readonly camPos = new THREE.Vector3();
@@ -581,6 +586,7 @@ export class MoonberryRacingRenderer {
     );
     driver.position.set(0, 1.15, -0.2);
     driver.castShadow = true;
+    driver.name = "driver";
     group.add(driver);
 
     // Wheels are identical on every kart, so they are allocated once for the
@@ -620,6 +626,74 @@ export class MoonberryRacingRenderer {
     return group;
   }
 
+  /**
+   * Put the selected companion in the kart as a small billboarded driver.
+   * The generated companion cutouts keep their authored silhouettes and
+   * transparent backgrounds; the generic capsule remains a safe fallback
+   * while a texture is loading or when a guest has no companion payload yet.
+   */
+  private syncCompanion(rig: THREE.Group, companion: RacerCompanion | undefined) {
+    const visualKey = companion
+      ? `${companion.speciesId}:${companion.toneId}:${companion.accessory}`
+      : null;
+    const speciesId = companion?.speciesId ?? null;
+    if (rig.userData.companionVisualKey === visualKey) return;
+
+    const previous = rig.getObjectByName("companion");
+    if (previous) {
+      rig.remove(previous);
+      const material = (previous as THREE.Sprite).material;
+      if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
+      else material.dispose();
+    }
+
+    const driver = rig.getObjectByName("driver");
+    if (driver) driver.visible = !speciesId;
+    rig.userData.companionVisualKey = visualKey;
+    if (!speciesId) return;
+
+    const addSprite = (texture: THREE.Texture) => {
+      // A race can be remounted while an image is still loading. Do not add
+      // an old companion to a new or changed rig.
+      if (!rig.parent || rig.userData.companionVisualKey !== visualKey) return;
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+      });
+      const sprite = new THREE.Sprite(material);
+      sprite.name = "companion";
+      sprite.position.set(0, 1.34, -0.22);
+      const image = texture.image as { width?: number; height?: number } | undefined;
+      const aspect = image?.width && image?.height ? image.width / image.height : 1;
+      sprite.scale.set(0.95 * aspect, 0.95, 1);
+      sprite.renderOrder = 2;
+      rig.add(sprite);
+    };
+
+    const cached = this.companionTextures.get(speciesId);
+    if (cached) {
+      addSprite(cached);
+      return;
+    }
+
+    this.companionTextureLoader.load(
+      companionArtAsset(speciesId),
+      (texture) => {
+        this.companionTextures.set(speciesId, texture);
+        addSprite(texture);
+      },
+      undefined,
+      () => {
+        // Keep the capsule driver visible if an optional companion asset is
+        // unavailable. The race itself must remain playable.
+        if (rig.userData.companionVisualKey === visualKey) rig.userData.companionVisualKey = null;
+        if (driver) driver.visible = true;
+      },
+    );
+  }
+
   private syncKarts(snapshot: RacingSnapshot, dt: number) {
     const seen = new Set<string>();
     for (const view of snapshot.karts) {
@@ -631,6 +705,7 @@ export class MoonberryRacingRenderer {
         rig.position.set(view.x, view.y, view.z);
         rig.rotation.y = view.heading;
       }
+      this.syncCompanion(rig, view.companion);
 
       if (view.local) {
         // The local kart is authoritative: draw it exactly where it is.
@@ -676,6 +751,12 @@ export class MoonberryRacingRenderer {
     for (const [id, rig] of this.kartRigs) {
       if (seen.has(id)) continue;
       this.scene.remove(rig);
+      const companion = rig.getObjectByName("companion");
+      if (companion) {
+        const material = (companion as THREE.Sprite).material;
+        if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
+        else material.dispose();
+      }
       this.kartRigs.delete(id);
     }
   }
@@ -799,6 +880,8 @@ export class MoonberryRacingRenderer {
     this.itemBoxMeshes.length = 0;
     this.hazardMeshes.length = 0;
     this.shotMeshes.clear();
+    for (const texture of this.companionTextures.values()) texture.dispose();
+    this.companionTextures.clear();
     this.scene.clear();
   }
 }

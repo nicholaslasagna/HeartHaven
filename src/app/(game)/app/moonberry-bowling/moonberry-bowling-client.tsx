@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Trophy, Users } from "lucide-react";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { MoonberryBowlingLoader } from "@/components/game/moonberry-bowling-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
+import { COMPANION_ROSTER_EVENT, getActiveCompanion, type CompanionRecord } from "@/lib/game/companion-roster";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { resolveMatch, type LoggedThrow } from "@/lib/game/moonberry-bowling/match";
 import { seatCss } from "@/lib/game/moonberry-bowling/types";
@@ -23,11 +25,18 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
  */
 export function MoonberryBowlingClient() {
   const game = useMiniGameSession("bowling", { maxPlayers: 8 });
-  const { sessionId, seats, mySeat, moves, handleReward, refresh } = game;
+  const { sessionId, seats, mySeat, moves, handleReward, refresh, loading } = game;
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pendingCountRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+  }, []);
 
   const throws = useMemo<LoggedThrow[]>(
     () =>
@@ -176,14 +185,16 @@ export function MoonberryBowlingClient() {
       <section className="flex flex-col justify-between gap-3 rounded-lg border border-honey-500/40 bg-honey-100/60 p-4 shadow-sm sm:p-5 md:flex-row md:items-center">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-normal text-honey-700">Party lanes</p>
-          <h1 className="mt-1 font-display text-3xl text-ink-900 sm:text-4xl">Moonberry Bowling</h1>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-ink-700">
             Two to eight keepers, ten frames, one lane. Swipe up to roll and curve the flick to hook it into the pocket.
           </p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <CompanionCameo />
+          <Button asChild variant="secondary">
+            <Link href="/app/games"><ArrowLeft /> Games hub</Link>
+          </Button>
+        </div>
       </section>
 
       {error && (
@@ -199,8 +210,10 @@ export function MoonberryBowlingClient() {
         onThrow={onThrow}
         seatCount={seatCount}
         seatNames={seatNames}
+        companionSpeciesId={activeCompanion?.speciesId ?? "kitten"}
         sessionId={sessionId}
         submitting={submitting}
+        initialSyncComplete={!loading}
         throws={throws}
       />
 

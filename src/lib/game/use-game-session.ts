@@ -55,6 +55,58 @@ function parseInitKey(key: string): Record<string, unknown> {
   }
 }
 
+function sameJson(left: unknown, right: unknown) {
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+function sameSeats(left: GameSessionSeat[], right: GameSessionSeat[]) {
+  return left.length === right.length && left.every((seat, index) => {
+    const next = right[index];
+    return Boolean(next)
+      && seat.profile_id === next.profile_id
+      && seat.display_name === next.display_name
+      && seat.seat_index === next.seat_index
+      && seat.team_key === next.team_key
+      && seat.ready === next.ready
+      && seat.score === next.score;
+  });
+}
+
+function sameMoves(left: GameMoveRecord[], right: GameMoveRecord[]) {
+  return left.length === right.length && left.every((move, index) => {
+    const next = right[index];
+    return Boolean(next)
+      && move.move_index === next.move_index
+      && move.profile_id === next.profile_id
+      && move.seat_index === next.seat_index
+      && move.move_type === next.move_type
+      && move.created_at === next.created_at
+      && sameJson(move.payload, next.payload);
+  });
+}
+
+/**
+ * Realtime INSERTs and the one-second snapshot poll are two views of the same
+ * append-only log.  Merge them by the database move index instead of allowing
+ * a late realtime event to duplicate a move that the poll already returned.
+ * Keeping the highest known row also prevents a transient empty/stale poll
+ * from rewinding a running game's client state.
+ */
+function mergeMoves(current: GameMoveRecord[], incoming: GameMoveRecord[]) {
+  const byIndex = new Map<number, GameMoveRecord>();
+  for (const move of current) {
+    if (Number.isFinite(move.move_index)) byIndex.set(move.move_index, move);
+  }
+  for (const move of incoming) {
+    if (Number.isFinite(move.move_index)) byIndex.set(move.move_index, move);
+  }
+  return [...byIndex.values()].sort((left, right) => left.move_index - right.move_index);
+}
+
 function sessionErrorCopy(message: string) {
   const lower = message.toLowerCase();
   if (lower.includes("game_sessions_status_check")) {
@@ -140,7 +192,10 @@ export function useGameSession(
       const meta = stateRow.metadata;
       const rowStatus = String(stateRow.status ?? "");
       if (sessionFromUrl && rowStatus === "waiting") {
-        setMetadata(meta && typeof meta === "object" && !Array.isArray(meta) ? (meta as Record<string, unknown>) : {});
+        const nextMetadata = meta && typeof meta === "object" && !Array.isArray(meta)
+          ? (meta as Record<string, unknown>)
+          : {};
+        setMetadata((current) => sameJson(current, nextMetadata) ? current : nextMetadata);
         setLoading(false);
         setStatus("The host brought everyone back to the lobby.");
         router.push("/app/games", { scroll: false });
@@ -152,7 +207,10 @@ export function useGameSession(
         router.push("/app/games", { scroll: false });
         return;
       }
-      setMetadata(meta && typeof meta === "object" && !Array.isArray(meta) ? (meta as Record<string, unknown>) : {});
+      const nextMetadata = meta && typeof meta === "object" && !Array.isArray(meta)
+        ? (meta as Record<string, unknown>)
+        : {};
+      setMetadata((current) => sameJson(current, nextMetadata) ? current : nextMetadata);
       const seatRows = Array.isArray(stateRow.seats) ? stateRow.seats : [];
       const parsedSeats: GameSessionSeat[] = seatRows
         .map((seat: unknown) => {
@@ -168,7 +226,7 @@ export function useGameSession(
         })
         .filter((seat: GameSessionSeat) => seat.profile_id.length > 0)
         .sort((a: GameSessionSeat, b: GameSessionSeat) => a.seat_index - b.seat_index);
-      setSeats(parsedSeats);
+      setSeats((current) => sameSeats(current, parsedSeats) ? current : parsedSeats);
     }
 
     const moveRows = Array.isArray(movesResult.data) ? movesResult.data : [];
@@ -186,10 +244,18 @@ export function useGameSession(
         created_at: String(r.created_at ?? ""),
       };
     });
-    setMoves(parsedMoves);
-    lastMoveIndexRef.current = parsedMoves.length > 0 ? parsedMoves[parsedMoves.length - 1].move_index : -1;
+    setMoves((current) => {
+      const merged = mergeMoves(current, parsedMoves);
+      return sameMoves(current, merged) ? current : merged;
+    });
+    if (parsedMoves.length > 0) {
+      lastMoveIndexRef.current = Math.max(
+        lastMoveIndexRef.current,
+        ...parsedMoves.map((move) => move.move_index),
+      );
+    }
     setLoading(false);
-    setStatus(`Live game session · ${parsedMoves.length} moves`);
+    setStatus(`Live game session · ${Math.max(parsedMoves.length, lastMoveIndexRef.current + 1)} moves`);
   }, [gameKey, router, sessionFromUrl]);
 
   useEffect(() => {
@@ -234,6 +300,12 @@ export function useGameSession(
         return;
       }
 
+      if (sessionIdRef.current !== target) {
+        setMetadata({});
+        setSeats([]);
+        setMoves([]);
+        lastMoveIndexRef.current = -1;
+      }
       setSessionId(target);
       sessionIdRef.current = target;
       await hydrate(target);
@@ -260,22 +332,23 @@ export function useGameSession(
           const row = payload.new as Record<string, unknown> | undefined;
           if (!row) return;
           const moveIndex = Number(row.move_index ?? -1);
-          if (moveIndex <= lastMoveIndexRef.current) return;
-          lastMoveIndexRef.current = moveIndex;
+          if (!Number.isFinite(moveIndex) || moveIndex < 0) return;
+          lastMoveIndexRef.current = Math.max(lastMoveIndexRef.current, moveIndex);
           const movePayload = row.payload;
-          setMoves((current) => [
-            ...current,
-            {
-              move_index: moveIndex,
-              profile_id: String(row.profile_id ?? ""),
-              seat_index: Number(row.seat_index ?? 0),
-              move_type: String(row.move_type ?? ""),
-              payload: movePayload && typeof movePayload === "object" && !Array.isArray(movePayload)
-                ? (movePayload as Record<string, unknown>)
-                : {},
-              created_at: String(row.created_at ?? ""),
-            },
-          ]);
+          const nextMove: GameMoveRecord = {
+            move_index: moveIndex,
+            profile_id: String(row.profile_id ?? ""),
+            seat_index: Number(row.seat_index ?? 0),
+            move_type: String(row.move_type ?? ""),
+            payload: movePayload && typeof movePayload === "object" && !Array.isArray(movePayload)
+              ? (movePayload as Record<string, unknown>)
+              : {},
+            created_at: String(row.created_at ?? ""),
+          };
+          setMoves((current) => {
+            const merged = mergeMoves(current, [nextMove]);
+            return sameMoves(current, merged) ? current : merged;
+          });
         },
       )
       .on(

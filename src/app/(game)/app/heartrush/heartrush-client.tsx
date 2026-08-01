@@ -5,13 +5,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { ArrowLeft, Flag, Layers, Play, Timer, Trophy, Users } from "lucide-react";
 import { HeartRushCanvasLoader } from "@/components/game/heartrush-canvas-loader";
-import { heartRushSeatCss, type HeartRushRemote, type HeartRushState } from "@/lib/game/heartrush-shared";
+import { CompanionCameo } from "@/components/game/companion-cameo";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
+import {
+  heartRushSeatCss,
+  type HeartRushCompanion,
+  type HeartRushRemote,
+  type HeartRushState,
+} from "@/lib/game/heartrush-shared";
 import { HEARTRUSH_LEVELS } from "@/lib/game/heartrush-course";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import {
+  COMPANION_ROSTER_EVENT,
+  getActiveCompanion,
+  type CompanionRecord,
+} from "@/lib/game/companion-roster";
 
 const COUNTDOWN_MS = 3500;
 /* Par for all three levels. Beat it and you score the full 1000; slower
@@ -37,6 +49,7 @@ export function HeartRushClient() {
   const [progress, setProgress] = useState({ level: 0, levels: HEARTRUSH_LEVELS, checkpoint: 0, checkpoints: 0 });
   const [myFinishMs, setMyFinishMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const remotesRef = useRef(new Map<string, HeartRushRemote & { at: number }>());
@@ -45,6 +58,18 @@ export function HeartRushClient() {
   const isHost = (mySeat?.seat_index ?? 0) === 0;
   const seatIndex = mySeat?.seat_index ?? 0;
   const myName = mySeat?.display_name ?? "You";
+
+  useEffect(() => {
+    const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+  }, []);
+
+  const companionPayload = useMemo<HeartRushCompanion>(() => ({
+    speciesId: activeCompanion?.speciesId ?? "kitten",
+    toneId: activeCompanion?.toneId ?? "cream",
+    accessory: activeCompanion?.accessory ?? "moonberry-bow",
+  }), [activeCompanion]);
 
   /* -- authoritative finish order, straight off the ordered move log -- */
   const results = useMemo(() => {
@@ -130,10 +155,16 @@ export function HeartRushClient() {
       void channel.send({
         type: "broadcast",
         event: "pos",
-        payload: { ...state, id: myProfileId, name: myName, seat: seatIndex } satisfies HeartRushRemote,
+        payload: {
+          ...state,
+          id: myProfileId,
+          name: myName,
+          seat: seatIndex,
+          companion: companionPayload,
+        } satisfies HeartRushRemote,
       });
     },
-    [myProfileId, myName, seatIndex],
+    [companionPayload, myProfileId, myName, seatIndex],
   );
 
   const startRace = useCallback(async () => {
@@ -185,11 +216,14 @@ export function HeartRushClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <CompanionCameo copy="is racing with you" />
           <Button asChild variant="secondary">
             <Link href="/app/games"><ArrowLeft /> Games hub</Link>
           </Button>
         </div>
       </section>
+
+      <WorldZoneDock active="games" />
 
       {error && (
         <p className="rounded-lg border border-blush-300/50 bg-blush-100/70 p-3 text-sm font-extrabold text-blush-700">
@@ -199,6 +233,7 @@ export function HeartRushClient() {
 
       <div className="relative">
         <HeartRushCanvasLoader
+          companion={companionPayload}
           myName={myName}
           mySeatIndex={seatIndex}
           onProgress={setProgress}

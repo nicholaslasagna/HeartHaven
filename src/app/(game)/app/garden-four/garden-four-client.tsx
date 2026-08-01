@@ -1,9 +1,11 @@
 "use client";
 
 import { HeartHandshake, Sparkles } from "lucide-react";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { GameHubButton } from "@/components/game/game-hub-button";
 import { GardenFourCanvasLoader } from "@/components/game/garden-four-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 
@@ -23,10 +25,12 @@ export function GardenFourClient() {
           <p className="mt-2 text-xs font-extrabold text-garden-700">{game.status}</p>
         </div>
         <div className="flex gap-2">
+          <CompanionCameo copy="is cheering from the arbor" />
           <GameHubButton returnToLobby={game.returnToLobby} />
           <Button variant="warm"><HeartHandshake /> Party table</Button>
         </div>
       </section>
+      <WorldZoneDock active="games" />
       <RewardWalletPanel />
       <GardenFourCanvasLoader
         metadata={game.metadata}

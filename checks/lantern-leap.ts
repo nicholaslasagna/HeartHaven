@@ -78,6 +78,15 @@ const results: string[] = [];
     }
   }
   assert.ok(poundStarted && poundLanded && pounder.grounded, "ground pound hangs briefly and lands");
+  assert.equal(pounder.pounding, false, "ground pound clears its gameplay state after landing");
+
+  // A network snapshot may label a remote player as pounding, but that label
+  // must never freeze the local physics state. Remote bodies are read-only in
+  // LanternGame; this direct check protects the lower-level state contract.
+  const remoteLabel = createPlayerBody(5, 1);
+  remoteLabel.motion = "pound";
+  stepPlayer(remoteLabel, input(), grid, PHYSICS.STEP);
+  assert.equal(remoteLabel.pounding, false, "presentation motion does not activate a pound");
 
   // Coyote time fires just after the ledge, and expires rather than
   // granting a free mid-air jump.
@@ -164,6 +173,10 @@ const results: string[] = [];
   // Eight keepers, shared camera.
   const eight = new LanternGame(level);
   for (let i = 0; i < 8; i += 1) eight.addPlayer(`p${i}`, `P${i}`, i, i === 0);
+  const refreshed = eight.addPlayer("p1", "P1 refreshed", 7, true);
+  assert.equal(refreshed.name, "P1 refreshed", "reconnected player metadata refreshes in place");
+  assert.equal(refreshed.seat, 7, "reconnected player seat refreshes in place");
+  assert.equal(refreshed.local, true, "reconnected player authority refreshes in place");
   run(eight, 1);
   for (const p of eight.players.values()) assert.ok(Number.isFinite(p.body.x + p.body.y), "no NaN with 8 players");
   const tight = eight.cameraFor(16 / 9, 15);

@@ -26,6 +26,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { TILE, isFloor, isSlope, tileAt } from "./physics";
 import type { Level } from "./level";
+import { companionMotionAtlas, type CompanionMotionAtlas, type CompanionMotionFrame } from "@/lib/game/companion-art";
 import {
   AmbientMotes,
   ParticleSystem,
@@ -50,6 +51,14 @@ export type RenderPlayer = {
   squash: number;
   bubbled: boolean;
   local: boolean;
+  /** The active companion this player brings into the platformer. */
+  companion?: RenderCompanion;
+};
+
+export type RenderCompanion = {
+  speciesId: string;
+  toneId: string;
+  accessory: string;
 };
 
 export type RenderPickup = { id: number; kind: string; x: number; y: number; taken: boolean };
@@ -223,6 +232,67 @@ const SEAT_COLORS = [
 ];
 export const seatColor = (seat: number) => SEAT_COLORS[Math.abs(seat) % SEAT_COLORS.length];
 
+type PetPalette = { body: number; accent: number; dark: number; flying?: boolean };
+
+const PET_PALETTES: Record<string, PetPalette> = {
+  fox: { body: 0xf4d6c5, accent: 0xb48ce2, dark: 0x5d3b4d },
+  bunny: { body: 0xf6e8f4, accent: 0xc59ae7, dark: 0x5a3c68 },
+  bear: { body: 0xc8945e, accent: 0xf3c660, dark: 0x503329 },
+  duck: { body: 0xf5d76f, accent: 0x78c3d8, dark: 0x5b4434 },
+  kitten: { body: 0xe9e0df, accent: 0xf39aaa, dark: 0x44343d },
+  puppy: { body: 0xc99b73, accent: 0x8f6ebc, dark: 0x4e342b },
+  calico: { body: 0xf5e6cf, accent: 0xe18c72, dark: 0x493644 },
+  lamb: { body: 0xf6f0e6, accent: 0xb6d6c0, dark: 0x4c4151 },
+  panda: { body: 0xf7f1e9, accent: 0x8e70bd, dark: 0x252335 },
+  dragon: { body: 0x9ed9c0, accent: 0xe487ad, dark: 0x303c54, flying: true },
+  "super-snails": { body: 0xf3ece1, accent: 0xd84968, dark: 0x302832, flying: true },
+};
+
+const PET_TONE_TINTS: Record<string, number> = {
+  cream: 0xfff8e9,
+  blush: 0xf4b9c2,
+  lavender: 0xd8c7f1,
+  honey: 0xf4d38d,
+  sky: 0xbddff0,
+  mint: 0xc5e2c0,
+};
+
+// Lantern Leap is a side-on platformer, so it uses the same finished
+// transparent companion art that appears elsewhere in HeartHaven. The
+// procedural rig below remains a deliberate fallback while an image loads or
+// when a future species has not received a finished cutout yet.
+const PET_ART_ASSETS: Record<string, string> = {
+  fox: "/game-assets/generated/pets/fox.png",
+  bunny: "/game-assets/generated/pets/bunny.png",
+  bear: "/game-assets/generated/pets/bear.png",
+  duck: "/game-assets/generated/pets/duck.png",
+  kitten: "/game-assets/generated/pets/kitten.png",
+  puppy: "/game-assets/generated/pets/puppy.png",
+  calico: "/game-assets/generated/pets/calico.png",
+  lamb: "/game-assets/generated/pets/lamb.png",
+  panda: "/game-assets/generated/pets/panda.png",
+  dragon: "/game-assets/generated/pets/dragon.png",
+  "super-snails": "/game-assets/generated/pets/super-snails.png",
+};
+
+function petArtAsset(speciesId: string) {
+  if (PET_ART_ASSETS[speciesId]) return PET_ART_ASSETS[speciesId];
+  // Some older saved companions use a fox colour suffix. Keep those saves
+  // valid without interpolating user data into an asset URL.
+  if (speciesId.startsWith("fox-")) return PET_ART_ASSETS.fox;
+  return PET_ART_ASSETS.kitten;
+}
+
+function petPalette(companion: RenderCompanion | undefined, seat: number) {
+  const base = PET_PALETTES[companion?.speciesId ?? "kitten"] ?? PET_PALETTES.kitten;
+  const tint = PET_TONE_TINTS[companion?.toneId ?? "cream"] ?? PET_TONE_TINTS.cream;
+  const body = new THREE.Color(base.body).lerp(new THREE.Color(tint), 0.18);
+  // Keep co-op players easy to distinguish without replacing the companion's
+  // species palette with the party seat colour.
+  const accent = new THREE.Color(base.accent).lerp(new THREE.Color(seatColor(seat)), 0.12);
+  return { base, body, accent, dark: new THREE.Color(base.dark) };
+}
+
 /* ------------------------------------------------------------------ */
 /* Scene constants                                                     */
 /* ------------------------------------------------------------------ */
@@ -341,6 +411,30 @@ type Rig = {
   bob: number;
 };
 
+type PetRig = {
+  root: THREE.Group;
+  body: THREE.Group;
+  head: THREE.Group;
+  tail: THREE.Group;
+  ears: THREE.Group[];
+  legs: THREE.Group[];
+  wings?: THREE.Group[];
+  eyes: THREE.Group;
+  accessory: THREE.Group;
+  cape?: THREE.Group;
+  bubble: THREE.Mesh;
+  shadow: THREE.Mesh;
+  light?: THREE.PointLight;
+  speciesId: string;
+  visualKey: string;
+  flying: boolean;
+  cycle: number;
+  bob: number;
+  art?: THREE.Sprite;
+  artBaseScale?: THREE.Vector2;
+  artAtlas?: CompanionMotionAtlas;
+};
+
 type EnemyNode = {
   root: THREE.Group;
   spin?: THREE.Object3D;
@@ -370,10 +464,15 @@ export class LanternRenderer {
   private readonly theme: ThemeSpec;
   private readonly disposables: Array<{ dispose: () => void }> = [];
   private readonly playerRigs = new Map<string, Rig>();
+  private readonly petRigs = new Map<string, PetRig>();
   private readonly pickupNodes = new Map<number, PickupNode>();
   private readonly enemyNodes = new Map<number, EnemyNode>();
   private readonly parallax: THREE.Object3D[] = [];
   private readonly geometryCache = new Map<string, THREE.BufferGeometry>();
+  private readonly petArtTextures = new Map<string, THREE.Texture>();
+  private readonly petArtLoads = new Map<string, Array<(texture: THREE.Texture) => void>>();
+  private readonly petMotionTextures = new Map<string, THREE.Texture>();
+  private readonly petMotionLoads = new Map<string, Array<(texture: THREE.Texture) => void>>();
   private readonly fx = new ParticleSystem(520);
   private readonly motes: AmbientMotes;
   private readonly shadowMaterial: THREE.MeshBasicMaterial;
@@ -388,6 +487,7 @@ export class LanternRenderer {
   private pulsers: Array<{ material: THREE.MeshStandardMaterial; base: number; rate: number; depth: number }> = [];
   private lastTime = 0;
   private frameDt = 0;
+  private disposed = false;
 
   /* -- post -- */
   private composer?: EffectComposer;
@@ -429,6 +529,142 @@ export class LanternRenderer {
   private track<T extends { dispose: () => void }>(item: T) {
     this.disposables.push(item);
     return item;
+  }
+
+  private loadPetArt(speciesId: string, onLoad: (texture: THREE.Texture) => void) {
+    const asset = petArtAsset(speciesId);
+    const cached = this.petArtTextures.get(asset);
+    if (cached) {
+      onLoad(cached);
+      return;
+    }
+
+    const waiting = this.petArtLoads.get(asset);
+    if (waiting) {
+      waiting.push(onLoad);
+      return;
+    }
+
+    this.petArtLoads.set(asset, [onLoad]);
+    new THREE.TextureLoader().load(
+      asset,
+      (texture) => {
+        const listeners = this.petArtLoads.get(asset) ?? [];
+        this.petArtLoads.delete(asset);
+        if (this.disposed) {
+          texture.dispose();
+          return;
+        }
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.petArtTextures.set(asset, this.track(texture));
+        for (const listener of listeners) listener(texture);
+      },
+      undefined,
+      () => {
+        // Keep the procedural rig visible when an asset is unavailable. This
+        // is intentionally silent in production; the fallback is playable.
+        this.petArtLoads.delete(asset);
+      },
+    );
+  }
+
+  private loadPetMotionArt(speciesId: string, onLoad: (texture: THREE.Texture) => void) {
+    const atlas = companionMotionAtlas(speciesId);
+    if (!atlas) return;
+    const asset = atlas.src;
+    const cached = this.petMotionTextures.get(asset);
+    if (cached) {
+      onLoad(cached);
+      return;
+    }
+
+    const waiting = this.petMotionLoads.get(asset);
+    if (waiting) {
+      waiting.push(onLoad);
+      return;
+    }
+
+    this.petMotionLoads.set(asset, [onLoad]);
+    new THREE.TextureLoader().load(
+      asset,
+      (texture) => {
+        const listeners = this.petMotionLoads.get(asset) ?? [];
+        this.petMotionLoads.delete(asset);
+        if (this.disposed) {
+          texture.dispose();
+          return;
+        }
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.petMotionTextures.set(asset, this.track(texture));
+        for (const listener of listeners) listener(texture);
+      },
+      undefined,
+      () => {
+        // The procedural rig remains visible if an optional motion atlas is
+        // unavailable. No movement is manufactured from the static cutout.
+        this.petMotionLoads.delete(asset);
+      },
+    );
+  }
+
+  private attachPetArt(rig: PetRig, texture: THREE.Texture) {
+    if (this.disposed || !rig.root.parent) return;
+    const image = texture.image as { width?: number; height?: number } | undefined;
+    const aspect = image?.width && image?.height ? image.width / image.height : 1;
+    const height = rig.flying ? 0.94 : 1.1;
+    const sprite = new THREE.Sprite(this.track(new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      fog: false,
+    })));
+    // Generated cutouts include a small transparent floor margin. Anchoring
+    // near the bottom keeps the paws stable while the world camera moves.
+    sprite.center.set(0.5, rig.flying ? 0.34 : 0.06);
+    sprite.position.set(0, rig.flying ? 0.22 : 0.03, 0.38);
+    sprite.scale.set(aspect * height, height, 1);
+    sprite.renderOrder = 6;
+    sprite.frustumCulled = false;
+    rig.root.add(sprite);
+    rig.art = sprite;
+    rig.artBaseScale = new THREE.Vector2(aspect * height, height);
+    // The cutout is now authoritative for the visible companion. Keep the
+    // modeled rig in place as the fallback for failed/slow image loads.
+    rig.body.visible = false;
+  }
+
+  private attachPetMotionArt(rig: PetRig, texture: THREE.Texture, atlas: CompanionMotionAtlas) {
+    if (this.disposed || !rig.root.parent) return;
+    const image = texture.image as { width?: number; height?: number } | undefined;
+    const cellWidth = image?.width && atlas.frameCount ? image.width / atlas.frameCount : image?.width;
+    const aspect = cellWidth && image?.height ? cellWidth / image.height : 1;
+    const height = rig.flying ? 0.94 : 1.1;
+    // Each rig gets an independent view of the shared atlas. Updating one
+    // remote companion's frame must not change every other companion.
+    const frameTexture = this.track(texture.clone());
+    frameTexture.needsUpdate = true;
+    frameTexture.wrapS = THREE.ClampToEdgeWrapping;
+    frameTexture.wrapT = THREE.ClampToEdgeWrapping;
+    frameTexture.repeat.set(1 / atlas.frameCount, 1);
+    frameTexture.offset.set(0, 0);
+    const sprite = new THREE.Sprite(this.track(new THREE.SpriteMaterial({
+      map: frameTexture,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      fog: false,
+    })));
+    sprite.center.set(0.5, rig.flying ? 0.34 : 0.06);
+    sprite.position.set(0, rig.flying ? 0.22 : 0.03, 0.38);
+    sprite.scale.set(aspect * height, height, 1);
+    sprite.renderOrder = 6;
+    sprite.frustumCulled = false;
+    rig.root.add(sprite);
+    rig.art = sprite;
+    rig.artAtlas = atlas;
+    rig.artBaseScale = new THREE.Vector2(aspect * height, height);
+    rig.body.visible = false;
   }
 
   private geo<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
@@ -1378,6 +1614,334 @@ export class LanternRenderer {
     };
   }
 
+  /**
+   * Companion avatar used by Lantern Leap. This is intentionally a separate
+   * rig rather than a recoloured keeper: ears, tail, paws, species silhouette,
+   * accessory, and the flying cape are all part of the identity that travels
+   * with a player into a co-op level.
+   */
+  private makePetRig(player: RenderPlayer): PetRig {
+    const speciesId = player.companion?.speciesId ?? "kitten";
+    const palette = petPalette(player.companion, player.seat);
+    const cloth = this.track(new THREE.MeshStandardMaterial({ color: palette.body, roughness: 0.78 }));
+    const accent = this.track(new THREE.MeshStandardMaterial({ color: palette.accent, roughness: 0.52, metalness: 0.04 }));
+    const dark = this.track(new THREE.MeshStandardMaterial({ color: palette.dark, roughness: 0.56 }));
+    const white = this.track(new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.72 }));
+
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+
+    const bodyShape = new THREE.Mesh(
+      this.geo("pet-body", () => new THREE.SphereGeometry(0.34, 18, 14)),
+      cloth,
+    );
+    bodyShape.scale.set(1.12, 0.86, 0.82);
+    bodyShape.position.y = 0.38;
+    bodyShape.castShadow = true;
+    body.add(bodyShape);
+
+    const belly = new THREE.Mesh(
+      this.geo("pet-belly", () => new THREE.SphereGeometry(0.22, 16, 12)),
+      white,
+    );
+    belly.scale.set(1.08, 0.95, 0.18);
+    belly.position.set(0, 0.34, 0.29);
+    body.add(belly);
+
+    const head = new THREE.Group();
+    head.position.y = 0.71;
+    body.add(head);
+    const face = new THREE.Mesh(this.geo("pet-head", () => new THREE.SphereGeometry(0.29, 20, 16)), cloth);
+    face.scale.set(1.04, 0.98, 0.9);
+    face.castShadow = true;
+    head.add(face);
+
+    const ears: THREE.Group[] = [];
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Group();
+      ear.position.set(side * 0.17, 0.25, 0.01);
+      const earMesh = new THREE.Mesh(
+        this.geo("pet-ear", () => new THREE.ConeGeometry(0.11, 0.3, 12)),
+        accent,
+      );
+      earMesh.rotation.z = side * -0.16;
+      earMesh.castShadow = true;
+      ear.add(earMesh);
+      const inner = new THREE.Mesh(
+        this.geo("pet-inner-ear", () => new THREE.ConeGeometry(0.055, 0.19, 10)),
+        white,
+      );
+      inner.position.z = 0.038;
+      inner.position.y = -0.01;
+      inner.scale.set(0.75, 0.8, 0.5);
+      ear.add(inner);
+      head.add(ear);
+      ears.push(ear);
+    }
+
+    // Keep each species readable in the 2.5D silhouette. These are small
+    // authored rig differences, not a texture filter or a recoloured blob.
+    if (speciesId === "bunny") {
+      ears.forEach((ear) => ear.scale.set(1.12, 1.75, 1));
+    } else if (speciesId === "puppy") {
+      ears[0].rotation.z = -0.46;
+      ears[1].rotation.z = 0.46;
+    } else if (speciesId === "bear") {
+      ears.forEach((ear) => ear.scale.set(1.25, 0.78, 1.18));
+    }
+
+    if (speciesId === "duck") {
+      const beak = new THREE.Mesh(
+        this.geo("pet-beak", () => new THREE.SphereGeometry(0.105, 12, 8)),
+        this.track(new THREE.MeshStandardMaterial({ color: 0xe49a46, roughness: 0.58 })),
+      );
+      beak.scale.set(1.55, 0.55, 0.62);
+      beak.position.set(0, -0.005, 0.29);
+      head.add(beak);
+    }
+
+    if (speciesId === "panda") {
+      for (const side of [-1, 1]) {
+        const patch = new THREE.Mesh(
+          this.geo("pet-eye-patch", () => new THREE.SphereGeometry(0.078, 12, 8)),
+          dark,
+        );
+        patch.position.set(side * 0.095, 0.08, 0.237);
+        patch.scale.set(1.05, 0.72, 0.22);
+        head.add(patch);
+      }
+    }
+
+    const eyes = new THREE.Group();
+    eyes.position.set(0, 0.08, 0.255);
+    head.add(eyes);
+    for (const side of [-0.095, 0.095]) {
+      const eye = new THREE.Mesh(this.geo("pet-eye", () => new THREE.SphereGeometry(0.052, 12, 10)), dark);
+      eye.position.x = side;
+      eye.scale.z = 0.62;
+      eyes.add(eye);
+      const glint = new THREE.Mesh(
+        this.geo("pet-eye-glint", () => new THREE.SphereGeometry(0.016, 8, 6)),
+        white,
+      );
+      glint.position.set(side + (side < 0 ? 0.02 : -0.02), 0.022, 0.045);
+      eyes.add(glint);
+    }
+
+    const legs: THREE.Group[] = [];
+    for (const [x, z] of [[-0.19, 0.12], [0.19, 0.12], [-0.16, -0.1], [0.16, -0.1]] as const) {
+      const leg = new THREE.Group();
+      leg.position.set(x, 0.2, z);
+      const paw = new THREE.Mesh(
+        this.geo("pet-paw", () => new THREE.CapsuleGeometry(0.085, 0.17, 4, 10)),
+        cloth,
+      );
+      paw.position.y = -0.16;
+      paw.castShadow = true;
+      leg.add(paw);
+      body.add(leg);
+      legs.push(leg);
+    }
+
+    const tail = new THREE.Group();
+    tail.position.set(0.31, 0.42, -0.08);
+    for (const [index, scale] of [[0, 0.18], [1, 0.15], [2, 0.11]] as const) {
+      const puff = new THREE.Mesh(this.geo(`pet-tail-${index}`, () => new THREE.SphereGeometry(1, 14, 10)), accent);
+      puff.position.set(index * 0.1, index * 0.09, 0);
+      puff.scale.set(scale, scale * 1.05, scale * 0.85);
+      puff.castShadow = true;
+      tail.add(puff);
+    }
+    body.add(tail);
+
+    const accessory = new THREE.Group();
+    const accessoryId = player.companion?.accessory ?? "moonberry-bow";
+    if (accessoryId === "garden-crown") {
+      const crown = new THREE.Mesh(this.geo("pet-crown", () => new THREE.ConeGeometry(0.14, 0.16, 7)), accent);
+      crown.position.set(0, 0.34, 0.04);
+      crown.rotation.z = Math.PI;
+      accessory.add(crown);
+      head.add(accessory);
+    } else if (accessoryId === "lantern-scarf") {
+      const scarf = new THREE.Mesh(this.geo("pet-scarf", () => new THREE.TorusGeometry(0.2, 0.045, 8, 18)), accent);
+      scarf.rotation.x = Math.PI / 2;
+      scarf.position.y = -0.08;
+      accessory.add(scarf);
+      body.add(accessory);
+    } else if (accessoryId === "heart-vest") {
+      const vest = new THREE.Mesh(this.geo("pet-vest", () => new THREE.SphereGeometry(0.24, 16, 10)), accent);
+      vest.scale.set(1.05, 0.78, 0.22);
+      vest.position.set(0, 0.4, 0.27);
+      accessory.add(vest);
+      body.add(accessory);
+    } else {
+      const bow = new THREE.Mesh(this.geo("pet-bow", () => new THREE.SphereGeometry(0.09, 12, 8)), accent);
+      bow.scale.set(1.45, 0.72, 0.35);
+      bow.position.set(0, 0.04, 0.28);
+      accessory.add(bow);
+      body.add(accessory);
+    }
+
+    const flying = Boolean(palette.base.flying);
+    const wings: THREE.Group[] = [];
+    if (speciesId === "dragon") {
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Group();
+        const shape = new THREE.Shape();
+        shape.moveTo(0, 0.14);
+        shape.lineTo(side * 0.44, 0.38);
+        shape.lineTo(side * 0.7, -0.12);
+        shape.lineTo(side * 0.18, -0.24);
+        shape.closePath();
+        const wingMesh = new THREE.Mesh(
+          this.track(new THREE.ShapeGeometry(shape)),
+          this.track(new THREE.MeshStandardMaterial({ color: palette.accent, roughness: 0.62, side: THREE.DoubleSide })),
+        );
+        wingMesh.position.set(0, 0.48, -0.12);
+        wingMesh.rotation.y = side * 0.2;
+        wing.add(wingMesh);
+        body.add(wing);
+        wings.push(wing);
+      }
+    }
+    let cape: THREE.Group | undefined;
+    let light: THREE.PointLight | undefined;
+    if (player.companion?.speciesId === "super-snails") {
+      cape = new THREE.Group();
+      const shape = new THREE.Shape();
+      shape.moveTo(-0.05, 0.14);
+      shape.lineTo(-0.82, -0.24);
+      shape.lineTo(0.2, -0.52);
+      shape.lineTo(0.58, 0.12);
+      shape.closePath();
+      const capeMesh = new THREE.Mesh(
+        this.track(new THREE.ShapeGeometry(shape)),
+        this.track(new THREE.MeshStandardMaterial({ color: 0xd84b6a, roughness: 0.44, side: THREE.DoubleSide, emissive: 0x4e1025, emissiveIntensity: 0.18 })),
+      );
+      capeMesh.position.set(0, 0.37, -0.27);
+      capeMesh.rotation.y = Math.PI;
+      cape.add(capeMesh);
+      body.add(cape);
+      light = new THREE.PointLight(0xff6b83, 1.4, 3.2, 2);
+      light.position.set(0, 0.75, 0.3);
+      root.add(light);
+    }
+
+    const bubble = new THREE.Mesh(
+      this.geo("pet-bubble", () => new THREE.SphereGeometry(0.78, 24, 18)),
+      this.track(new THREE.MeshPhysicalMaterial({
+        color: 0xbfe8ff, roughness: 0.05, metalness: 0, transmission: 0.85,
+        transparent: true, opacity: 0.4, thickness: 0.2, iridescence: 1, iridescenceIOR: 1.6,
+        side: THREE.DoubleSide,
+      })),
+    );
+    bubble.position.y = 0.72;
+    bubble.visible = false;
+    root.add(bubble);
+
+    const shadow = new THREE.Mesh(this.shadowGeometry, this.shadowMaterial);
+    shadow.renderOrder = 2;
+    this.scene.add(root, shadow);
+    const rig: PetRig = {
+      root, body, head, tail, ears, legs, wings, eyes, accessory, cape, bubble, shadow, light,
+      speciesId,
+      visualKey: `${speciesId}:${player.companion?.toneId ?? "cream"}:${player.companion?.accessory ?? "moonberry-bow"}`,
+      flying, cycle: 0, bob: 0,
+    };
+    const atlas = companionMotionAtlas(speciesId);
+    if (atlas) {
+      this.loadPetMotionArt(speciesId, (texture) => this.attachPetMotionArt(rig, texture, atlas));
+    }
+    // Non-atlas companions deliberately remain on the articulated rig. A
+    // single static cutout would make walking, jumping, and rescue states
+    // appear frozen, so it is never promoted to the authoritative visual.
+    return rig;
+  }
+
+  private petMotionFrame(atlas: CompanionMotionAtlas, motion: string, cycle: number): CompanionMotionFrame {
+    if (motion === "jump" || motion === "fall" || motion === "pound") return "jump";
+    if (motion === "duck") return "sit";
+    if (motion === "sleep" || motion === "rest") return "sleep";
+    if (motion === "walk" || motion === "run" || motion === "skid") {
+      const step = Math.floor(Math.abs(cycle) / Math.PI);
+      return step % 2 === 0 ? "runA" : "runB";
+    }
+    return "idle";
+  }
+
+  private posePetRig(rig: PetRig, player: RenderPlayer, time: number, dt: number) {
+    const motion = player.motion;
+    const moving = motion === "walk" || motion === "run";
+    if (moving) rig.cycle = player.x * (motion === "run" ? 4.4 : 5.2);
+    const swing = Math.sin(rig.cycle);
+    const breathe = Math.sin(time * 1.8 + player.seat * 0.3);
+    const flyingBob = rig.flying ? Math.sin(time * 3.1 + player.seat) * 0.08 : 0;
+    const legSwing = moving ? swing * (motion === "run" ? 0.8 : 0.52) : 0;
+    const targetBob = rig.flying ? flyingBob : moving ? Math.abs(Math.sin(rig.cycle * 2)) * 0.035 : breathe * 0.014;
+
+    rig.bob = damp(rig.bob, targetBob, 14, dt);
+    rig.body.position.y = rig.bob;
+    rig.head.rotation.z = damp(rig.head.rotation.z, moving ? 0 : breathe * 0.035, 12, dt);
+    rig.eyes.scale.y = Math.sin(time * 1.55 + player.seat) > 0.988 ? 0.16 : 1;
+    rig.tail.rotation.z = damp(rig.tail.rotation.z, -0.2 + Math.sin(time * 2.8 + player.seat) * 0.18 + (moving ? -player.facing * 0.15 : 0), 12, dt);
+    rig.ears[0].rotation.z = damp(rig.ears[0].rotation.z, moving ? -0.08 : 0, 12, dt);
+    rig.ears[1].rotation.z = damp(rig.ears[1].rotation.z, moving ? 0.08 : 0, 12, dt);
+    rig.legs[0].rotation.x = damp(rig.legs[0].rotation.x, legSwing, 16, dt);
+    rig.legs[1].rotation.x = damp(rig.legs[1].rotation.x, -legSwing, 16, dt);
+    rig.legs[2].rotation.x = damp(rig.legs[2].rotation.x, -legSwing * 0.75, 16, dt);
+    rig.legs[3].rotation.x = damp(rig.legs[3].rotation.x, legSwing * 0.75, 16, dt);
+
+    if (motion === "jump" || motion === "fall" || motion === "pound") {
+      for (const leg of rig.legs) leg.rotation.x = damp(leg.rotation.x, motion === "pound" ? 0.8 : -0.42, 14, dt);
+      rig.head.rotation.x = damp(rig.head.rotation.x, motion === "fall" ? 0.12 : -0.08, 12, dt);
+    } else {
+      rig.head.rotation.x = damp(rig.head.rotation.x, 0, 12, dt);
+    }
+
+    const crouching = motion === "duck";
+    rig.body.position.y = damp(rig.body.position.y, rig.bob + (crouching ? -0.12 : 0), 14, dt);
+    rig.head.position.y = damp(rig.head.position.y, 0.71 + (crouching ? -0.1 : 0), 14, dt);
+    if (crouching) {
+      rig.legs[0].rotation.x = damp(rig.legs[0].rotation.x, 0.5, 14, dt);
+      rig.legs[1].rotation.x = damp(rig.legs[1].rotation.x, -0.5, 14, dt);
+    }
+    if (rig.wings?.length) {
+      const wingFlap = rig.flying ? Math.sin(time * 8 + player.seat) * 0.22 : 0;
+      rig.wings[0].rotation.z = damp(rig.wings[0].rotation.z, wingFlap, 16, dt);
+      rig.wings[1].rotation.z = damp(rig.wings[1].rotation.z, -wingFlap, 16, dt);
+    }
+
+    // Pose atlases already contain the authored silhouette for each state.
+    // Never squash/resize one of those frames to manufacture motion. The
+    // procedural fallback can still use gameplay squash because it is made
+    // from independent body parts rather than one static cutout.
+    const squash = player.squash;
+    if (rig.artAtlas) rig.root.scale.set(1, 1, 1);
+    else rig.root.scale.set(1.02 + (1 - squash) * 0.1, 0.98 + (squash - 1) * 0.1, 1);
+    // Sprites already face the camera. Their horizontal scale supplies the
+    // left/right facing without introducing a perspective turn or mirrored
+    // lighting jump; the modeled fallback keeps its original turn.
+    rig.root.rotation.y = rig.art
+      ? 0
+      : damp(rig.root.rotation.y, player.facing === 1 ? 0.18 : -0.18, 12, dt);
+    if (rig.art && rig.artBaseScale) {
+      const width = rig.artBaseScale.x;
+      const height = rig.artBaseScale.y;
+      rig.art.scale.set(player.facing === 1 ? -width : width, height, 1);
+      if (rig.artAtlas) {
+        const frameName = this.petMotionFrame(rig.artAtlas, motion, rig.cycle);
+        const frameIndex = rig.artAtlas.frames[frameName];
+        const map = rig.art.material.map;
+        if (map) map.offset.x = frameIndex / rig.artAtlas.frameCount;
+      }
+      rig.art.position.y = (rig.flying ? 0.22 : 0.03) + rig.bob;
+      rig.art.position.z = 0.38;
+    }
+    if (rig.cape) rig.cape.rotation.z = Math.sin(time * 4.2 + player.seat) * 0.1;
+    if (rig.light) rig.light.intensity = 1.1 + Math.sin(time * 8.4) * 0.2;
+  }
+
   /** Ground height under a point, for contact shadows and dust. */
   private groundBelow(x: number, y: number) {
     const { grid } = this.level;
@@ -1532,70 +2096,86 @@ export class LanternRenderer {
     const dt = this.frameDt;
     for (const player of snapshot.players) {
       seen.add(player.id);
+      const useCompanion = Boolean(player.companion?.speciesId);
       let rig = this.playerRigs.get(player.id);
-      if (!rig) {
-        rig = this.makeRig(player);
-        this.playerRigs.set(player.id, rig);
-        rig.root.position.set(player.x, player.y, ENTITY_Z);
-      }
+      let pet = this.petRigs.get(player.id);
 
-      if (player.local) rig.root.position.set(player.x, player.y, ENTITY_Z);
-      else {
-        const follow = 1 - Math.pow(0.65, Math.max(0, dt) * 60);
-        rig.root.position.x += (player.x - rig.root.position.x) * follow;
-        rig.root.position.y += (player.y - rig.root.position.y) * follow;
-        rig.root.position.z = ENTITY_Z;
-      }
+      if (useCompanion) {
+        if (rig) rig.root.visible = false;
+        const visualKey = `${player.companion?.speciesId ?? "kitten"}:${player.companion?.toneId ?? "cream"}:${player.companion?.accessory ?? "moonberry-bow"}`;
+        if (!pet || pet.visualKey !== visualKey) {
+          if (pet) {
+            this.scene.remove(pet.root);
+            this.scene.remove(pet.shadow);
+          }
+          pet = this.makePetRig(player);
+          this.petRigs.set(player.id, pet);
+          pet.root.position.set(player.x, player.y, ENTITY_Z);
+        }
 
-      const wasAirborne = rig.motion === "jump" || rig.motion === "fall" || rig.motion === "pound";
-      const nowGrounded = player.motion === "idle" || player.motion === "walk"
-        || player.motion === "run" || player.motion === "skid" || player.motion === "duck";
-      if (dt > 0) {
-        if (wasAirborne && nowGrounded) {
-          this.fx.landingDust(player.x, player.y, rig.motion === "pound" ? 1.5 : 0.7, this.theme.dust);
+        if (player.local) pet.root.position.set(player.x, player.y, ENTITY_Z);
+        else {
+          const follow = 1 - Math.pow(0.65, Math.max(0, dt) * 60);
+          pet.root.position.x += (player.x - pet.root.position.x) * follow;
+          pet.root.position.y += (player.y - pet.root.position.y) * follow;
+          pet.root.position.z = ENTITY_Z;
         }
-        if (!wasAirborne && player.motion === "jump") {
-          this.fx.emit({
-            x: player.x, y: player.y + 0.05, count: 6, color: this.theme.dust, color2: 0xffffff,
-            angle: Math.PI / 2, spread: Math.PI * 1.4, speed: 1.6, size: 0.22, ttl: 0.32, gravity: -2, drag: 5,
-          });
+        this.posePetRig(pet, player, snapshot.time, dt);
+        pet.bubble.visible = player.bubbled;
+        pet.root.visible = true;
+        if (player.bubbled) {
+          pet.bubble.scale.setScalar(1 + Math.sin(snapshot.time * 3 + player.seat) * 0.05);
+          pet.body.position.y = Math.sin(snapshot.time * 2.2 + player.seat) * 0.06 + 0.15;
         }
-        if (player.motion === "run" && Math.sin(player.x * 3.0) > 0.86) {
-          this.fx.runDust(player.x, player.y, player.facing, this.theme.dust);
-        }
-        if (player.motion === "skid") {
-          this.fx.spark(player.x - player.facing * 0.3, player.y + 0.05, player.facing > 0 ? Math.PI * 0.85 : Math.PI * 0.15, this.theme.accent, 2);
-        }
-        if (player.motion === "wallslide") {
-          this.fx.spark(player.x + player.facing * 0.34, player.y + 0.6, Math.PI * 0.5 - player.facing * 0.5, this.theme.rim, 1);
-        }
-      }
-      rig.motion = player.motion;
-
-      this.poseRig(rig, player, snapshot.time, dt);
-
-      rig.bubble.visible = player.bubbled;
-      rig.root.visible = true;
-      if (player.bubbled) {
-        rig.bubble.scale.setScalar(1 + Math.sin(snapshot.time * 3 + player.seat) * 0.05);
-        rig.body.position.y = Math.sin(snapshot.time * 2.2 + player.seat) * 0.06 + 0.15;
-      }
-
-      // Contact shadow: a soft ellipse pressed against the ledge face.
-      const ground = this.groundBelow(player.x, player.y);
-      const height = player.y - ground;
-      if (Number.isFinite(ground) && height < 6 && !player.bubbled) {
-        const fade = Math.max(0, 1 - height / 5);
-        rig.shadow.visible = true;
-        rig.shadow.position.set(player.x, ground + 0.1, FRONT_Z + 0.03);
-        const spread = 0.85 + height * 0.12;
-        rig.shadow.scale.set(spread, spread * 0.55, 1);
-        (rig.shadow.material as THREE.MeshBasicMaterial).opacity = 0.5;
-        rig.shadow.renderOrder = 2;
-        rig.shadow.visible = fade > 0.02;
-        rig.shadow.scale.multiplyScalar(0.6 + fade * 0.6);
+        this.updateContactShadow(pet.shadow, player, pet.root.position.x, pet.root.position.y);
       } else {
-        rig.shadow.visible = false;
+        if (pet) pet.root.visible = false;
+        if (!rig) {
+          rig = this.makeRig(player);
+          this.playerRigs.set(player.id, rig);
+          rig.root.position.set(player.x, player.y, ENTITY_Z);
+        }
+
+        if (player.local) rig.root.position.set(player.x, player.y, ENTITY_Z);
+        else {
+          const follow = 1 - Math.pow(0.65, Math.max(0, dt) * 60);
+          rig.root.position.x += (player.x - rig.root.position.x) * follow;
+          rig.root.position.y += (player.y - rig.root.position.y) * follow;
+          rig.root.position.z = ENTITY_Z;
+        }
+
+        const wasAirborne = rig.motion === "jump" || rig.motion === "fall" || rig.motion === "pound";
+        const nowGrounded = player.motion === "idle" || player.motion === "walk"
+          || player.motion === "run" || player.motion === "skid" || player.motion === "duck";
+        if (dt > 0) {
+          if (wasAirborne && nowGrounded) {
+            this.fx.landingDust(player.x, player.y, rig.motion === "pound" ? 1.5 : 0.7, this.theme.dust);
+          }
+          if (!wasAirborne && player.motion === "jump") {
+            this.fx.emit({
+              x: player.x, y: player.y + 0.05, count: 6, color: this.theme.dust, color2: 0xffffff,
+              angle: Math.PI / 2, spread: Math.PI * 1.4, speed: 1.6, size: 0.22, ttl: 0.32, gravity: -2, drag: 5,
+            });
+          }
+          if (player.motion === "run" && Math.sin(player.x * 3.0) > 0.86) {
+            this.fx.runDust(player.x, player.y, player.facing, this.theme.dust);
+          }
+          if (player.motion === "skid") {
+            this.fx.spark(player.x - player.facing * 0.3, player.y + 0.05, player.facing > 0 ? Math.PI * 0.85 : Math.PI * 0.15, this.theme.accent, 2);
+          }
+          if (player.motion === "wallslide") {
+            this.fx.spark(player.x + player.facing * 0.34, player.y + 0.6, Math.PI * 0.5 - player.facing * 0.5, this.theme.rim, 1);
+          }
+        }
+        rig.motion = player.motion;
+        this.poseRig(rig, player, snapshot.time, dt);
+        rig.bubble.visible = player.bubbled;
+        rig.root.visible = true;
+        if (player.bubbled) {
+          rig.bubble.scale.setScalar(1 + Math.sin(snapshot.time * 3 + player.seat) * 0.05);
+          rig.body.position.y = Math.sin(snapshot.time * 2.2 + player.seat) * 0.06 + 0.15;
+        }
+        this.updateContactShadow(rig.shadow, player, rig.root.position.x, rig.root.position.y);
       }
     }
 
@@ -1604,6 +2184,29 @@ export class LanternRenderer {
       this.scene.remove(rig.root);
       this.scene.remove(rig.shadow);
       this.playerRigs.delete(id);
+    }
+    for (const [id, rig] of this.petRigs) {
+      if (seen.has(id)) continue;
+      this.scene.remove(rig.root);
+      this.scene.remove(rig.shadow);
+      this.petRigs.delete(id);
+    }
+  }
+
+  private updateContactShadow(shadow: THREE.Mesh, player: RenderPlayer, x: number, y: number) {
+    const ground = this.groundBelow(player.x, player.y);
+    const height = player.y - ground;
+    if (Number.isFinite(ground) && height < 6 && !player.bubbled) {
+      const fade = Math.max(0, 1 - height / 5);
+      shadow.visible = fade > 0.02;
+      shadow.position.set(x, ground + 0.1, FRONT_Z + 0.03);
+      const spread = 0.72 + height * 0.11;
+      shadow.scale.set(spread, spread * 0.55, 1);
+      (shadow.material as THREE.MeshBasicMaterial).opacity = 0.44;
+      shadow.renderOrder = 2;
+      shadow.scale.multiplyScalar(0.62 + fade * 0.55);
+    } else {
+      shadow.visible = false;
     }
   }
 
@@ -2297,6 +2900,7 @@ export class LanternRenderer {
   }
 
   dispose() {
+    this.disposed = true;
     this.composer?.dispose();
     this.bloomPass?.dispose();
     this.fx.dispose();
@@ -2306,6 +2910,9 @@ export class LanternRenderer {
     this.geometryCache.clear();
     this.scene.clear();
     this.playerRigs.clear();
+    this.petRigs.clear();
+    this.petArtLoads.clear();
+    this.petArtTextures.clear();
     this.pickupNodes.clear();
     this.enemyNodes.clear();
   }

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import type { GameReward } from "@/lib/game/rewards";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import { COMPANION_ROSTER_EVENT, getActiveCompanion, type CompanionRecord } from "@/lib/game/companion-roster";
+import { companionArtAsset } from "@/lib/game/companion-art";
 import {
   petalRelayKindLabel,
   type PetalRelayResult,
@@ -49,6 +51,7 @@ export function PetalCatchCanvas({
   const seatsRef = useRef(seats);
   const mySeatIndexRef = useRef(mySeatIndex);
   const pendingRelayMoveRef = useRef(pendingRelayMove);
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
   const [status, setStatus] = useState("Catch petals and hearts. Avoid thorns.");
 
   useEffect(() => {
@@ -66,6 +69,12 @@ export function PetalCatchCanvas({
     mySeatIndexRef.current = mySeatIndex;
     pendingRelayMoveRef.current = pendingRelayMove;
   }, [mode, relayState, seats, mySeatIndex, pendingRelayMove]);
+
+  useEffect(() => {
+    const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+  }, []);
 
   useEffect(() => {
     let destroyed = false;
@@ -104,7 +113,7 @@ export function PetalCatchCanvas({
 
         preload() {
           this.load.image("moonberry-garden-bg", "/game-assets/generated/moonberry-garden-bg.png");
-          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.image("active-companion", companionArtAsset(activeCompanion?.speciesId));
           this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
             frameWidth: 384,
             frameHeight: 512,
@@ -113,7 +122,7 @@ export function PetalCatchCanvas({
 
         create() {
           this.drawBackdrop();
-          this.createCasperMascot();
+          this.createCompanionMascot();
           this.createBasket();
           this.createHud();
           this.cursors = this.input.keyboard?.createCursorKeys();
@@ -395,13 +404,21 @@ export function PetalCatchCanvas({
           }
         }
 
-        private createCasperMascot() {
-          const casper = this.add.container(104, 448).setDepth(448);
-          casper.add(this.add.ellipse(0, 42, 86, 22, 0x3a2a2a, 0.15));
-          casper.add(this.add.image(0, -18, "casper-sprite").setDisplaySize(110, 110));
+        private createCompanionMascot() {
+          const companion = this.add.container(104, 448).setDepth(448);
+          companion.add(this.add.ellipse(0, 42, 86, 22, 0x3a2a2a, 0.15));
+          companion.add(this.add.image(0, -18, "active-companion").setDisplaySize(110, 110));
+          companion.add(this.add.text(0, 50, activeCompanion?.name ?? "Casper", {
+            color: "#5B3F3F",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "12px",
+            fontStyle: "900",
+            stroke: "#FFFDF6",
+            strokeThickness: 4,
+          }).setOrigin(0.5));
           this.tweens.add({
-            targets: casper,
-            y: casper.y - 5,
+            targets: companion,
+            y: companion.y - 5,
             duration: 980,
             yoyo: true,
             repeat: -1,
@@ -626,7 +643,7 @@ export function PetalCatchCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, []);
+  }, [activeCompanion?.speciesId]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-blush-300/50 bg-cream-100 shadow-[0_24px_70px_rgba(216,126,140,0.16)]">

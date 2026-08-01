@@ -12,6 +12,15 @@ import {
   simulateThrow, laneFriction, LANE_LENGTH, BOWLING, PIN_POSITIONS,
 } from "../src/lib/game/moonberry-bowling/physics";
 import { resolveMatch, throwSeed } from "../src/lib/game/moonberry-bowling/match";
+import {
+  acceptBowlingPlaybackMove,
+  bowlingMoveKey,
+  cancelBowlingPlaybackMove,
+  createBowlingPlaybackState,
+  finishBowlingPlaybackMove,
+  seedBowlingPlayback,
+  startBowlingPlaybackMove,
+} from "../src/lib/game/moonberry-bowling/playback";
 
 // --- determinism: the whole multiplayer model rests on this ---
 const a = simulateThrow({ aim: 0.2, power: 0.7, spin: 0.5, seed: 42 });
@@ -149,6 +158,35 @@ assert.ok(
 );
 assert.notEqual(throwSeed("a", 0), throwSeed("a", 1), "each throw gets its own seed");
 assert.notEqual(throwSeed("a", 0), throwSeed("b", 0), "each session gets its own seeds");
+
+/* ------------------------------------------------------------------ */
+/* Playback: polling/realtime must never replay an accepted throw       */
+/* ------------------------------------------------------------------ */
+
+const playback = createBowlingPlaybackState("playback-session");
+const firstMove = { moveIndex: 4, seat: 1 };
+seedBowlingPlayback(playback, [firstMove]);
+assert.equal(playback.initialized, true);
+assert.equal(acceptBowlingPlaybackMove(playback, firstMove, 0), false, "initial snapshot must not replay");
+assert.equal(acceptBowlingPlaybackMove(playback, { moveIndex: 5, seat: 0 }, 1), true, "new roll queues once");
+assert.equal(acceptBowlingPlaybackMove(playback, { moveIndex: 5, seat: 7 }, 1), false, "same database move must not queue twice");
+assert.equal(acceptBowlingPlaybackMove(playback, { moveIndex: 4, seat: 1 }, 0), false, "stale roll must not rewind playback");
+assert.equal(bowlingMoveKey({ moveIndex: 5, seat: 0 }, 1), "5");
+assert.equal(playback.queuedMoveKeys.has("5"), true, "accepted roll is queued");
+assert.equal(startBowlingPlaybackMove(playback, "5"), true, "queued roll can be claimed once");
+assert.equal(startBowlingPlaybackMove(playback, "5"), false, "active roll cannot be claimed twice");
+assert.equal(playback.activeMoveKey, "5");
+assert.equal(finishBowlingPlaybackMove(playback, "5"), true, "active roll completes once");
+assert.equal(finishBowlingPlaybackMove(playback, "5"), false, "completed roll cannot complete twice");
+assert.equal(playback.completedMoveKeys.has("5"), true, "completed roll is remembered");
+
+assert.equal(acceptBowlingPlaybackMove(playback, { moveIndex: 6, seat: 1 }, 2), true, "next roll queues");
+assert.equal(startBowlingPlaybackMove(playback, "6"), true);
+assert.equal(cancelBowlingPlaybackMove(playback, "6"), true, "unmounted roll returns to queue");
+assert.equal(playback.activeMoveKey, null);
+assert.equal(playback.queuedMoveKeys.has("6"), true);
+assert.equal(startBowlingPlaybackMove(playback, "6"), true, "returned roll can resume once");
+assert.equal(finishBowlingPlaybackMove(playback, "6"), true);
 
 console.log("moonberry bowling OK", {
   match: seats.join(" "),

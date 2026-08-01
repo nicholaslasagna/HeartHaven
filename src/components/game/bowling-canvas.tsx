@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight, CircleDot } from "lucide-react";
 import type Phaser from "phaser";
 import { Button } from "@/components/ui/button";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import { COMPANION_ROSTER_EVENT, getActiveCompanion, type CompanionRecord } from "@/lib/game/companion-roster";
+import { companionArtAsset } from "@/lib/game/companion-art";
 import { cn } from "@/lib/utils";
 import {
   computeBowlingStandingPinIds,
@@ -79,6 +81,7 @@ export function BowlingCanvas({
   const [powerTouched, setPowerTouched] = useState(false);
   const [sceneBusy, setSceneBusy] = useState(false);
   const [status, setStatus] = useState("Swipe up the lane to bowl. Flick faster for more power.");
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
   const swipeRef = useRef<{ pointerId: number; start: SwipeSample; tail: SwipeSample[] } | null>(null);
   const [swipeTrail, setSwipeTrail] = useState<{ from: SwipeSample; to: SwipeSample } | null>(null);
 
@@ -95,6 +98,12 @@ export function BowlingCanvas({
     seatNamesRef.current = seatNames;
     window.dispatchEvent(new CustomEvent("hearthaven:bowling-sync"));
   }, [rolls, seatCount, seatNames]);
+
+  useEffect(() => {
+    const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+  }, []);
 
   useEffect(() => {
     aimRef.current = aim;
@@ -193,7 +202,7 @@ export function BowlingCanvas({
 
         preload() {
           this.load.image("moonberry-bowling-bg", "/game-assets/generated/moonberry-bowling-bg.png");
-          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.image("active-companion", companionArtAsset(activeCompanion?.speciesId));
           this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
             frameWidth: 384,
             frameHeight: 512,
@@ -206,7 +215,15 @@ export function BowlingCanvas({
           this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xfffcf3, 0.08).setDepth(-19);
           this.drawLane();
           const mascot = this.add.container(GAME_WIDTH - 92, GAME_HEIGHT - 104).setDepth(6000);
-          mascot.add(this.add.image(0, 0, "casper-sprite").setDisplaySize(108, 108));
+          mascot.add(this.add.image(0, 0, "active-companion").setDisplaySize(108, 108));
+          mascot.add(this.add.text(0, 62, activeCompanion?.name ?? "Casper", {
+            color: "#5B3F3F",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "12px",
+            fontStyle: "900",
+            stroke: "#FFFDF6",
+            strokeThickness: 4,
+          }).setOrigin(0.5));
           this.tweens.add({ targets: mascot, y: mascot.y - 7, duration: 1650, yoyo: true, repeat: -1, ease: "Sine.inOut" });
 
           this.createPins();
@@ -440,7 +457,7 @@ export function BowlingCanvas({
 
     void boot();
     return () => { destroyed = true; game?.destroy(true); };
-  }, []);
+  }, [activeCompanion?.speciesId]);
 
   return (
     <div className="grid gap-3">

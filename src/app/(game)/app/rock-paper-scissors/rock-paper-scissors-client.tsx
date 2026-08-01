@@ -4,8 +4,10 @@ import { HandHeart, RefreshCcw, Scissors } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { GameHubButton } from "@/components/game/game-hub-button";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { playCozyCue } from "@/lib/game/cozy-audio";
@@ -245,13 +247,16 @@ export function RockPaperScissorsClient() {
           </p>
           <p className="mt-2 text-xs font-extrabold text-lavender-600">{game.status}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <CompanionCameo copy="is choosing a keepsake" />
           <GameHubButton returnToLobby={game.returnToLobby} />
           <Button onClick={() => void game.returnToLobby()} variant="warm">
             <RefreshCcw /> New lobby
           </Button>
         </div>
       </section>
+
+      <WorldZoneDock active="games" />
 
       <RewardWalletPanel />
 

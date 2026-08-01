@@ -4,9 +4,11 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import {
   heartRushSeatColor,
+  type HeartRushCompanion,
   type HeartRushRemote,
   type HeartRushState,
 } from "@/lib/game/heartrush-shared";
+import { companionArtAsset } from "@/lib/game/companion-art";
 import {
   HEARTRUSH_GRAVITY,
   HEARTRUSH_JUMP_VELOCITY,
@@ -89,6 +91,8 @@ type HeartRushCanvasProps = {
   raceStartAt: number | null;
   mySeatIndex: number;
   myName: string;
+  /** Selected companion art used by the local racer and shared with peers. */
+  companion: HeartRushCompanion;
   /** Called ~15x/sec with local state for broadcasting. Never re-renders. */
   onLocalState?: (state: HeartRushState) => void;
   /** Called once when the player crosses the finish line. */
@@ -521,6 +525,58 @@ class Course {
 
 type Input = { x: number; z: number; jump: boolean; dive: boolean };
 
+const COMPANION_RENDER_HEIGHT = 1.85;
+
+function loadCompanionArt(
+  companion: HeartRushCompanion,
+  group: THREE.Group,
+  isAlive: () => boolean,
+  onAttached: (sprite: THREE.Sprite, baseScale: THREE.Vector2) => void,
+) {
+  new THREE.TextureLoader().load(
+    companionArtAsset(companion.speciesId),
+    (texture) => {
+      if (!isAlive() || !group.parent) {
+        texture.dispose();
+        return;
+      }
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const image = texture.image as { width?: number; height?: number } | undefined;
+      const aspect = image?.width && image?.height ? image.width / image.height : 1;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+      }));
+      sprite.center.set(0.5, 0.06);
+      sprite.position.set(0, -0.7, 0.24);
+      const baseScale = new THREE.Vector2(aspect * COMPANION_RENDER_HEIGHT, COMPANION_RENDER_HEIGHT);
+      sprite.scale.set(baseScale.x, baseScale.y, 1);
+      sprite.renderOrder = 6;
+      sprite.frustumCulled = false;
+      group.add(sprite);
+      onAttached(sprite, baseScale);
+    },
+    undefined,
+    () => {
+      // The modeled avatar remains visible when an art asset is unavailable.
+    },
+  );
+}
+
+function disposeObjectTree(root: THREE.Object3D) {
+  root.traverse((object) => {
+    const resource = object as unknown as {
+      geometry?: THREE.BufferGeometry;
+      material?: THREE.Material | THREE.Material[];
+    };
+    resource.geometry?.dispose();
+    if (Array.isArray(resource.material)) resource.material.forEach((material) => material.dispose());
+    else resource.material?.dispose();
+  });
+}
+
 class Player {
   readonly group: THREE.Group;
   readonly position = new THREE.Vector3(0, 1.2, 6);
@@ -534,8 +590,12 @@ class Player {
   private diveCooldown = 0;
   private squash = 1;
   private readonly body: THREE.Mesh;
+  private companionSprite: THREE.Sprite | null = null;
+  private companionBaseScale = new THREE.Vector2(1, COMPANION_RENDER_HEIGHT);
+  private companionClock = 0;
+  private companionAlive = true;
 
-  constructor(scene: THREE.Scene, color: number) {
+  constructor(scene: THREE.Scene, color: number, companion: HeartRushCompanion) {
     this.group = new THREE.Group();
     this.body = new THREE.Mesh(
       new THREE.CapsuleGeometry(PLAYER_RADIUS, 0.55, 6, 14),
@@ -558,6 +618,11 @@ class Player {
     }
     scene.add(this.group);
     this.group.position.copy(this.position);
+    loadCompanionArt(companion, this.group, () => this.companionAlive, (sprite, baseScale) => {
+      this.companionSprite = sprite;
+      this.companionBaseScale.copy(baseScale);
+      this.body.visible = false;
+    });
   }
 
   respawn(at: THREE.Vector3) {
@@ -565,6 +630,7 @@ class Player {
     this.velocity.set(0, 0, 0);
     this.diveTimer = 0;
     this.grounded = false;
+    this.companionClock = 0;
   }
 
   get animState() {
@@ -662,14 +728,35 @@ class Player {
     this.body.scale.set(2 - this.squash, this.squash, 2 - this.squash);
     this.group.position.copy(this.position);
 
+    this.companionClock += dt;
+    if (this.companionSprite) {
+      const moving = Math.hypot(this.velocity.x, this.velocity.z) > 1.5;
+      const pulse = moving
+        ? Math.abs(Math.sin(this.companionClock * 9)) * 0.035
+        : Math.sin(this.companionClock * 2.2) * 0.012;
+      const height = this.companionBaseScale.y * (1 + pulse);
+      const width = this.companionBaseScale.x * (1 - pulse * 0.4);
+      this.companionSprite.scale.set(this.velocity.x >= 0 ? -width : width, height, 1);
+      this.companionSprite.position.y = -0.7 + (!this.grounded ? 0.06 : 0);
+      // Billboard art should never inherit the capsule's travel rotation.
+      this.group.rotation.y = 0;
+    }
+
     // Face travel direction; dive lies the capsule forward.
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
-    if (speed > 0.6) {
+    if (speed > 0.6 && !this.companionSprite) {
       const target = Math.atan2(this.velocity.x, this.velocity.z);
       const delta = shortestAngle(target, this.group.rotation.y);
       this.group.rotation.y += delta * Math.min(1, dt * 12);
     }
+    if (this.companionSprite) this.group.rotation.y = 0;
     this.body.rotation.x = this.diveTimer > 0 ? -1.1 : this.body.rotation.x * (1 - Math.min(1, dt * 8));
+  }
+
+  dispose(scene: THREE.Scene) {
+    this.companionAlive = false;
+    scene.remove(this.group);
+    disposeObjectTree(this.group);
   }
 }
 
@@ -701,26 +788,52 @@ function makeNameSprite(name: string, color: number) {
 class RemoteAvatar {
   readonly group = new THREE.Group();
   readonly target = new THREE.Vector3();
-  constructor(scene: THREE.Scene, name: string, color: number) {
+  readonly visualKey: string;
+  private readonly fallbackBody: THREE.Mesh;
+  private companionSprite: THREE.Sprite | null = null;
+  private companionBaseScale = new THREE.Vector2(1, COMPANION_RENDER_HEIGHT);
+  private companionClock = 0;
+  private alive = true;
+
+  constructor(scene: THREE.Scene, name: string, color: number, companion?: HeartRushCompanion) {
+    this.visualKey = `${companion?.speciesId ?? "capsule"}:${companion?.toneId ?? ""}:${companion?.accessory ?? ""}`;
     const body = new THREE.Mesh(
       new THREE.CapsuleGeometry(PLAYER_RADIUS, 0.55, 6, 14),
       new THREE.MeshStandardMaterial({ color, roughness: 0.3, transparent: true, opacity: 0.92 }),
     );
     body.castShadow = true;
+    this.fallbackBody = body;
     this.group.add(body);
     const label = makeNameSprite(name, color);
     label.position.y = 1.35;
     this.group.add(label);
     scene.add(this.group);
+    if (companion) {
+      loadCompanionArt(companion, this.group, () => this.alive, (sprite, baseScale) => {
+        this.companionSprite = sprite;
+        this.companionBaseScale.copy(baseScale);
+        this.fallbackBody.visible = false;
+      });
+    }
   }
 
   update(dt: number) {
     // Lerp instead of snapping: dropped packets look like smoothing.
     this.group.position.lerp(this.target, Math.min(1, dt * 9));
+    this.companionClock += dt;
+    if (this.companionSprite) {
+      const pulse = Math.sin(this.companionClock * 2.2) * 0.012;
+      const height = this.companionBaseScale.y * (1 + pulse);
+      const width = this.companionBaseScale.x * (1 - pulse * 0.4);
+      const facingRight = this.target.x >= this.group.position.x;
+      this.companionSprite.scale.set(facingRight ? -width : width, height, 1);
+    }
   }
 
   dispose(scene: THREE.Scene) {
+    this.alive = false;
     scene.remove(this.group);
+    disposeObjectTree(this.group);
   }
 }
 
@@ -732,6 +845,7 @@ export function HeartRushCanvas({
   raceStartAt,
   mySeatIndex,
   myName,
+  companion,
   onLocalState,
   onFinish,
   onProgress,
@@ -820,7 +934,7 @@ export function HeartRushCanvas({
 
     try {
       effects = new Effects(scene);
-      player = new Player(scene, heartRushSeatColor(mySeatIndex));
+      player = new Player(scene, heartRushSeatColor(mySeatIndex), companion);
       buildLevel(0);
     } catch (error) {
       onError?.(error instanceof Error ? error.message : "HeartRush could not build the course.");
@@ -877,12 +991,14 @@ export function HeartRushCanvas({
       for (const entry of list) {
         seen.add(entry.id);
         let avatar = remotes.get(entry.id);
+        const visualKey = `${entry.companion?.speciesId ?? "capsule"}:${entry.companion?.toneId ?? ""}:${entry.companion?.accessory ?? ""}`;
+        if (avatar && avatar.visualKey !== visualKey) {
+          avatar.dispose(scene);
+          remotes.delete(entry.id);
+          avatar = undefined;
+        }
         if (!avatar) {
-          avatar = new RemoteAvatar(
-            scene,
-            entry.name,
-            heartRushSeatColor(entry.seat),
-          );
+          avatar = new RemoteAvatar(scene, entry.name, heartRushSeatColor(entry.seat), entry.companion);
           avatar.group.position.set(entry.x, entry.y, entry.z);
           remotes.set(entry.id, avatar);
         }
@@ -987,6 +1103,7 @@ export function HeartRushCanvas({
           z: Number(player.position.z.toFixed(2)),
           a: player.animState,
           c: player.checkpointIndex,
+          companion,
         });
       }
 
@@ -1013,6 +1130,7 @@ export function HeartRushCanvas({
       resetRef.current = null;
       effects.dispose();
       course.dispose();
+      player.dispose(scene);
       remotes.forEach((avatar) => avatar.dispose(scene));
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh;
@@ -1027,7 +1145,7 @@ export function HeartRushCanvas({
     // Seat/name are fixed for the life of a session; rebuilding the scene on
     // every prop tick would be a disaster.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mySeatIndex, myName]);
+  }, [companion, mySeatIndex, myName]);
 
   return <div className="min-h-[360px] w-full overflow-hidden rounded-lg bg-sky-100" ref={mountRef} />;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ClipboardCheck,
@@ -27,6 +28,9 @@ import { useServerPartyLobby } from "@/lib/game/use-server-party-lobby";
 import { useSocial } from "@/lib/game/use-social";
 import type { Friend } from "@/lib/game/social";
 import { sendPlaceInviteToFriend } from "@/lib/game/place-invites";
+import { COMPANION_ROSTER_EVENT, getActiveCompanion, type CompanionRecord } from "@/lib/game/companion-roster";
+import { companionArtAsset } from "@/lib/game/companion-art";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { cn } from "@/lib/utils";
 
 const partySizes = [2, 4, 6, 8] as const;
@@ -36,6 +40,43 @@ const soloPartyGameIds = new Set([
   "heart-hunt",
   "fashion-show-party",
 ]);
+
+const gameArtById: Record<string, { image: string; label: string; tone: string }> = {
+  "memory-match-party": { image: "/game-assets/generated/cozy-room-bg.png", label: "Keepsake room", tone: "from-[#fce7e8] to-[#f1e7fa]" },
+  "garden-four-party": { image: "/game-assets/generated/moonberry-garden-bg.png", label: "Moonberry arbor", tone: "from-[#e7f3de] to-[#f8e9c6]" },
+  "moonstone-rps-party": { image: "/game-assets/generated/hearthaven-world-poster.png", label: "Moonstone circle", tone: "from-[#ede5f8] to-[#f8e9c6]" },
+  "petal-catch-party": { image: "/game-assets/generated/moonberry-garden-bg.png", label: "Petal meadow", tone: "from-[#fce7e8] to-[#e7f3de]" },
+  "moonberry-racing-party": { image: "/game-assets/generated/hearthaven-world-poster.png", label: "Lantern road", tone: "from-[#f8e9c6] to-[#e3f5ff]" },
+  "heartrush-party": { image: "/game-assets/generated/hearthaven-world-poster.png", label: "HeartRush course", tone: "from-[#e3f5ff] to-[#ede5f8]" },
+  "lantern-leap-party": { image: "/game-assets/generated/hearthaven-world-poster.png", label: "Lantern Hollow", tone: "from-[#ede5f8] to-[#f8e9c6]" },
+  "moonberry-bowling-party": { image: "/game-assets/generated/moonberry-bowling-bg.png", label: "Moonberry lanes", tone: "from-[#f8e9c6] to-[#e3f5ff]" },
+  "moonberry-pool-party": { image: "/game-assets/generated/cozy-room-bg.png", label: "Garden arcade", tone: "from-[#e7f3de] to-[#ede5f8]" },
+  "moonbeam-bakeoff-party": { image: "/game-assets/generated/cozy-room-bg.png", label: "Moonbeam kitchen", tone: "from-[#fce7e8] to-[#f8e9c6]" },
+  "firefly-grove-party": { image: "/game-assets/generated/moonberry-garden-bg.png", label: "Firefly grove", tone: "from-[#e7f3de] to-[#ede5f8]" },
+  "moonlight-melody-party": { image: "/game-assets/generated/hearthaven-world-poster.png", label: "Moonlit stage", tone: "from-[#ede5f8] to-[#e3f5ff]" },
+  "lantern-relay-party": { image: "/game-assets/generated/moonberry-garden-bg.png", label: "Lantern path", tone: "from-[#f8e9c6] to-[#e7f3de]" },
+  "heart-hunt-party": { image: "/game-assets/generated/cozy-room-bg.png", label: "Hidden keepsakes", tone: "from-[#fce7e8] to-[#ede5f8]" },
+  "fashion-show-party": { image: "/game-assets/generated/moonberry-garden-bg.png", label: "Garden runway", tone: "from-[#fce7e8] to-[#f8e9c6]" },
+};
+
+function GameArtwork({ gameId }: { gameId: string }) {
+  const art = gameArtById[gameId] ?? gameArtById["garden-four-party"];
+  return (
+    <div className={cn("relative mb-3 h-24 overflow-hidden rounded-md bg-gradient-to-br", art.tone)}>
+      <Image
+        alt=""
+        className="object-cover opacity-75 transition duration-500 group-hover:scale-105"
+        fill
+        sizes="(min-width: 640px) 30vw, 90vw"
+        src={art.image}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-ink-900/35 via-transparent to-white/10" />
+      <span className="absolute bottom-2 left-2 rounded-full border border-white/70 bg-white/80 px-2 py-1 text-[10px] font-extrabold text-ink-700 backdrop-blur-sm">
+        {art.label}
+      </span>
+    </div>
+  );
+}
 
 function isSoloPartyGame(game: (typeof partyGames)[number]) {
   return soloPartyGameIds.has(game.id);
@@ -98,6 +139,7 @@ export function GamesClient() {
   const [invitingFriendCode, setInvitingFriendCode] = useState<string | null>(null);
   const [creatingLobby, setCreatingLobby] = useState(false);
   const [joinInput, setJoinInput] = useState("");
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
   const [notice, setNotice] = useState<{ kind: "idle" | "ok" | "error"; message: string }>({
     kind: "idle",
     message: "",
@@ -105,6 +147,14 @@ export function GamesClient() {
   const handledInviteCodeRef = useRef<string | null>(null);
   const creatingLobbyRef = useRef(false);
   const pendingGameRef = useRef<(typeof partyGames)[number] | null>(null);
+
+  useEffect(() => {
+    const sync = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, sync);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, sync);
+  }, []);
+
+  const companionImage = companionArtAsset(activeCompanion?.speciesId);
 
   const readyCount = lobby?.seats.filter((seat) => seat.ready).length ?? 0;
   const occupiedCount = lobby?.seats.length ?? 0;
@@ -366,7 +416,18 @@ export function GamesClient() {
           One simple lobby lives here. Friends can request to join with your HeartHaven friend code, and the host approves
           them before the game starts.
         </p>
+        <div className="mt-4 inline-flex items-center gap-3 rounded-md border border-white/80 bg-white/70 px-3 py-2 shadow-sm">
+          <div className="relative size-10 overflow-hidden rounded-full bg-lavender-100">
+            <Image alt="" className="object-contain" fill sizes="40px" src={companionImage} />
+          </div>
+          <p className="text-xs font-extrabold text-ink-700">
+            <span className="block text-[10px] uppercase tracking-normal text-lavender-600">Ready to play</span>
+            {activeCompanion?.name ?? "Casper"} is coming to the arcade.
+          </p>
+        </div>
       </section>
+
+      <WorldZoneDock active="games" />
 
       <section className="grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <CozyCard className="p-4 sm:p-5">
@@ -385,11 +446,12 @@ export function GamesClient() {
                 return (
                   <div
                     className={cn(
-                      "rounded-lg border p-3 text-left shadow-sm transition sm:p-4",
+                      "group rounded-lg border p-3 text-left shadow-sm transition sm:p-4",
                       selected ? "border-blush-300 bg-blush-100" : "border-cream-300 bg-white/72",
                     )}
                     key={game.id}
                   >
+                    <GameArtwork gameId={game.id} />
                     <span className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-display text-lg text-ink-900 sm:text-xl">{game.title}</span>
                       <Badge variant={selected ? "blush" : "outline"}>{selected ? "Picked" : "Solo + online"}</Badge>
@@ -414,7 +476,7 @@ export function GamesClient() {
               return (
                 <button
                   className={cn(
-                    "rounded-lg border p-3 text-left shadow-sm transition active:translate-y-0 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:p-4",
+                    "group rounded-lg border p-3 text-left shadow-sm transition active:translate-y-0 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:p-4",
                     selected
                       ? "border-blush-300 bg-blush-100"
                       : "border-cream-300 bg-white/72 hover:border-lavender-300 hover:bg-lavender-100/55",
@@ -424,6 +486,7 @@ export function GamesClient() {
                   onClick={() => void chooseGame(game)}
                   type="button"
                 >
+                  <GameArtwork gameId={game.id} />
                   <span className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-display text-lg text-ink-900 sm:text-xl">{game.title}</span>
                     <Badge variant={selected ? "blush" : soloGame ? "garden" : "outline"}>

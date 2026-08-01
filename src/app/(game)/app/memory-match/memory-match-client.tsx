@@ -2,9 +2,11 @@
 
 import { UsersRound } from "lucide-react";
 import { useEffect, useState } from "react";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { GameHubButton } from "@/components/game/game-hub-button";
 import { MemoryMatchCanvasLoader } from "@/components/game/memory-match-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import type { MemoryMatchMode } from "@/lib/game/memory-match-state";
 import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
@@ -45,8 +47,13 @@ export function MemoryMatchClient() {
             games hub party link with <code className="rounded bg-white/80 px-1">?session=</code>.
           </p>
         </div>
-        <GameHubButton returnToLobby={game.returnToLobby} />
+        <div className="flex flex-wrap items-center gap-2">
+          <CompanionCameo copy="is matching keepsakes" />
+          <GameHubButton returnToLobby={game.returnToLobby} />
+        </div>
       </section>
+
+      <WorldZoneDock active="games" />
 
       <section className="grid gap-3 rounded-lg border border-cream-300 bg-white/72 p-4 shadow-sm md:grid-cols-[1fr_auto] md:items-center">
         <div>

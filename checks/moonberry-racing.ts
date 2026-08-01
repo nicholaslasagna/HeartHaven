@@ -984,7 +984,22 @@ const results: string[] = [];
   const base = MOONBERRY_COURSES[0];
   const withLaps = { ...base, laps: clientA.laps };
   const raced = new Race(withLaps, true);
-  raced.join("a", "A", 0, true);
+  const companion = { speciesId: "kitten", toneId: "lavender", accessory: "heart-collar" };
+  raced.join("a", "A", 0, true, companion);
+  assert.equal(raced.racers.get("a")!.companion?.speciesId, "kitten", "local racer keeps its companion identity");
+  const companionPose = sampleCourse(withLaps, 0.02);
+  raced.applyRacerReport({
+    racerId: "a",
+    x: companionPose.x,
+    y: companionPose.y,
+    z: companionPose.z,
+    heading: 0,
+    speed: 4,
+    driftCharge: 0,
+    boosting: false,
+    companion: { speciesId: "fox", toneId: "cream", accessory: "flower-crown" },
+  });
+  assert.equal(raced.racers.get("a")!.companion?.speciesId, "fox", "remote pose can refresh visual companion identity");
   assert.equal(raced.course.laps, 4, "the lobby's lap count overrides the course default");
 
   results.push(`lobby     course+laps+items fold from the log · laps clamped ${MIN_LAPS}-${MAX_LAPS} · start needs all ready · rematch re-confirms`);

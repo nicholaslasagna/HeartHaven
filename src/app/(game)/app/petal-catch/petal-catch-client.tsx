@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { ArrowLeft, Gift, HeartHandshake, Sparkles, Trophy, UsersRound } from "lucide-react";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { GameHubButton } from "@/components/game/game-hub-button";
 import { PetalCatchCanvasLoader } from "@/components/game/petal-catch-canvas-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,7 +48,8 @@ function PetalCatchSoloClient() {
             Catch falling petals and hearts, avoid thorns, build combos, and earn coins and hearts for the garden loop.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <CompanionCameo copy="is catching petals" />
           <Button asChild variant="secondary">
             <Link href="/app/games">
               <ArrowLeft /> Games hub
@@ -62,6 +65,7 @@ function PetalCatchSoloClient() {
           </Button>
         </div>
       </section>
+      <WorldZoneDock active="games" />
       <RewardWalletPanel />
       <PetalCatchCanvasLoader onReward={game.handleReward} />
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/70 p-4 text-sm font-bold text-ink-700">
@@ -145,7 +149,8 @@ function PetalCatchRelayClient() {
               {game.sessionId ? "Live shared session" : "Connecting shared session"} · {game.status}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CompanionCameo copy="is catching petals with you" />
             <GameHubButton returnToLobby={game.returnToLobby} />
             <Button onClick={() => void game.returnToLobby()} variant="warm">
               <ArrowLeft /> Back to lobby
@@ -153,6 +158,8 @@ function PetalCatchRelayClient() {
           </div>
         </div>
       </section>
+
+      <WorldZoneDock active="games" />
 
       <RewardWalletPanel />
 

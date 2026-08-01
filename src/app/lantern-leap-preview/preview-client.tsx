@@ -13,6 +13,7 @@ export function LanternLeapPreview() {
   const [levelId, setLevelId] = useState(LANTERN_LEAP_LEVELS[0].id);
   const [coins, setCoins] = useState(0);
   const [players, setPlayers] = useState(1);
+  const [companionSpecies, setCompanionSpecies] = useState("fox");
   const [error, setError] = useState<string | null>(null);
 
   return (
@@ -48,6 +49,24 @@ export function LanternLeapPreview() {
                 ))}
               </select>
             </label>
+            <label className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-sm font-extrabold text-white/80">
+              Companion
+              <select
+                className="rounded bg-transparent font-black text-white outline-none"
+                onChange={(event) => setCompanionSpecies(event.target.value)}
+                value={companionSpecies}
+              >
+                {[
+                  ["fox", "Fox"],
+                  ["bunny", "Bunny"],
+                  ["duck", "Duck"],
+                  ["dragon", "Dragon"],
+                  ["super-snails", "Super Snails"],
+                ].map(([id, label]) => (
+                  <option className="text-[#120d22]" key={id} value={id}>{label}</option>
+                ))}
+              </select>
+            </label>
             <span className="rounded-full bg-amber-300/20 px-3 py-1.5 text-sm font-black text-amber-200">
               {coins} coins
             </span>
@@ -68,6 +87,7 @@ export function LanternLeapPreview() {
           playerId="local"
           playerName="You"
           seatIndex={0}
+          companion={{ speciesId: companionSpecies, toneId: "cream", accessory: "moonberry-bow" }}
         />
 
         <p className="text-sm font-semibold text-white/60">

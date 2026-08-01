@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleDot, Gift, Sparkles, Trophy, UsersRound } from "lucide-react";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { GameHubButton } from "@/components/game/game-hub-button";
 import { PoolCanvasLoader } from "@/components/game/pool-canvas-loader";
 import type { PoolSubmittedShot } from "@/components/game/pool-canvas";
@@ -200,6 +201,7 @@ export function PoolClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <CompanionCameo />
           <GameHubButton returnToLobby={session.returnToLobby} />
           <Button variant={isMultiplayer ? "default" : "warm"}>
             {isMultiplayer ? <UsersRound /> : <CircleDot />}

@@ -23,6 +23,13 @@ export function heartRushSeatCss(seatIndex: number) {
   return `#${heartRushSeatColor(seatIndex).toString(16).padStart(6, "0")}`;
 }
 
+/** JSON-safe visual identity sent with the racer's position snapshots. */
+export type HeartRushCompanion = {
+  speciesId: string;
+  toneId?: string;
+  accessory?: string;
+};
+
 export type HeartRushState = {
   x: number;
   y: number;
@@ -31,6 +38,7 @@ export type HeartRushState = {
   a: number;
   /** checkpoint index, so late joiners see roughly where someone is */
   c: number;
+  companion?: HeartRushCompanion;
 };
 
 export type HeartRushRemote = HeartRushState & {

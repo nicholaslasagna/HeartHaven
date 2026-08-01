@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { companionArtAsset } from "@/lib/game/companion-art";
 import {
   createAlleyMaterials,
   createBallMaterial,
@@ -16,7 +17,7 @@ import {
 } from "./physics";
 import { seatColor, type BowlingSnapshot, type CameraShot, type PinView } from "./types";
 
-const VENUE_LANES = 7;
+const VENUE_LANES = 8;
 const LANE_SPACING = 1.48;
 const RELEASE_Z = 0;
 const APPROACH_DEPTH = 6.4;
@@ -276,7 +277,7 @@ export class MoonberryRenderer {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(42, 16 / 9, CAMERA_NEAR, CAMERA_FAR);
 
-  private readonly seatCount: number;
+  private seatCount: number;
   private readonly materials: AlleyMaterials;
   private readonly ball: THREE.Mesh;
   private readonly pinRoots: THREE.Group[] = [];
@@ -296,13 +297,15 @@ export class MoonberryRenderer {
   private readonly activeSpot: THREE.SpotLight;
   private readonly activeSpotTarget = new THREE.Object3D();
   private readonly deckGlow: THREE.PointLight;
+  private companionSprite: THREE.Sprite | null = null;
+  private companionRequestId = 0;
   private scoreboardKey = "";
   private calloutKey = "";
   private calloutAge = 99;
   private elapsed = 0;
   private disposed = false;
 
-  constructor(seatCount: number) {
+  constructor(seatCount: number, companionSpeciesId = "kitten") {
     this.seatCount = Math.max(1, Math.min(8, Math.floor(seatCount)));
     this.materials = createAlleyMaterials();
 
@@ -333,6 +336,7 @@ export class MoonberryRenderer {
     this.buildArchitecture();
     this.buildPins();
     this.paintMaskingArt();
+    this.loadCompanionArt(companionSpeciesId);
 
     this.ball = new THREE.Mesh(
       new THREE.SphereGeometry(BALL_RADIUS, 28, 20),
@@ -370,6 +374,38 @@ export class MoonberryRenderer {
 
     this.camera.position.copy(this.desiredCamera);
     this.camera.lookAt(this.lookAt);
+  }
+
+  private loadCompanionArt(speciesId: string) {
+    const requestId = ++this.companionRequestId;
+    new THREE.TextureLoader().load(companionArtAsset(speciesId), (texture) => {
+      if (this.disposed || requestId !== this.companionRequestId) {
+        texture.dispose();
+        return;
+      }
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+      });
+      const sprite = new THREE.Sprite(material);
+      sprite.name = "active-companion";
+      sprite.position.set(3.55, 1.06, -4.05);
+      sprite.scale.set(1.22, 1.22, 1);
+      if (this.companionSprite) {
+        this.scene.remove(this.companionSprite);
+        disposeObject(this.companionSprite);
+      }
+      this.companionSprite = sprite;
+      this.scene.add(sprite);
+    });
+  }
+
+  setCompanionSpeciesId(speciesId: string) {
+    if (this.disposed) return;
+    this.loadCompanionArt(speciesId);
   }
 
   private paintMaskingArt() {
@@ -481,7 +517,10 @@ export class MoonberryRenderer {
     bench.rotation.y = -0.12;
     this.scene.add(bench);
 
-    for (let seat = 0; seat < this.seatCount; seat += 1) {
+    // Build the complete presentation once. Seats can hydrate after the
+    // WebGL scene has started; creating all avatar rigs up front lets the
+    // client reveal them without tearing down the renderer mid-throw.
+    for (let seat = 0; seat < 8; seat += 1) {
       const avatar = createAvatar(seat);
       avatar.root.name = `avatar-${seat}`;
       avatar.root.position.set(
@@ -520,6 +559,11 @@ export class MoonberryRenderer {
     this.scene.add(this.venueLights);
   }
 
+  setSeatCount(seatCount: number) {
+    if (this.disposed) return;
+    this.seatCount = Math.max(1, Math.min(8, Math.floor(seatCount)));
+  }
+
   private buildPins() {
     const geometry = createPinGeometry();
     const material = createPinMaterial();
@@ -550,6 +594,11 @@ export class MoonberryRenderer {
     this.updateCallout(snapshot.callout, dt);
     this.updateSparkles(dt);
 
+    if (this.companionSprite) {
+      this.companionSprite.position.y = 1.06 + Math.sin(this.elapsed * 1.8) * 0.035;
+      this.companionSprite.scale.setScalar(1.22 + Math.sin(this.elapsed * 1.8) * 0.012);
+    }
+
     this.scratchColor.set(seatColor(snapshot.lane.seat));
     this.activeSpot.color.lerp(this.scratchColor, 1 - Math.exp(-dt * 5));
     this.deckGlow.color.lerp(this.scratchColor, 1 - Math.exp(-dt * 3));
@@ -567,8 +616,11 @@ export class MoonberryRenderer {
     const guide = snapshot.lane.aimGuide;
     if (guide) {
       const bowlerX = guide.x * (LANE_WIDTH / 2 - BALL_RADIUS);
-      this.ball.position.set(bowlerX + 0.28, 0.72, -1.23);
-      this.ball.rotation.y = this.elapsed * 0.35;
+      // The ball sits on the approach at the foul line while aiming. The old
+      // chest-height offset made it look like the bowler was holding a ball in
+      // mid-air and made the release jump visually when playback began.
+      this.ball.position.set(bowlerX, BALL_RADIUS + 0.025, RELEASE_Z);
+      this.ball.rotation.set(0, this.elapsed * 0.35, 0);
       return;
     }
     this.ball.position.set(
@@ -623,6 +675,8 @@ export class MoonberryRenderer {
   private updateAvatars(snapshot: BowlingSnapshot, dt: number) {
     const activeSeat = snapshot.lane.seat;
     for (const avatar of this.avatars) {
+      avatar.root.visible = avatar.seat < this.seatCount;
+      if (!avatar.root.visible) continue;
       const active = avatar.seat === activeSeat;
       const targetX = active ? snapshot.lane.aimGuide?.x ?? snapshot.lane.ball.x : 2.1 + (avatar.seat % 4) * 0.62;
       const targetZ = active ? -1.45 : -3.95 - Math.floor(avatar.seat / 4) * 0.72;

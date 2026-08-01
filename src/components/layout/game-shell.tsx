@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { Gamepad2, HeartHandshake, Home, Inbox, Megaphone, Package, PawPrint, ShieldCheck, ShoppingBag, Users } from "lucide-react";
+import { Compass, Gamepad2, HeartHandshake, Home, Inbox, Megaphone, Package, PawPrint, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 import { BanWatchdog } from "@/components/auth/ban-watchdog";
 import { Logo } from "@/components/brand/logo";
 import { AnnouncementsLoginToast } from "@/components/game/announcements-login-toast";
@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 
 const navItems: Array<{ href: string; label: string; icon: typeof Home; badge?: "announcements" }> = [
   { href: "/app/area", label: "World", icon: Home },
+  { href: "/app/trails", label: "Trails", icon: Compass },
   { href: "/app/pet", label: "Studio", icon: PawPrint },
   { href: "/app/partner-garden", label: "Partner", icon: HeartHandshake },
   { href: "/app/friends", label: "Friends", icon: Users },

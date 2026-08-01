@@ -4,6 +4,8 @@ import Link from "next/link";
 import { ArrowLeft, Flame, Sparkles } from "lucide-react";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { CozyQuestCanvasLoader } from "@/components/game/cozy-quest-canvas-loader";
+import { CompanionCameo } from "@/components/game/companion-cameo";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Button } from "@/components/ui/button";
 import { useSoloGameRewards } from "@/lib/game/use-solo-game-rewards";
 
@@ -20,12 +22,16 @@ export function LanternRelayClient() {
             Light the garden lanterns in order before the timer ends. It is built for local play now and co-op turns later.
           </p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/app/games">
-            <ArrowLeft /> Games hub
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <CompanionCameo copy="is lighting the way" />
+          <Button asChild variant="secondary">
+            <Link href="/app/games">
+              <ArrowLeft /> Games hub
+            </Link>
+          </Button>
+        </div>
       </section>
+      <WorldZoneDock active="games" />
       <RewardWalletPanel />
       <CozyQuestCanvasLoader onReward={game.handleReward} variant="lantern-relay" />
       <div className="rounded-lg border border-honey-500/30 bg-honey-100/70 p-4 text-sm font-bold text-ink-700">

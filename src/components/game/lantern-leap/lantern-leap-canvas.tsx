@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { LanternGame, type GameEvent } from "@/lib/game/lantern-leap/game";
 import { levelById } from "@/lib/game/lantern-leap/levels";
-import { LanternRenderer, type RenderSnapshot } from "@/lib/game/lantern-leap/renderer";
+import { LanternRenderer, type RenderCompanion, type RenderSnapshot } from "@/lib/game/lantern-leap/renderer";
 import type { PlayerInput } from "@/lib/game/lantern-leap/physics";
 
 /**
@@ -19,9 +19,11 @@ export type LanternLeapCanvasProps = {
   playerId: string;
   playerName: string;
   seatIndex: number;
+  /** Active companion appearance replicated to the other players. */
+  companion?: RenderCompanion;
   /** Remote players, fed in by the netcode layer. */
-  remotes?: Array<{ id: string; name: string; seat: number; x: number; y: number; facing: 1 | -1; motion: string; bubbled: boolean }>;
-  onLocalState?: (state: { x: number; y: number; facing: 1 | -1; motion: string; bubbled: boolean }) => void;
+  remotes?: Array<{ id: string; name: string; seat: number; x: number; y: number; facing: 1 | -1; motion: string; bubbled: boolean; companion?: RenderCompanion }>;
+  onLocalState?: (state: { x: number; y: number; facing: 1 | -1; motion: string; bubbled: boolean; companion?: RenderCompanion }) => void;
   onEvent?: (event: GameEvent) => void;
   onError?: (message: string) => void;
   paused?: boolean;
@@ -43,6 +45,7 @@ export function LanternLeapCanvas({
   playerId,
   playerName,
   seatIndex,
+  companion,
   remotes,
   onLocalState,
   onEvent,
@@ -52,10 +55,13 @@ export function LanternLeapCanvas({
 }: LanternLeapCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const remotesRef = useRef(remotes);
+  const simulatedRemoteIdsRef = useRef(new Set<string>());
+  const companionRef = useRef(companion);
   const callbacksRef = useRef({ onLocalState, onEvent });
   const pausedRef = useRef(paused);
 
   useEffect(() => { remotesRef.current = remotes; }, [remotes]);
+  useEffect(() => { companionRef.current = companion; }, [companion]);
   useEffect(() => { callbacksRef.current = { onLocalState, onEvent }; }, [onLocalState, onEvent]);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
 
@@ -186,8 +192,16 @@ export function LanternLeapCanvas({
         driveBots(dt);
         // Remote players are positioned, not simulated: their own client is
         // authoritative over their body, exactly like HeartRush.
-        for (const remote of remotesRef.current ?? []) {
+        const currentRemotes = remotesRef.current ?? [];
+        const currentRemoteIds = new Set(currentRemotes.map((remote) => remote.id));
+        for (const id of simulatedRemoteIdsRef.current) {
+          if (currentRemoteIds.has(id)) continue;
+          game.removePlayer(id);
+          simulatedRemoteIdsRef.current.delete(id);
+        }
+        for (const remote of currentRemotes) {
           const player = game.addPlayer(remote.id, remote.name, remote.seat, false);
+          simulatedRemoteIdsRef.current.add(remote.id);
           player.body.x = remote.x;
           player.body.y = remote.y;
           player.body.facing = remote.facing;
@@ -201,7 +215,7 @@ export function LanternLeapCanvas({
       const camera = game.cameraFor(aspect, view.viewHeight);
       snapshot.time = game.time;
       snapshot.camera = camera;
-      snapshot.players = [...game.players.values()].map((player) => ({
+        snapshot.players = [...game.players.values()].map((player) => ({
         id: player.id,
         name: player.name,
         seat: player.seat,
@@ -211,8 +225,11 @@ export function LanternLeapCanvas({
         motion: player.body.motion,
         squash: player.squash,
         bubbled: player.bubbled,
-        local: player.local,
-      }));
+          local: player.local,
+          companion: player.local
+            ? companionRef.current
+            : remotesRef.current?.find((remote) => remote.id === player.id)?.companion,
+        }));
       snapshot.pickups = game.pickups;
       snapshot.enemies = game.enemies;
 
@@ -230,6 +247,7 @@ export function LanternLeapCanvas({
             facing: me.body.facing,
             motion: me.body.motion,
             bubbled: me.bubbled,
+            companion: companionRef.current,
           });
         }
       }
@@ -269,6 +287,7 @@ export function LanternLeapCanvas({
       window.removeEventListener("keyup", onKeyUp);
       view.dispose();
       renderer.dispose();
+      simulatedRemoteIdsRef.current.clear();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
     // Level and identity are fixed for the life of a mount; rebuilding the

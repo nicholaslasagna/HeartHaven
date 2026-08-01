@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { DoorOpen, Gamepad2, Leaf, Map as MapIcon } from "lucide-react";
+import { Compass, DoorOpen, Gamepad2, Leaf, Map as MapIcon } from "lucide-react";
 import { GardenClient } from "@/app/(game)/app/garden/garden-client";
 import { ParkClient } from "@/app/(game)/app/park/park-client";
 import { RoomClient } from "@/app/(game)/app/room/room-client";
@@ -105,6 +105,13 @@ export function AreaClient({ games, plots }: AreaClientProps) {
             href="/app/games"
           >
             <Gamepad2 className="size-4" /> Open games hub
+          </Link>
+          <Link
+            className="inline-flex items-center gap-2 rounded-md border border-cream-300 bg-cream-50 px-3 py-2 text-sm font-extrabold text-ink-700 transition hover:-translate-y-0.5 hover:border-garden-300 hover:bg-garden-100"
+            href="/app/trails"
+            scroll={false}
+          >
+            <Compass className="size-4" /> Explore Haven Trails
           </Link>
         </div>
       </section>

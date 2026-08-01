@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import { COMPANION_ROSTER_EVENT, getActiveCompanion, type CompanionRecord } from "@/lib/game/companion-roster";
+import { companionArtAsset } from "@/lib/game/companion-art";
 import type { GameReward } from "@/lib/game/rewards";
 import { parseGardenFourState, type GardenFourWinningCell } from "@/lib/game/garden-four-state";
 
@@ -42,7 +44,14 @@ export function GardenFourCanvas({
   const submitDropRef = useRef(submitDrop);
   const sessionIdRef = useRef(sessionId);
   const rewardedRef = useRef(false);
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
   const [status, setStatus] = useState("Drop keepsakes into the arbor. First team to connect four wins.");
+
+  useEffect(() => {
+    const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+  }, []);
 
   useEffect(() => {
     rewardedRef.current = false;
@@ -86,7 +95,7 @@ export function GardenFourCanvas({
 
         preload() {
           this.load.image("moonberry-garden-bg", "/game-assets/generated/moonberry-garden-bg.png");
-          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.image("active-companion", companionArtAsset(activeCompanion?.speciesId));
           this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
             frameWidth: 384,
             frameHeight: 512,
@@ -96,7 +105,7 @@ export function GardenFourCanvas({
         create() {
           this.resetBoard();
           this.drawBackdrop();
-          this.createCasper();
+          this.createCompanion();
           this.createHud();
           this.createBoard();
           this.updateHud();
@@ -290,13 +299,23 @@ export function GardenFourCanvas({
           }
         }
 
-        private createCasper() {
-          const casper = this.add.container(126, 476).setDepth(476);
-          casper.add(this.add.ellipse(0, 42, 88, 22, 0x3a2a2a, 0.14));
-          casper.add(this.add.image(0, -18, "casper-sprite").setDisplaySize(112, 112));
+        private createCompanion() {
+          const companion = this.add.container(126, 476).setDepth(476);
+          companion.add(this.add.ellipse(0, 42, 88, 22, 0x3a2a2a, 0.14));
+          companion.add(this.add.image(0, -18, "active-companion").setDisplaySize(112, 112));
+          companion.add(
+            this.add.text(0, 54, activeCompanion?.name ?? "Casper", {
+              color: "#5B3F3F",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "12px",
+              fontStyle: "900",
+              stroke: "#FFFDF6",
+              strokeThickness: 4,
+            }).setOrigin(0.5),
+          );
           this.tweens.add({
-            targets: casper,
-            y: casper.y - 5,
+            targets: companion,
+            y: companion.y - 5,
             duration: 1080,
             yoyo: true,
             repeat: -1,
@@ -600,7 +619,7 @@ export function GardenFourCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, []);
+  }, [activeCompanion?.speciesId]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-garden-300/50 bg-garden-100 shadow-[0_24px_70px_rgba(76,110,54,0.14)]">

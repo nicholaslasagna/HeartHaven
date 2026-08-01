@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import { COMPANION_ROSTER_EVENT, getActiveCompanion, type CompanionRecord } from "@/lib/game/companion-roster";
+import { companionArtAsset } from "@/lib/game/companion-art";
 import type { GameReward } from "@/lib/game/rewards";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import {
@@ -62,7 +64,14 @@ export function MemoryMatchCanvas({
   const submitFlipRef = useRef(submitFlip);
   const sessionIdRef = useRef(sessionId);
   const rewardedRef = useRef(false);
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
   const [status, setStatus] = useState("Connecting to the live board...");
+
+  useEffect(() => {
+    const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+  }, []);
 
   useEffect(() => {
     metadataRef.current = metadata;
@@ -104,7 +113,7 @@ export function MemoryMatchCanvas({
 
         preload() {
           this.load.image("cozy-room-bg", "/game-assets/generated/cozy-room-bg.png");
-          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.image("active-companion", companionArtAsset(activeCompanion?.speciesId));
           this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
             frameWidth: 384,
             frameHeight: 512,
@@ -223,7 +232,17 @@ export function MemoryMatchCanvas({
         private createMascot() {
           const mascot = this.add.container(802, 484).setDepth(484);
           mascot.add(this.add.ellipse(0, 42, 88, 22, 0x3a2a2a, 0.14));
-          mascot.add(this.add.image(0, -18, "casper-sprite").setDisplaySize(112, 112));
+          mascot.add(this.add.image(0, -18, "active-companion").setDisplaySize(112, 112));
+          mascot.add(
+            this.add.text(0, 54, activeCompanion?.name ?? "Casper", {
+              color: "#5B3F3F",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "12px",
+              fontStyle: "900",
+              stroke: "#FFFDF6",
+              strokeThickness: 4,
+            }).setOrigin(0.5),
+          );
           this.tweens.add({
             targets: mascot,
             y: mascot.y - 5,
@@ -483,7 +502,7 @@ export function MemoryMatchCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, [mode]);
+  }, [activeCompanion?.speciesId, mode]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-lavender-300/50 bg-lavender-100 shadow-[0_24px_70px_rgba(142,112,189,0.16)]">

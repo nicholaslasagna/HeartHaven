@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import type { GameReward } from "@/lib/game/rewards";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import {
+  COMPANION_ROSTER_EVENT,
+  getActiveCompanion,
+  type CompanionRecord,
+} from "@/lib/game/companion-roster";
+import { companionArtAsset } from "@/lib/game/companion-art";
 
 export type CozyQuestVariant = "lantern-relay" | "heart-hunt";
 
@@ -36,11 +42,18 @@ const questCopy: Record<CozyQuestVariant, { title: string; label: string; second
 export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const onRewardRef = useRef(onReward);
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
   const [status, setStatus] = useState(questCopy[variant].label);
 
   useEffect(() => {
     onRewardRef.current = onReward;
   }, [onReward]);
+
+  useEffect(() => {
+    const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+  }, []);
 
   useEffect(() => {
     let destroyed = false;
@@ -61,6 +74,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
         private timerText!: Phaser.GameObjects.Text;
         private progressText!: Phaser.GameObjects.Text;
         private rewardLayer?: Phaser.GameObjects.Container;
+        private companionName = activeCompanion?.name ?? "Casper";
 
         constructor() {
           super("CozyQuest");
@@ -69,7 +83,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
         preload() {
           this.load.image("cozy-room-bg", "/game-assets/generated/cozy-room-bg.png");
           this.load.image("moonberry-garden-bg", "/game-assets/generated/moonberry-garden-bg.png");
-          this.load.image("casper-sprite", "/game-assets/generated/casper-sprite.png");
+          this.load.image("active-companion", companionArtAsset(activeCompanion?.speciesId));
           this.load.spritesheet("minigame-props", "/game-assets/generated/minigame-props-sprites.png", {
             frameWidth: 384,
             frameHeight: 512,
@@ -78,7 +92,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
 
         create() {
           this.drawBackdrop();
-          this.createCasperMascot();
+          this.createCompanionMascot();
           this.createHud();
           if (variant === "lantern-relay") {
             this.createLanternRelay();
@@ -87,7 +101,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           }
           this.updateHud();
           setStatus(questCopy[variant].label);
-          // TODO: Replace local clicks with Supabase game_moves rows for party co-op rounds.
+          // TODO: Replace local clicks with Supabase game_moves rows before calling this a party co-op round.
         }
 
         update(_time: number, delta: number) {
@@ -119,14 +133,28 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           ground.fillEllipse(450, 404, 640, 178);
         }
 
-        private createCasperMascot() {
-          const casper = this.add.container(790, 438).setDepth(438);
-          casper.add(this.add.ellipse(0, 42, 86, 22, 0x3a2a2a, 0.15));
-          casper.add(this.add.image(0, -18, "casper-sprite").setDisplaySize(106, 106));
+        private createCompanionMascot() {
+          const companion = this.add.container(790, 438).setDepth(438);
+          companion.add(this.add.ellipse(0, 42, 86, 22, 0x3a2a2a, 0.15));
+          companion.add(this.add.image(0, -18, "active-companion").setDisplaySize(106, 106));
+          const nameplate = this.add.container(0, 60);
+          const plate = this.add.graphics();
+          plate.fillStyle(0xfffcf3, 0.92);
+          plate.fillRoundedRect(-62, -15, 124, 30, 15);
+          plate.lineStyle(2, 0xc0a8dc, 0.75);
+          plate.strokeRoundedRect(-62, -15, 124, 30, 15);
+          nameplate.add(plate);
+          nameplate.add(this.add.text(0, 0, this.companionName, {
+            color: "#5B3F3F",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "12px",
+            fontStyle: "900",
+          }).setOrigin(0.5));
+          companion.add(nameplate);
           this.tweens.add({
-            targets: casper,
-            y: casper.y - 5,
-            duration: 980,
+            targets: companion,
+            y: companion.y - 4,
+            duration: 1120,
             yoyo: true,
             repeat: -1,
             ease: "Sine.inOut",
@@ -356,13 +384,13 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
       destroyed = true;
       game?.destroy(true);
     };
-  }, [variant]);
+  }, [activeCompanion, variant]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-blush-300/50 bg-cream-100 shadow-[0_24px_70px_rgba(216,126,140,0.14)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blush-200/80 bg-white/70 px-4 py-3">
         <div>
-          <p className="text-xs font-extrabold uppercase tracking-normal text-blush-500">Playable party mini-game</p>
+          <p className="text-xs font-extrabold uppercase tracking-normal text-blush-500">Playable mini-game</p>
           <p className="text-sm font-black text-ink-900">{questCopy[variant].title}</p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-extrabold text-ink-700">

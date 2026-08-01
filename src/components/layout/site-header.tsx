@@ -19,6 +19,7 @@ export function SiteHeader({ signedIn = false }: SiteHeaderProps) {
               remount, no audio/realtime tear-down). */}
           <Link href="/app/area?zone=room">Room</Link>
           <Link href="/app/area?zone=garden">Garden</Link>
+          <Link href="/app/trails">Trails</Link>
           <Link href="/app/shop">Shop</Link>
           <Link href="/roadmap">Roadmap</Link>
         </nav>

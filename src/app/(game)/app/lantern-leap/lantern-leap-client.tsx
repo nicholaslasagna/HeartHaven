@@ -5,7 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { ArrowLeft, Coins, Flag, Play, Timer, Trophy, Users } from "lucide-react";
 import { LanternLeapLoader } from "@/components/game/lantern-leap/lantern-leap-loader";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Button } from "@/components/ui/button";
 import type { GameEvent } from "@/lib/game/lantern-leap/game";
 import { LANTERN_LEAP_LEVELS } from "@/lib/game/lantern-leap/levels";
@@ -13,6 +15,11 @@ import { LANTERN_LEAP_LEVELS } from "@/lib/game/lantern-leap/levels";
 // copy of them that is safe to import here — `renderer.ts` owns the 3D copy
 // but pulls three.js in with it.
 import { heartRushSeatCss } from "@/lib/game/heartrush-shared";
+import {
+  COMPANION_ROSTER_EVENT,
+  getActiveCompanion,
+  type CompanionRecord,
+} from "@/lib/game/companion-roster";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -27,7 +34,8 @@ const COIN_POINTS = 12;
 const MAX_COIN_SCORE = 600;
 const MAX_TIME_SCORE = 400;
 
-type LocalState = { x: number; y: number; facing: 1 | -1; motion: string; bubbled: boolean };
+type CompanionPayload = { speciesId: string; toneId: string; accessory: string };
+type LocalState = { x: number; y: number; facing: 1 | -1; motion: string; bubbled: boolean; companion?: CompanionPayload };
 type RemoteEntry = LocalState & { id: string; name: string; seat: number; coins: number; at: number };
 
 function formatTime(ms: number) {
@@ -45,6 +53,7 @@ export function LanternLeapClient() {
   const { sessionId, seats, mySeat, myProfileId, moves, submitMove, handleReward, loading } = game;
 
   const [error, setError] = useState<string | null>(null);
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
   /* Optimistic copy of the host's own level change, and the whole story when
      Supabase is not configured. The move log always wins once it lands. */
   const [localLevel, setLocalLevel] = useState<{ index: number; startAt: number } | null>(null);
@@ -75,6 +84,21 @@ export function LanternLeapClient() {
   const claimedRef = useRef(false);
   const levelIndexRef = useRef(0);
   const playerIdRef = useRef("local-keeper");
+
+  useEffect(() => {
+    const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+  }, []);
+
+  const companionPayload = useMemo<CompanionPayload | undefined>(() => {
+    if (!activeCompanion) return undefined;
+    return {
+      speciesId: activeCompanion.speciesId,
+      toneId: activeCompanion.toneId,
+      accessory: activeCompanion.accessory,
+    };
+  }, [activeCompanion]);
 
   const seatIndex = mySeat?.seat_index ?? 0;
   const isHost = seatIndex === 0;
@@ -389,6 +413,7 @@ export function LanternLeapClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <CompanionCameo copy="is leaping with you" />
           <Button asChild variant="secondary">
             <Link href="/app/games">
               <ArrowLeft /> Games hub
@@ -396,6 +421,8 @@ export function LanternLeapClient() {
           </Button>
         </div>
       </section>
+
+      <WorldZoneDock active="games" />
 
       {error && (
         <p className="rounded-lg border border-blush-300/50 bg-blush-100/70 p-3 text-sm font-extrabold text-ink-900">
@@ -450,6 +477,7 @@ export function LanternLeapClient() {
           </div>
         ) : (
           <LanternLeapLoader
+            companion={companionPayload}
             levelId={level.id}
             onError={setError}
             onEvent={handleEvent}

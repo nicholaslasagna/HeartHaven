@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { MoonberryRacingRenderer, kartColor, type KartView, type RacingSnapshot } from "@/lib/game/moonberry-racing/renderer";
 import { KART, NO_KART_INPUT, applyBoostPad, chargeBand, stepKart, type KartInput } from "@/lib/game/moonberry-racing/kart";
-import { Race, type RacerReport } from "@/lib/game/moonberry-racing/race";
+import { Race, type RacerCompanion, type RacerReport } from "@/lib/game/moonberry-racing/race";
 import { Arena, type CombatRacer } from "@/lib/game/moonberry-racing/combat";
 import type { PowerUp, PowerUpId } from "@/lib/game/moonberry-racing/powerups";
 import { sampleCourse, surfaceAt, VERGE_LIMIT, type Course } from "@/lib/game/moonberry-racing/track";
@@ -33,13 +33,15 @@ export type ItemEvent =
  * those poses, so a dropped packet looks like smoothing rather than a jump.
  */
 
-export type RacingSeat = { id: string; name: string; seat: number; local: boolean };
+export type RacingSeat = { id: string; name: string; seat: number; local: boolean; companion?: RacerCompanion };
 
 type Props = {
   course: Course;
   seats: RacingSeat[];
   localId: string;
   isHost: boolean;
+  /** The local keeper's active companion, carried in pose broadcasts. */
+  companion?: RacerCompanion;
   /** Shared race-start stamp from the host; null until the host starts. */
   startAt: number | null;
   /** Called ~20x/sec with the local kart's pose, for broadcasting. */
@@ -77,6 +79,7 @@ export function MoonberryRacingCanvas({
   seats,
   localId,
   isHost,
+  companion,
   startAt,
   onReport,
   subscribeRemote,
@@ -88,6 +91,7 @@ export function MoonberryRacingCanvas({
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const startAtRef = useRef(startAt);
+  const companionRef = useRef(companion);
   const callbacksRef = useRef({ onReport, onFinish, onItemEvent });
   const [hud, setHud] = useState({
     position: 1, field: seats.length, lap: 1, laps: course.laps,
@@ -100,6 +104,7 @@ export function MoonberryRacingCanvas({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { startAtRef.current = startAt; }, [startAt]);
+  useEffect(() => { companionRef.current = companion; }, [companion]);
   useEffect(() => {
     callbacksRef.current = { onReport, onFinish, onItemEvent };
   }, [onReport, onFinish, onItemEvent]);
@@ -133,7 +138,15 @@ export function MoonberryRacingCanvas({
       renderer = new MoonberryRacingRenderer(course);
       race = new Race(course, isHost);
       arena = new Arena(course, itemsEnabled);
-      for (const seat of seats) race.join(seat.id, seat.name, seat.seat, seat.id === localId);
+      for (const seat of seats) {
+        race.join(
+          seat.id,
+          seat.name,
+          seat.seat,
+          seat.id === localId,
+          seat.companion ?? (seat.id === localId ? companion : undefined),
+        );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Moonberry Racing could not build the course.";
       queueMicrotask(() => { setError(message); onError?.(message); });
@@ -358,6 +371,7 @@ export function MoonberryRacingCanvas({
             speed: Number(me.kart.speed.toFixed(2)),
             driftCharge: Number(me.kart.driftCharge.toFixed(3)),
             boosting: me.kart.boostTimer > 0,
+            companion: companionRef.current,
           });
         }
       }
@@ -379,6 +393,7 @@ export function MoonberryRacingCanvas({
         local: racer.id === localId,
         position: racer.position,
         finished: racer.finishedAt !== null,
+        companion: racer.companion,
       }));
 
       const snapshot: RacingSnapshot = {

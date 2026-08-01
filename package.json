@@ -17,7 +17,8 @@
     "upload:cloudflare": "opennextjs-cloudflare upload",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "check:lantern-leap": "esbuild checks/lantern-leap.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-ll.mjs --log-level=error && node node_modules/.cache/check-ll.mjs",
-    "check": "npm run check:lantern-leap && npm run check:moonberry-bowling && npm run check:moonberry-racing",
+    "check:haven-trails": "esbuild checks/haven-trails-map.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-trails.mjs --log-level=error && node node_modules/.cache/check-trails.mjs",
+    "check": "npm run check:lantern-leap && npm run check:haven-trails && npm run check:moonberry-bowling && npm run check:moonberry-racing",
     "check:moonberry-bowling": "esbuild checks/moonberry-bowling.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mb.mjs --log-level=error && node node_modules/.cache/check-mb.mjs",
     "check:moonberry-racing": "esbuild checks/moonberry-racing.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mr.mjs --log-level=error && node node_modules/.cache/check-mr.mjs"
   },

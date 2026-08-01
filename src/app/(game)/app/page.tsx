@@ -67,6 +67,11 @@ export default function DashboardPage() {
                 Open games <Gamepad2 />
               </Link>
             </CozyButton>
+            <CozyButton asChild variant="secondary">
+              <Link href="/app/trails">
+                Explore trails <Compass />
+              </Link>
+            </CozyButton>
           </div>
         </div>
       </section>

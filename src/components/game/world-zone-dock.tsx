@@ -3,16 +3,17 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
-import { Gamepad2, Home, Leaf, Map } from "lucide-react";
+import { Compass, Gamepad2, Home, Leaf, Map } from "lucide-react";
 
 const zones = [
+  { href: "/app/trails", match: "trails", label: "Trails", icon: Compass, copy: "Explore the lantern roads" },
   { href: "/app/area?zone=room", match: "room", label: "Room", icon: Home, copy: "Decorate and host friends" },
   { href: "/app/area?zone=garden", match: "garden", label: "Garden", icon: Leaf, copy: "Walk paths and care for plots" },
   { href: "/app/area?zone=park", match: "park", label: "Park", icon: Map, copy: "Meet up and launch games" },
   { href: "/app/games", match: "games", label: "Games", icon: Gamepad2, copy: "Party games and rewards" },
 ];
 
-export function WorldZoneDock({ active }: { active: "room" | "garden" | "park" | "games" }) {
+export function WorldZoneDock({ active }: { active: "trails" | "room" | "garden" | "park" | "games" }) {
   const searchParams = useSearchParams();
   const visitTarget = searchParams.get("visit");
   const currentRoom = searchParams.get("room");
@@ -24,6 +25,7 @@ export function WorldZoneDock({ active }: { active: "room" | "garden" | "park" |
       return `/app/area?${params.toString()}`;
     };
     return {
+      trails: visitTarget ? `/app/trails?visit=${encodeURIComponent(visitTarget)}` : "/app/trails",
       room: areaHref("room"),
       garden: areaHref("garden"),
       park: areaHref("park"),

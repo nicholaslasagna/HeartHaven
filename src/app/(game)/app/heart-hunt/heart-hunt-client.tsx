@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { ArrowLeft, Heart, Sparkles } from "lucide-react";
 import { CozyQuestCanvasLoader } from "@/components/game/cozy-quest-canvas-loader";
+import { CompanionCameo } from "@/components/game/companion-cameo";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
 import { useSoloGameRewards } from "@/lib/game/use-solo-game-rewards";
@@ -20,12 +22,16 @@ export function HeartHuntClient() {
             Search a cozy room for hidden keepsakes, build a warm score, and earn hearts for the shared memory loop.
           </p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/app/games">
-            <ArrowLeft /> Games hub
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <CompanionCameo copy="is hunting keepsakes" />
+          <Button asChild variant="secondary">
+            <Link href="/app/games">
+              <ArrowLeft /> Games hub
+            </Link>
+          </Button>
+        </div>
       </section>
+      <WorldZoneDock active="games" />
       <RewardWalletPanel />
       <CozyQuestCanvasLoader onReward={game.handleReward} variant="heart-hunt" />
       <div className="rounded-lg border border-blush-300/40 bg-blush-100/60 p-4 text-sm font-bold text-ink-700">

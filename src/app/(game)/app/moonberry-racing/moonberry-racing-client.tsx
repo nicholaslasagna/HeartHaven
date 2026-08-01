@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { ArrowLeft, Check, Flag, Play, Trophy, Users } from "lucide-react";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { MoonberryRacingLoader } from "@/components/game/moonberry-racing-loader";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import type { RacerReport } from "@/lib/game/moonberry-racing/race";
 import type { ItemEvent } from "@/components/game/moonberry-racing-canvas";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { COMPANION_ROSTER_EVENT, getActiveCompanion, type CompanionRecord } from "@/lib/game/companion-roster";
 
 /**
  * Moonberry Racing — session wiring for 2-8 racers.
@@ -39,12 +41,30 @@ export function MoonberryRacingClient() {
   const { sessionId, seats, mySeat, moves, submitMove, handleReward } = game;
 
   const [error, setError] = useState<string | null>(null);
+  const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const remoteHandlersRef = useRef(new Set<(report: RacerReport) => void>());
   const itemHandlersRef = useRef(new Set<(event: ItemEvent) => void>());
 
   const mySeatIndex = mySeat?.seat_index ?? null;
   const isHost = (mySeatIndex ?? 0) === 0;
+
+  useEffect(() => {
+    const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
+    window.addEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+    return () => window.removeEventListener(COMPANION_ROSTER_EVENT, syncCompanion);
+  }, []);
+
+  const companionPayload = useMemo(
+    () => activeCompanion
+      ? {
+          speciesId: activeCompanion.speciesId,
+          toneId: activeCompanion.toneId,
+          accessory: activeCompanion.accessory,
+        }
+      : undefined,
+    [activeCompanion],
+  );
 
   /* -- derived race state, straight off the ordered move log -- */
   const raceSetup = useMemo(
@@ -82,8 +102,9 @@ export function MoonberryRacingClient() {
         name: seat.display_name ?? `Player ${(seat.seat_index ?? 0) + 1}`,
         seat: seat.seat_index ?? 0,
         local: seat.profile_id === mySeat?.profile_id,
+        companion: seat.profile_id === mySeat?.profile_id ? companionPayload : undefined,
       })),
-    [seats, mySeat?.profile_id],
+    [companionPayload, seats, mySeat?.profile_id],
   );
 
   /* -- realtime: 20Hz kart poses, never persisted -- */
@@ -189,9 +210,12 @@ export function MoonberryRacingClient() {
             hit <span className="font-black">Space</span> in the sweet spot for a boost.
           </p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/app/games"><ArrowLeft /> Games hub</Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <CompanionCameo />
+          <Button asChild variant="secondary">
+            <Link href="/app/games"><ArrowLeft /> Games hub</Link>
+          </Button>
+        </div>
       </section>
 
       {error && (
@@ -209,6 +233,7 @@ export function MoonberryRacingClient() {
         onItemEvent={onItemEvent}
         onReport={onReport}
         seats={racingSeats.length > 0 ? racingSeats : [{ id: "local", name: "You", seat: 0, local: true }]}
+        companion={companionPayload}
         startAt={raceSetup.startAt}
         itemsEnabled={raceSetup.items}
         subscribeItems={subscribeItems}

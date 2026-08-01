@@ -191,6 +191,8 @@ export type PlayerBody = {
   jumpHeld: boolean;
   wallLock: number;
   poundTimer: number;
+  /** Gameplay state for a committed ground pound; motion is presentation-only. */
+  pounding: boolean;
   /** Set for one step when something notable happened, for effects/audio. */
   events: PlayerEvent[];
 };
@@ -213,6 +215,7 @@ export function createPlayerBody(x: number, y: number): PlayerBody {
     jumpHeld: false,
     wallLock: 0,
     poundTimer: 0,
+    pounding: false,
     events: [],
   };
 }
@@ -271,18 +274,19 @@ export function stepPlayer(body: PlayerBody, input: PlayerInput, grid: TileGrid,
   body.jumpHeld = input.jump;
 
   /* -- ground pound: commits, ignores steering, ends on landing -- */
-  if (body.poundTimer > 0) {
+  if (body.pounding && body.poundTimer > 0) {
     body.poundTimer -= dt;
     body.vx = 0;
     body.vy = body.poundTimer > 0 ? 0 : -PHYSICS.POUND_SPEED;
-  } else if (input.pound && !body.grounded && body.motion !== "pound") {
+  } else if (input.pound && !body.grounded && !body.pounding) {
     body.poundTimer = PHYSICS.POUND_HANG;
+    body.pounding = true;
     body.motion = "pound";
     body.vy = 0;
     body.events.push("pound-start");
   }
 
-  const pounding = body.motion === "pound";
+  const pounding = body.pounding;
 
   /* -- ducking (only meaningful on the ground) -- */
   const wantsDuck = input.duck && body.grounded && !pounding;
@@ -361,6 +365,7 @@ export function stepPlayer(body: PlayerBody, input: PlayerInput, grid: TileGrid,
   if (!wasGrounded && body.grounded) {
     if (pounding) {
       body.poundTimer = 0;
+      body.pounding = false;
       body.motion = "idle";
       body.events.push("pound-land");
     } else {
@@ -496,7 +501,10 @@ function updateWallContact(body: PlayerBody, grid: TileGrid, height: number) {
 }
 
 function updateMotion(body: PlayerBody, input: PlayerInput) {
-  if (body.motion === "pound") return;
+  if (body.pounding) {
+    body.motion = "pound";
+    return;
+  }
   if (!body.grounded) {
     if (body.wallDir !== 0 && body.vy < 0 && input.moveX === body.wallDir) body.motion = "wallslide";
     else body.motion = body.vy > 0 ? "jump" : "fall";

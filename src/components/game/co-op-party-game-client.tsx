@@ -2,10 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { CircleDot, Gift, HeartHandshake, RefreshCcw, Sparkles, Trophy, UsersRound } from "lucide-react";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { CompanionCameo } from "@/components/game/companion-cameo";
 import { GameHubButton } from "@/components/game/game-hub-button";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
+import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -172,6 +175,13 @@ function MoonbeamBakeoffStage({ definition, state, currentStep, expectedAction, 
         </div>
 
         <div className="relative flex items-center justify-center rounded-lg border border-cream-300 bg-white/65 p-4 shadow-inner">
+          <Image
+            alt=""
+            className="pointer-events-none absolute bottom-2 left-3 h-28 w-36 object-contain opacity-85"
+            height={176}
+            src="/game-assets/generated/furniture/honey-tea-set.png"
+            width={216}
+          />
           <motion.div
             animate={state.lastEntry?.correct ? { rotate: [0, -3, 3, 0], scale: [1, 1.06, 1] } : { y: [0, -5, 0] }}
             className="relative flex size-56 items-center justify-center rounded-full border-[10px] border-honey-200 bg-[#fff6df] shadow-[0_20px_40px_rgba(171,112,39,.18)]"
@@ -249,6 +259,20 @@ function FireflyGroveStage({ definition, state, currentStep, expectedAction }: S
         <div className="absolute right-10 bottom-10 size-48 rounded-full bg-sky-100 blur-3xl" />
       </div>
       <div className="relative h-[330px] rounded-lg border border-white/80 bg-white/42 shadow-inner">
+        <Image
+          alt=""
+          className="pointer-events-none absolute bottom-2 left-3 h-24 w-28 object-contain opacity-90"
+          height={176}
+          src="/game-assets/generated/world/bridge.svg"
+          width={216}
+        />
+        <Image
+          alt=""
+          className="pointer-events-none absolute right-4 top-4 h-14 w-14 object-contain opacity-90"
+          height={96}
+          src="/game-assets/generated/critters/firefly.png"
+          width={96}
+        />
         <svg className="absolute inset-0 size-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
           <polyline
             fill="none"
@@ -317,6 +341,13 @@ function MoonlightMelodyStage({ definition, state, currentStep, expectedAction }
         <div className="absolute right-12 bottom-12 size-44 rounded-full bg-blush-100 blur-3xl" />
       </div>
       <div className="relative h-[330px] rounded-lg border border-white/80 bg-white/58 p-6 shadow-inner">
+        <Image
+          alt=""
+          className="pointer-events-none absolute bottom-2 right-4 h-32 w-36 object-contain opacity-90"
+          height={220}
+          src="/game-assets/generated/furniture/lavender-upright-piano.png"
+          width={220}
+        />
         <div className="absolute inset-x-6 top-1/2 grid -translate-y-1/2 gap-7">
           {Array.from({ length: 5 }).map((_, index) => (
             <div className="h-1 rounded-full bg-ink-900/12" key={index} />
@@ -527,7 +558,8 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
               {sessionLabel} · {game.status}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CompanionCameo copy="is cheering" />
             <GameHubButton returnToLobby={game.returnToLobby} />
             <Button onClick={() => void game.returnToLobby()} variant="warm">
               <RefreshCcw /> Back to lobby
@@ -535,6 +567,8 @@ export function CoOpPartyGameClient({ gameKey }: CoOpPartyGameClientProps) {
           </div>
         </div>
       </section>
+
+      <WorldZoneDock active="games" />
 
       <RewardWalletPanel />
 
