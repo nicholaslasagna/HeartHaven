@@ -34,14 +34,19 @@ export default async function AccountPage({
     if (user) {
       const { data: profile } = await supabase
         .from("profiles")
-        .select("username, username_changes, phone")
+        .select("username, username_changes")
         .eq("id", user.id)
         .maybeSingle();
       serverUsername = typeof profile?.username === "string" ? profile.username : null;
       serverUsernameHistory = Array.isArray(profile?.username_changes)
         ? (profile.username_changes as unknown[]).map((entry) => String(entry))
         : null;
-      serverPhone = typeof profile?.phone === "string" ? profile.phone : null;
+      /* Phone comes through an RPC rather than the row. SELECT on the column
+         is revoked from `authenticated` (migration 0081) so an accepted
+         friend cannot read it off a profile they are allowed to see; this
+         function is scoped to auth.uid() and takes no parameter. */
+      const { data: ownPhone } = await supabase.rpc("my_phone");
+      serverPhone = typeof ownPhone === "string" ? ownPhone : null;
     }
   }
 

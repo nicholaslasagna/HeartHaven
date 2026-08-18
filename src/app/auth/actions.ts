@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { normalizePhone } from "@/lib/auth/phone";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseMissingConfigMessage, isSupabaseConfigured } from "@/lib/supabase/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -95,15 +96,28 @@ export async function signUpAction(formData: FormData) {
   const origin = await getRequestOrigin();
   const supabase = await getSupabaseServerClient();
 
-  // Door-step ban gate. Anonymous RPC returns true if the email or phone
-  // is already in `permanent_bans`. We deliberately respond with the same
-  // generic "already banned" copy regardless of which identifier matched —
-  // we don't want this endpoint to act as an oracle for which emails or
-  // phones are in the ban list.
-  const [emailBan, phoneBan] = await Promise.all([
-    supabase.rpc("is_email_banned", { p_email: email }),
-    phone ? supabase.rpc("is_phone_banned", { p_phone: phone }) : Promise.resolve({ data: false, error: null }),
-  ]);
+  /* Door-step ban gate.
+     Run with the SERVICE ROLE, not the caller's anon session. The generic
+     response copy below stops the sign-up FORM leaking which identifier
+     matched, but that was only ever half the story: while the underlying
+     RPCs were granted to `anon`, an attacker could skip the form entirely
+     and call `is_email_banned` / `is_phone_banned` directly to test any
+     address or number they liked. Migration 0082 revokes those grants, so
+     the check now has to run from a trusted server context — here.
+
+     Missing service-role config (preview and demo deployments) yields a null
+     client and the gate opens. That is deliberate: this is a courtesy
+     message, and the real enforcement is the ban check in proxy.ts, which
+     redirects a banned session to /account-suspended on every request. */
+  const admin = getSupabaseAdminClient();
+  const [emailBan, phoneBan] = admin
+    ? await Promise.all([
+        admin.rpc("is_email_banned", { p_email: email }),
+        phone
+          ? admin.rpc("is_phone_banned", { p_phone: phone })
+          : Promise.resolve({ data: false, error: null }),
+      ])
+    : [{ data: false, error: null }, { data: false, error: null }];
   if (emailBan.data === true || phoneBan.data === true) {
     redirectWithMessage(
       "/auth/sign-up",

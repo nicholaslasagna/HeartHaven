@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/auth/phone";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -199,7 +200,14 @@ export async function updatePhoneAction(formData: FormData) {
   // ban table — otherwise a banned user could attach a clean email to a
   // banned phone and slip through.
   if (phone) {
-    const { data: isBanned } = await supabase.rpc("is_phone_banned", { p_phone: phone });
+    /* Service role, not the caller's session: migration 0082 revokes this
+       RPC from `authenticated` so it cannot be used to test whether an
+       arbitrary number belongs to a banned account. This is a server
+       action, so the privileged client never leaves the server. */
+    const admin = getSupabaseAdminClient();
+    const { data: isBanned } = admin
+      ? await admin.rpc("is_phone_banned", { p_phone: phone })
+      : { data: false };
     if (isBanned === true) {
       redirectAccount("This phone number can't be added to a HeartHaven account.");
     }
