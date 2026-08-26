@@ -23,9 +23,13 @@ export function useMiniGameSession(
   const session = useGameSession(gameKey, options);
   const claimingRef = useRef(false);
 
+  /* Depend on the FUNCTION, not the object that holds it. `rewards` changes
+     identity on every status update, so depending on it would restart the
+     run continuously; `startRun` is stable. */
+  const { startRun } = rewards;
   useEffect(() => {
-    void rewards.startRun();
-  }, [rewards.startRun]);
+    void startRun();
+  }, [startRun]);
 
   const handleReward = useCallback(
     (reward: GameReward) => {
@@ -64,9 +68,11 @@ export function useMiniGameSession(
     [options?.requireSessionComplete, rewards, session.metadata, session.sessionId],
   );
 
+  // Same reasoning: `session` re-identifies on every move, `submitMove` does not.
+  const { submitMove: sessionSubmitMove } = session;
   const submitMove = useCallback(
-    (moveType: string, payload: Record<string, unknown> = {}) => session.submitMove(moveType, payload),
-    [session.submitMove],
+    (moveType: string, payload: Record<string, unknown> = {}) => sessionSubmitMove(moveType, payload),
+    [sessionSubmitMove],
   );
 
   return {

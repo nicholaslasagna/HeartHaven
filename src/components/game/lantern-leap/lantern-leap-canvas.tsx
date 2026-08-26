@@ -68,6 +68,7 @@ export function LanternLeapCanvas({
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
+    const simulatedRemoteIds = simulatedRemoteIdsRef.current;
 
     let renderer: THREE.WebGLRenderer;
     try {
@@ -287,7 +288,11 @@ export function LanternLeapCanvas({
       window.removeEventListener("keyup", onKeyUp);
       view.dispose();
       renderer.dispose();
-      simulatedRemoteIdsRef.current.clear();
+      // Captured above: reading `.current` in cleanup would see whatever the
+      // ref points at by then, not the set this effect actually populated.
+      // It matters under StrictMode, where the ref survives cleanup into the
+      // immediate remount and stale ids would leak into the new scene.
+      simulatedRemoteIds.clear();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
     // Level and identity are fixed for the life of a mount; rebuilding the

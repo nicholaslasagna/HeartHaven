@@ -134,7 +134,11 @@ export class MoonberryRacingRenderer {
     return this.disposables.length;
   }
 
-  constructor(readonly course: Course) {
+  constructor(
+    readonly course: Course,
+    /** Honour the player's (or the OS's) reduced-motion setting. */
+    readonly reducedMotion = false,
+  ) {
     this.camera = new THREE.PerspectiveCamera(this.baseFov, 16 / 9, 0.3, 900);
 
     const sky = new THREE.Color(course.palette.sky);
@@ -734,14 +738,20 @@ export class MoonberryRacingRenderer {
         material.color.setHex(
           view.driftCharge < 0.45 ? 0x7fc4f0 : view.driftCharge <= 0.85 ? 0xffd166 : 0xff6b6b,
         );
-        const pulse = 1 + Math.sin(snapshot.raceTime * 30) * 0.25;
+        /* This pulsed at sin(t * 30) — about 4.8 flashes a second, past the
+           three-per-second ceiling WCAG 2.3.1 sets for photosensitivity. The
+           charge is already legible from the spark's COLOUR tiering, so the
+           flicker was decoration with a real cost. Slowed for everyone and
+           held steady under reduced motion. */
+        const pulse = this.reducedMotion ? 1 : 1 + Math.sin(snapshot.raceTime * 12) * 0.2;
         spark.scale.setScalar((0.6 + view.driftCharge) * pulse);
       }
 
       const flame = rig.getObjectByName("flame") as THREE.Mesh | undefined;
       if (flame) {
         flame.visible = view.boosting;
-        flame.scale.setScalar(1 + Math.sin(snapshot.raceTime * 26) * 0.2);
+        // Likewise ~4Hz; eased to a steadier flicker.
+        flame.scale.setScalar(this.reducedMotion ? 1 : 1 + Math.sin(snapshot.raceTime * 12) * 0.18);
       }
 
       if (view.spinning) rig.rotation.y += dt * 9;
@@ -848,7 +858,13 @@ export class MoonberryRacingRenderer {
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
 
-    const wantedFov = this.baseFov + (follow.boosting ? 9 : 0) + Math.abs(follow.lean) * 3;
+    /* The speed-rush FOV punch is the single most nausea-inducing thing a
+       chase camera does, so reduced motion keeps the field of view fixed
+       rather than merely softening it. Boost still reads clearly through the
+       exhaust flame, the HUD chip and the sound. */
+    const boostPunch = this.reducedMotion ? 0 : 9;
+    const leanPunch = this.reducedMotion ? 0 : 3;
+    const wantedFov = this.baseFov + (follow.boosting ? boostPunch : 0) + Math.abs(follow.lean) * leanPunch;
     this.camera.fov += (wantedFov - this.camera.fov) * (1 - Math.exp(-6 * dt));
     this.camera.updateProjectionMatrix();
 

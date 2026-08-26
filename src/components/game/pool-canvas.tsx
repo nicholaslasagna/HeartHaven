@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } 
 import { CircleDot, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  POOL_BALL_RADIUS,
   POOL_CANVAS_HEIGHT,
   POOL_CANVAS_WIDTH,
   POOL_MAX_SHOTS,

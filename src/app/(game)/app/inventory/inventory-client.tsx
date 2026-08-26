@@ -11,7 +11,7 @@ import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner
 import { Badge } from "@/components/ui/badge";
 import { useGameWallet } from "@/lib/game/use-game-wallet";
 import { useInventory } from "@/lib/game/use-inventory";
-import { getCatalogItemArt, getCatalogItemArtFit } from "@/lib/game/item-art";
+import { getCatalogItemArt } from "@/lib/game/item-art";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { getCatalogItemSeason, isItemVisibleForSeason, isSeasonalCatalogItem } from "@/lib/seasonal-events";
 

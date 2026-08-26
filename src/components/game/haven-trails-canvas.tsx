@@ -68,11 +68,30 @@ export function HavenTrailsCanvas({ keeper, companion, discovered = [], onEvent,
   const mountRef = useRef<HTMLDivElement | null>(null);
   const callbacksRef = useRef({ onEvent, onStatus });
   const discoveredRef = useRef(new Set(discovered));
+  const namesRef = useRef({ keeper: keeper.name, companion: companion.name });
+  const gameRef = useRef<Phaser.Game | null>(null);
 
   useEffect(() => {
     callbacksRef.current = { onEvent, onStatus };
     discoveredRef.current = new Set(discovered);
   }, [discovered, onEvent, onStatus]);
+
+  /* Names are read through a ref at boot and relabelled in place afterwards.
+     Putting them in the boot effect's deps would tear down the Phaser game and
+     restart the walk just because someone renamed their companion. */
+  useEffect(() => {
+    namesRef.current = { keeper: keeper.name, companion: companion.name };
+    const scene = gameRef.current?.scene.getScene("HavenTrails");
+    if (!scene) return;
+    const relabel = (objectName: string, value: string, fallback: string) => {
+      const label = scene.children.getByName(objectName);
+      if (label && "setText" in label) {
+        (label as Phaser.GameObjects.Text).setText(safeName(value, fallback));
+      }
+    };
+    relabel("keeper-name", keeper.name, "Keeper");
+    relabel("companion-name", companion.name, "Casper");
+  }, [companion.name, keeper.name]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -255,8 +274,8 @@ export function HavenTrailsCanvas({ keeper, companion, discovered = [], onEvent,
           // the place for the selected tone, so a full-image tint does not
           // wash out the character's fur, eyes, or clothing.
           this.tweens.add({ targets: accent, y: 514, alpha: 0.58, duration: 860, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-          this.add.text(510, 396, safeName(keeper.name, "Keeper"), { color: "#3a2a2a", fontFamily: "Nunito, sans-serif", fontSize: "14px", fontStyle: "900", stroke: "#fffaf0", strokeThickness: 5 }).setOrigin(0.5).setDepth(1000).setName("keeper-name");
-          this.add.text(456, 492, safeName(companion.name, "Casper"), { color: "#5b3f3f", fontFamily: "Nunito, sans-serif", fontSize: "12px", fontStyle: "900", stroke: "#fffaf0", strokeThickness: 4 }).setOrigin(0.5).setDepth(1000).setName("companion-name");
+          this.add.text(510, 396, safeName(namesRef.current.keeper, "Keeper"), { color: "#3a2a2a", fontFamily: "Nunito, sans-serif", fontSize: "14px", fontStyle: "900", stroke: "#fffaf0", strokeThickness: 5 }).setOrigin(0.5).setDepth(1000).setName("keeper-name");
+          this.add.text(456, 492, safeName(namesRef.current.companion, "Casper"), { color: "#5b3f3f", fontFamily: "Nunito, sans-serif", fontSize: "12px", fontStyle: "900", stroke: "#fffaf0", strokeThickness: 4 }).setOrigin(0.5).setDepth(1000).setName("companion-name");
         }
 
         private createControls() {
@@ -495,14 +514,16 @@ export function HavenTrailsCanvas({ keeper, companion, discovered = [], onEvent,
         height: VIEW_HEIGHT,
         backgroundColor: "#eef0d9",
         scale: { mode: PhaserModule.Scale.FIT, autoCenter: PhaserModule.Scale.CENTER_BOTH },
-          physics: { default: "arcade", arcade: { gravity: { x: 0, y: 0 }, debug: false } },
+        physics: { default: "arcade", arcade: { gravity: { x: 0, y: 0 }, debug: false } },
         scene: HavenTrailsScene,
       });
+      gameRef.current = game;
     }
 
     boot().catch((error) => callbacksRef.current.onStatus?.(error instanceof Error ? error.message : "Haven Trails could not open."));
     return () => {
       destroyed = true;
+      gameRef.current = null;
       game?.destroy(true);
     };
   }, [companion.image, companion.speciesId, companion.toneId, keeper.image]);

@@ -10,6 +10,7 @@ import {
   type ThrowResult,
 } from "@/lib/game/moonberry-bowling/physics";
 import { resolveMatch, throwSeed, type LoggedThrow } from "@/lib/game/moonberry-bowling/match";
+import { loadPrefs, QUALITY_SETTINGS } from "@/lib/game/player-prefs";
 import {
   acceptBowlingPlaybackMove,
   bowlingMoveKey,
@@ -296,8 +297,12 @@ export function MoonberryBowlingCanvas({
       });
       return;
     }
-    webgl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    webgl.shadowMap.enabled = true;
+    /* Fit the device before the first frame. Full pixel ratio with shadows on
+       is a slideshow on a phone, and the quality tier is picked from the
+       hardware unless the player has chosen one. */
+    const quality = QUALITY_SETTINGS[loadPrefs().quality];
+    webgl.setPixelRatio(Math.min(window.devicePixelRatio, quality.maxPixelRatio));
+    webgl.shadowMap.enabled = quality.shadows;
     webgl.shadowMap.type = THREE.PCFShadowMap;
     // The renderer authors its lights for physical tone mapping.
     webgl.toneMapping = THREE.ACESFilmicToneMapping;

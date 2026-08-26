@@ -8,7 +8,6 @@ import { MemoryMatchCanvasLoader } from "@/components/game/memory-match-canvas-l
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import type { MemoryMatchMode } from "@/lib/game/memory-match-state";
-import { Button } from "@/components/ui/button";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { cn } from "@/lib/utils";
 
@@ -31,10 +30,14 @@ export function MemoryMatchClient() {
     requireSessionComplete: true,
   });
 
+  /* Depend on the MEMBERS, not the object holding them. `game` re-identifies
+     on every move; these three do not, so the effect fires when it should
+     rather than on every tick. */
+  const { sessionId: gameSessionId, loading: gameLoading, submitMove: gameSubmitMove } = game;
   useEffect(() => {
-    if (!game.sessionId || game.loading) return;
-    void game.submitMove("init", { mode });
-  }, [game.loading, game.sessionId, game.submitMove, mode]);
+    if (!gameSessionId || gameLoading) return;
+    void gameSubmitMove("init", { mode });
+  }, [gameLoading, gameSessionId, gameSubmitMove, mode]);
 
   return (
     <div className="grid gap-5">

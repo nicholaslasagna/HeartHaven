@@ -387,7 +387,12 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
           this.keeperHairSprite?.clearTint().setAlpha(0);
         }
 
-        private setKeeperLook(paletteId: KeeperPaletteId, pose: KeeperPose, outfitId: KeeperOutfitId) {
+        /* Only the pose matters here. The keeper's palette and outfit are
+           baked into the preset animation sheet chosen by `characterId`, so
+           the layered tint approach `applyKeeperLayerTints` used to drive is
+           disabled and the caller's paletteId/outfitId had no effect. Taking
+           them off the signature stops it promising something it does not do. */
+        private setKeeperLook(pose: KeeperPose) {
           this.keeperSprite.setTexture(
             "keeper-preset-animation-sheet",
             keeperPresetFrame(this.keeperCustomization.characterId, pose),
@@ -465,7 +470,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
         private selectChoice(choice: FashionChoice) {
           if (this.walking || this.finished) return;
           this.selectedChoice = choice;
-          this.setKeeperLook(choice.paletteId, choice.pose, choice.outfitId);
+          this.setKeeperLook(choice.pose);
           this.petSprite.setFrame(petFrame(readPetCustomization().speciesId, choice.petPose));
           this.choiceCards.forEach(({ bg, choice: cardChoice }) => {
             bg.setStrokeStyle(cardChoice.id === choice.id ? 5 : 3, cardChoice.accent, cardChoice.id === choice.id ? 0.92 : 0.32);
@@ -492,7 +497,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
           this.feedbackText.setText(`Judges gave ${roundScore} points for ${choice.title}.`);
           playCozyCue(roundScore >= 86 ? "reward" : "heart");
 
-          this.setKeeperLook(choice.paletteId, "walk1", choice.outfitId);
+          this.setKeeperLook("walk1");
           this.tweens.add({
             targets: [this.keeperSkinSprite, this.keeperSprite, this.keeperHairSprite],
             x: 690,
@@ -503,10 +508,10 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
               this.setKeeperWalkFrame();
             },
             onComplete: () => {
-              this.setKeeperLook(choice.paletteId, choice.pose, choice.outfitId);
+              this.setKeeperLook(choice.pose);
               this.petSprite.setFrame(petFrame(readPetCustomization().speciesId, choice.petPose));
               this.spawnApplause(choice.accent);
-              this.time.delayedCall(760, () => this.finishRound(choice));
+              this.time.delayedCall(760, () => this.finishRound());
             },
           });
           this.tweens.add({ targets: this.petSprite, x: 526, y: 430, duration: 840, ease: "Sine.inOut" });
@@ -521,7 +526,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
           return Math.min(100, score);
         }
 
-        private finishRound(choice: FashionChoice) {
+        private finishRound() {
           this.roundIndex += 1;
           this.scoreText.setText(`Score ${this.totalScore}`);
           if (this.roundIndex >= MAX_ROUNDS) {
@@ -531,7 +536,7 @@ export function FashionShowCanvas({ onReward }: FashionShowCanvasProps) {
 
           [this.keeperSkinSprite, this.keeperSprite, this.keeperHairSprite].forEach((sprite) => sprite.setPosition(332, 382));
           this.petSprite.setPosition(574, 428);
-          this.setKeeperLook(choice.paletteId, "idle", choice.outfitId);
+          this.setKeeperLook("idle");
           this.petSprite.setFrame(petFrame(readPetCustomization().speciesId, "idle"));
           this.walking = false;
           this.applyRound();

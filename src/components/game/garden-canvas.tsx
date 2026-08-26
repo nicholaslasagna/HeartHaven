@@ -4773,7 +4773,7 @@ export function GardenCanvas({
       destroyed = true;
       game?.destroy(true);
     };
-  }, [activeEvent, canEditGarden, onAvatarMove, timeOfDayRef, variant]);
+  }, [activeEvent, canEditGarden, navigationDebugActive, navigationMapId, onAvatarMove, timeOfDayRef, variant]);
 
   function dispatchAddDecor(kind: GardenDecorKind, point?: { clientX: number; clientY: number }) {
     window.dispatchEvent(new CustomEvent("hearthaven:garden-add-decor", { detail: { kind, ...point } }));

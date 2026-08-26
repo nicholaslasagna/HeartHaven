@@ -767,9 +767,6 @@ export function getPetAccessory(id: PetAccessoryId) {
   return PET_ACCESSORIES.find((accessory) => accessory.id === id) ?? PET_ACCESSORIES[0];
 }
 
-function normalizeKeeperPalette(value: string | null): KeeperPaletteId {
-  return KEEPER_PALETTES.some((palette) => palette.id === value) ? (value as KeeperPaletteId) : "blush";
-}
 
 function normalizeKeeperBody(value: string | null | undefined): KeeperBodyId {
   return KEEPER_BODY_TYPES.some((body) => body.id === value) ? (value as KeeperBodyId) : "female";
@@ -793,9 +790,6 @@ function normalizeKeeperHairColor(value: string | null | undefined): KeeperHairC
   return KEEPER_HAIR_COLORS.some((hair) => hair.id === value) ? (value as KeeperHairColorId) : "chestnut";
 }
 
-function normalizeKeeperOutfit(value: string | null): KeeperOutfitId {
-  return KEEPER_OUTFITS.some((outfit) => outfit.id === value) ? (value as KeeperOutfitId) : "cardigan";
-}
 
 export function normalizePetSpecies(value: string | null | undefined): PetSpeciesId {
   const legacyMap: Record<string, PetSpeciesId> = {

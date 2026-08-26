@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import { MoonberryRacingRenderer, kartColor, type KartView, type RacingSnapshot } from "@/lib/game/moonberry-racing/renderer";
 import { KART, NO_KART_INPUT, applyBoostPad, chargeBand, stepKart, type KartInput } from "@/lib/game/moonberry-racing/kart";
@@ -9,6 +9,14 @@ import { Arena, type CombatRacer } from "@/lib/game/moonberry-racing/combat";
 import type { PowerUp, PowerUpId } from "@/lib/game/moonberry-racing/powerups";
 import { sampleCourse, surfaceAt, VERGE_LIMIT, type Course } from "@/lib/game/moonberry-racing/track";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import {
+  getPrefsSnapshot,
+  loadPrefs,
+  padSteer,
+  QUALITY_SETTINGS,
+  subscribePrefs,
+  TOUCH_STEER_SPAN,
+} from "@/lib/game/player-prefs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -90,6 +98,23 @@ export function MoonberryRacingCanvas({
   itemsEnabled = true,
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  /* On-screen controls write here; the loop merges them with the keyboard so
+     a phone and a desktop drive the same simulation. Kept in a ref because
+     steering changes every frame and must not re-render React. */
+  const touchRef = useRef({ steer: 0, throttle: 0, brake: 0, drift: false, action: false, item: false });
+  /* Whether to show the driving pad is a browser-only fact (pointer type and
+     stored preference), so it is read through useSyncExternalStore with a
+     server snapshot of `false` — reading it in an effect and calling setState
+     would hydrate wrong and then cascade a second render.
+
+     It subscribes to the real prefs store rather than a no-op: the display
+     dock writes this setting, and a no-op subscribe meant flipping it there
+     did nothing until the page was reloaded. */
+  const showTouch = useSyncExternalStore(
+    subscribePrefs,
+    () => getPrefsSnapshot().touchControls,
+    () => false,
+  );
   const startAtRef = useRef(startAt);
   const companionRef = useRef(companion);
   const callbacksRef = useRef({ onReport, onFinish, onItemEvent });
@@ -98,7 +123,7 @@ export function MoonberryRacingCanvas({
     timeMs: 0, charge: 0, band: "none" as string, boosting: false,
     countdown: null as number | null, wrongWay: false, finalLap: false,
     item: null as string | null, itemColor: null as string | null, message: "",
-    chain: 0,
+    chain: 0, away: false,
     blips: [] as Array<{ id: string; x: number; z: number; seat: number; local: boolean }>,
   });
   const [error, setError] = useState<string | null>(null);
@@ -123,8 +148,14 @@ export function MoonberryRacingCanvas({
       queueMicrotask(() => { setError(message); onError?.(message); });
       return;
     }
-    webgl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    webgl.shadowMap.enabled = true;
+    /* Fit the device before the first frame. A phone rendering at full pixel
+       ratio with shadows on is a slideshow, and a slideshow is a game nobody
+       plays twice — so the quality tier is chosen from the hardware unless
+       the player has picked one. */
+    const prefs = loadPrefs();
+    const quality = QUALITY_SETTINGS[prefs.quality];
+    webgl.setPixelRatio(Math.min(window.devicePixelRatio, quality.maxPixelRatio));
+    webgl.shadowMap.enabled = quality.shadows;
     webgl.shadowMap.type = THREE.PCFShadowMap;
     webgl.toneMapping = THREE.ACESFilmicToneMapping;
     webgl.toneMappingExposure = 1.0;
@@ -135,7 +166,7 @@ export function MoonberryRacingCanvas({
     let race: Race;
     let arena: Arena;
     try {
-      renderer = new MoonberryRacingRenderer(course);
+      renderer = new MoonberryRacingRenderer(course, prefs.reducedMotion);
       race = new Race(course, isHost);
       arena = new Arena(course, itemsEnabled);
       for (const seat of seats) {
@@ -220,6 +251,40 @@ export function MoonberryRacingCanvas({
 
     let raf = 0;
     let last = performance.now();
+    /* Time spent with the tab hidden.
+       `raceTime` is derived from the shared wall-clock start stamp, which is
+       what keeps eight machines in step — but it also means tabbing away for
+       thirty seconds jumps the clock forward, teleports every hazard, and
+       ruins a lap the player was not even present for. requestAnimationFrame
+       is already paused while hidden, so their kart sat still throughout.
+
+       Solo, there is nobody to stay in step WITH, so the away time is simply
+       given back. In multiplayer the shared clock has to keep running or the
+       race desyncs, so instead the player gets a clean resume: no dt spike,
+       and the notice below tells them what happened rather than leaving them
+       to guess why they are suddenly last. */
+    let hiddenAt: number | null = null;
+    let awayMs = 0;
+    let wasAway = false;
+    const soloRace = seats.length <= 1;
+    const onVisibility = () => {
+      if (document.hidden) {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (hiddenAt !== null) {
+        const gap = Date.now() - hiddenAt;
+        hiddenAt = null;
+        // Ignore a blink; only a real absence is worth compensating.
+        if (gap > 400) {
+          if (soloRace) awayMs += gap;
+          else wasAway = true;
+        }
+      }
+      // Whatever happened, do not hand the loop a giant delta on the way back.
+      last = performance.now();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     let accumulator = 0;
     let reportTimer = 0;
     let hudTimer = 0;
@@ -239,7 +304,10 @@ export function MoonberryRacingCanvas({
 
       // Adopt the host's start stamp so every client counts down together.
       const shared = startAtRef.current;
-      if (shared !== null && race.startAt !== shared) race.adoptStart(shared);
+      // Solo play pushes the start stamp forward by the time spent away, so
+      // a paused tab costs nothing on the clock.
+      const effectiveStart = shared === null ? null : shared + awayMs;
+      if (effectiveStart !== null && race.startAt !== effectiveStart) race.adoptStart(effectiveStart);
       race.tick(Date.now(), dt);
 
       if (race.phase === "countdown" && race.startAt !== null) {
@@ -263,9 +331,21 @@ export function MoonberryRacingCanvas({
           const surface = surfaceAt(course, me.kart.x, me.kart.z, surfaceHint, me.kart.y);
           surfaceHint = surface.t;
           const wasDrifting = me.kart.driftSide !== 0;
+          /* Keyboard and touch are additive rather than exclusive, so a
+             tablet with a keyboard can use either at any moment without a
+             mode switch to get wrong. */
+          const pad = touchRef.current;
+          const merged: KartInput = {
+            steer: Math.max(-1, Math.min(1, input.steer + pad.steer)),
+            throttle: Math.max(input.throttle, pad.throttle),
+            brake: Math.max(input.brake, pad.brake),
+            drift: input.drift || pad.drift,
+            action: input.action || pad.action,
+            item: input.item || pad.item,
+          };
           stepKart(
             me.kart,
-            racing && !me.finishedAt ? input : NO_KART_INPUT,
+            racing && !me.finishedAt ? merged : NO_KART_INPUT,
             surface,
             KART.STEP,
             Arena.speedFactor(me),
@@ -288,7 +368,7 @@ export function MoonberryRacingCanvas({
 
           if (racing) {
             // Fire on the rising edge only, so holding the key is one use.
-            if (input.item && !itemHeld && me.item) {
+            if (merged.item && !itemHeld && me.item) {
               const fired = arena.useItem(me as CombatRacer, []);
               if (fired) {
                 callbacksRef.current.onItemEvent?.({
@@ -301,7 +381,7 @@ export function MoonberryRacingCanvas({
                 });
               }
             }
-            itemHeld = input.item;
+            itemHeld = merged.item;
 
             const combatants = [...race.racers.values()] as CombatRacer[];
             for (const event of arena.step(combatants, race.raceTime, KART.STEP)) {
@@ -436,6 +516,7 @@ export function MoonberryRacingCanvas({
           blips: karts.map((k) => ({ id: k.id, x: k.x, z: k.z, seat: k.seat, local: k.local })),
           item: heldItem?.name ?? null,
           itemColor: heldItem ? `#${heldItem.color.toString(16).padStart(6, "0")}` : null,
+          away: wasAway,
           message: me?.spectator
             ? "Spectating — you joined after the lights went out."
             : race.phase === "finished"
@@ -451,6 +532,7 @@ export function MoonberryRacingCanvas({
       observer.disconnect();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      document.removeEventListener("visibilitychange", onVisibility);
       unsubscribe?.();
       unsubscribeItems?.();
       arena.dispose();
@@ -541,7 +623,11 @@ export function MoonberryRacingCanvas({
         )}
 
         {hud.boosting && (
-          <p className="absolute bottom-4 right-4 rounded-full bg-honey-400/90 px-3 py-1 text-xs font-black uppercase text-ink-900">
+          <p className={cn(
+            "absolute rounded-full bg-honey-400/90 px-3 py-1 text-xs font-black uppercase text-ink-900",
+            // Bottom-right is the BOOST button's seat once the pad is up.
+            showTouch ? "left-1/2 top-14 -translate-x-1/2" : "bottom-4 right-4",
+          )}>
             Boost
           </p>
         )}
@@ -573,11 +659,30 @@ export function MoonberryRacingCanvas({
         )}
 
         {/* Minimap: the course centreline plus every kart. */}
-        <Minimap blips={hud.blips} course={course} />
+        <Minimap blips={hud.blips} course={course} compact={showTouch} />
       </div>
 
-      <p className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] font-bold text-cream-200/50">
-        WASD drive · Shift drift · Space boost/hop · R rear view
+      {showTouch && (
+        <TouchPad
+          onHold={(key, down) => {
+            const pad = touchRef.current;
+            if (key === "brake") pad.brake = down ? 1 : 0;
+            else pad[key] = down;
+          }}
+          onSteer={(steer, throttle) => {
+            touchRef.current.steer = steer;
+            touchRef.current.throttle = throttle;
+          }}
+        />
+      )}
+
+      {/* The pad labels its own buttons, so the keyboard hint would only sit
+          underneath them saying the same thing twice. */}
+      <p className={cn(
+        "absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] font-bold text-cream-200/50",
+        showTouch && "hidden",
+      )}>
+        {"WASD drive · Shift drift · Space boost/hop · R rear view"}
       </p>
     </div>
   );
@@ -587,9 +692,12 @@ export function MoonberryRacingCanvas({
 function Minimap({
   blips,
   course,
+  compact = false,
 }: {
   blips: Array<{ id: string; x: number; z: number; seat: number; local: boolean }>;
   course: Course;
+  /** Touch layout: the bottom-left corner belongs to the steering pad. */
+  compact?: boolean;
 }) {
   const samples = 160;
   const points: Array<[number, number]> = [];
@@ -620,7 +728,18 @@ function Minimap({
     .join(" ");
 
   return (
-    <svg className="absolute bottom-3 left-3 size-28 rounded-lg bg-ink-900/65" viewBox="0 0 100 100" aria-hidden="true">
+    <svg
+      aria-hidden="true"
+      className={cn(
+        "absolute rounded-lg bg-ink-900/65",
+        /* Touch layout has to dodge three occupied corners: the steering
+           pad owns bottom-left, the buttons own bottom-right, and the
+           lap/timer stack owns top-right. That leaves the space directly
+           under the position badge. */
+        compact ? "left-3 top-20 size-16" : "bottom-3 left-3 size-28",
+      )}
+      viewBox="0 0 100 100"
+    >
       <path
         d={path}
         fill="none"
@@ -651,3 +770,105 @@ function Minimap({
 }
 
 export { kartColor };
+
+/**
+ * On-screen driving controls.
+ *
+ * Throttle is held down for you. A kart racer on a phone has one thumb for
+ * steering and one for everything else, and making the player also hold an
+ * accelerator is what turns a fun three minutes into cramp — every mobile
+ * racer worth playing auto-accelerates and reserves the brake for a button.
+ *
+ * Steering is a DRAG, not two arrows: the further your thumb travels from
+ * where it landed, the harder the kart turns, so you get analogue control
+ * from a screen that has none. The anchor is wherever you first touch, not a
+ * fixed spot, so it works with any hand size or grip.
+ */
+function TouchPad({
+  onSteer,
+  onHold,
+}: {
+  /** Steering in -1..1 and whether the throttle should be open. */
+  onSteer: (steer: number, throttle: number) => void;
+  onHold: (key: "drift" | "action" | "item" | "brake", down: boolean) => void;
+}) {
+  const steerRef = useRef<{ pointerId: number; originX: number } | null>(null);
+  const [steerVisual, setSteerVisual] = useState(0);
+
+  const beginSteer = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    steerRef.current = { pointerId: event.pointerId, originX: event.clientX };
+    // Throttle is on from the moment a thumb touches the pad.
+    onSteer(0, 1);
+  };
+  const moveSteer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const active = steerRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const drag = event.clientX - active.originX;
+    // padSteer owns the sign; see its comment for why it negates.
+    onSteer(padSteer(drag), 1);
+    setSteerVisual(Math.max(-1, Math.min(1, drag / TOUCH_STEER_SPAN)));
+  };
+  const endSteer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const active = steerRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    steerRef.current = null;
+    onSteer(0, 0);
+    setSteerVisual(0);
+  };
+
+  /** A button that reports held/released, and never sticks if a touch is lost. */
+  const hold = (key: "drift" | "action" | "item" | "brake") => ({
+    onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      onHold(key, true);
+    },
+    // Up, cancel AND leave all clear it: a dropped touch must never weld a
+    // button down and leave the kart drifting forever.
+    onPointerUp: () => onHold(key, false),
+    onPointerCancel: () => onHold(key, false),
+    onPointerLeave: () => onHold(key, false),
+  });
+
+  /* Deliberately small. The canvas is 16:9 inside a portrait phone, so it is
+     only a couple of hundred pixels tall — full-size pills covered most of
+     the track. These stay above the ~44px touch-target minimum while
+     leaving the racing line visible. */
+  const buttonClass =
+    "pointer-events-auto select-none rounded-full border border-cream-50/40 bg-ink-900/60 " +
+    "px-3 py-2 text-[10px] font-black uppercase tracking-wide text-cream-50 " +
+    "min-w-[3.25rem] active:bg-cream-50/30";
+
+  return (
+    <div className="pointer-events-none absolute inset-0 touch-none select-none">
+      {/* Steering: the whole lower-left quadrant, so a thumb never misses. */}
+      <div
+        aria-label="Steering pad"
+        className="pointer-events-auto absolute bottom-0 left-0 h-2/3 w-1/2"
+        onPointerCancel={endSteer}
+        onPointerDown={beginSteer}
+        onPointerMove={moveSteer}
+        onPointerUp={endSteer}
+        role="presentation"
+      >
+        <div className="absolute bottom-3 left-3 h-1.5 w-28 rounded-full bg-ink-900/55">
+          <span
+            className="absolute top-1/2 size-6 -translate-y-1/2 rounded-full border-2 border-cream-50/70 bg-cream-50/30 transition-transform duration-75"
+            style={{ left: "calc(50% - 0.75rem)", transform: `translateX(${steerVisual * 44}px)` }}
+          />
+        </div>
+      </div>
+
+      <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5">
+        <div className="flex gap-1.5">
+          <button className={buttonClass} type="button" {...hold("item")}>Item</button>
+          <button className={buttonClass} type="button" {...hold("brake")}>Brake</button>
+        </div>
+        <div className="flex gap-1.5">
+          <button className={buttonClass} type="button" {...hold("drift")}>Drift</button>
+          <button className={cn(buttonClass, "bg-honey-400/80 text-ink-900")} type="button" {...hold("action")}>Boost</button>
+        </div>
+      </div>
+    </div>
+  );
+}

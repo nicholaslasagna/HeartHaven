@@ -5,7 +5,6 @@ import {
   SOCIAL_EVENT,
   acceptFriendInvite,
   acceptInviteFromCode,
-  addFriendDirectly,
   applyKeeperNameRefresh,
   buildInviteLink,
   cancelOutgoingInvite,

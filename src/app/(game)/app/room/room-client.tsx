@@ -228,7 +228,6 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRoomExpansions(readRoomExpansions(activeRoom.id));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRoomSurfaces(readRoomSurfaces(activeRoom.id));
   }, [activeRoom.id]);
 
@@ -380,7 +379,7 @@ export function RoomClient({ embedded = false }: { embedded?: boolean } = {}) {
     }
 
     setSaveStatus(result.message ?? "Room layout could not be saved.");
-  }, [activeRoom.id, canEditRoom, channelHostCode, realtimePlacements, saveRealtimePlacements]);
+  }, [activeRoom.id, canEditRoom, channelHostCode, isHostRoom, realtimePlacements, saveRealtimePlacements]);
 
   const scheduleHostPlacementSave = useCallback((next: RoomPlacement[]) => {
     pendingPlacementsRef.current = next;

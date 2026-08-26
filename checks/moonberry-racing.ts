@@ -27,6 +27,9 @@ import {
 import { MOONBERRY_COURSES } from "../src/lib/game/moonberry-racing/courses";
 import { Race, COUNTDOWN_MS, FINISH_GRACE_MS } from "../src/lib/game/moonberry-racing/race";
 import { MoonberryRacingRenderer } from "../src/lib/game/moonberry-racing/renderer";
+import {
+  normalizePrefs, loadPrefs, padSteer, DEFAULT_PREFS, QUALITY_SETTINGS, TOUCH_STEER_SPAN,
+} from "../src/lib/game/player-prefs";
 import { Arena, type CombatRacer } from "../src/lib/game/moonberry-racing/combat";
 import {
   canStartRace, deriveRaceSetup, DEFAULT_LAPS, MAX_LAPS, MIN_LAPS,
@@ -1645,6 +1648,101 @@ const results: string[] = [];
   assert.ok(!hopBoost, "a kerb hop pays nothing");
 
   results.push(`chaining  ${KART.DRIFT_MAX_CHAIN} links per slide, each stronger · final link ends it · early release forfeits the chain · airtime pays, hops do not`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Quality of life: preferences and touch controls                     */
+/* ------------------------------------------------------------------ */
+{
+  /* Preferences come from localStorage, which is the least trustworthy
+     input in the app: it survives across versions, can be hand-edited, and
+     throws outright in private mode. A bad read must never be the reason a
+     game refuses to start, so every shape is coerced. */
+  for (const junk of [null, undefined, 0, "x", [], true, { quality: "ultra" }, { reducedMotion: "yes" }, { touchControls: 1 }]) {
+    const prefs = normalizePrefs(junk);
+    assert.ok(["low", "medium", "high"].includes(prefs.quality), `quality coerced for ${JSON.stringify(junk)}`);
+    assert.equal(typeof prefs.reducedMotion, "boolean");
+    assert.equal(typeof prefs.touchControls, "boolean");
+  }
+  /* Volume is intentionally absent: `cozy-audio` owns it. Two modules
+     persisting the same setting is how they end up disagreeing. */
+  assert.ok(!("masterVolume" in normalizePrefs({})), "volume is not duplicated here");
+  // Without a window there is nothing to read, and nothing may throw.
+  assert.deepEqual(loadPrefs(), DEFAULT_PREFS, "SSR-safe");
+
+  // The tiers have to be genuinely ordered or "low" is a lie.
+  const tiers = QUALITY_SETTINGS;
+  assert.ok(tiers.low.maxPixelRatio < tiers.medium.maxPixelRatio);
+  assert.ok(tiers.medium.maxPixelRatio < tiers.high.maxPixelRatio);
+  assert.ok(tiers.low.effects < tiers.high.effects);
+  assert.equal(tiers.low.shadows, false, "the cheapest tier drops shadows");
+
+  /* TOUCH STEERING MUST MATCH THE KEYBOARD.
+     Two input paths that disagree on sign is exactly the bug that shipped
+     once already — invisible to every other check, because the simulation is
+     self-consistent either way and only a human pressing a key notices. */
+  assert.ok(Object.is(padSteer(0), 0), "no drag, no steer, and not negative zero");
+  assert.ok(padSteer(TOUCH_STEER_SPAN) < 0, "dragging right steers right");
+  assert.ok(padSteer(-TOUCH_STEER_SPAN) > 0, "dragging left steers left");
+  assert.equal(padSteer(TOUCH_STEER_SPAN * 5), -1, "clamped at full lock");
+  const half = Math.abs(padSteer(TOUCH_STEER_SPAN / 2));
+  assert.ok(half > 0.4 && half < 0.6, "analogue, not an on/off arrow");
+
+  // `Number(left) - Number(right)` makes the D key -1; the pad must agree.
+  const KEYBOARD_RIGHT = -1;
+  const turn = (steer: number) => {
+    const kart = createKart(0, 0, 0, 0);
+    const flat = { offroad: false, ice: false, groundY: 0 };
+    for (let i = 0; i < 300; i += 1) stepKart(kart, input({ throttle: 1 }), flat, KART.STEP);
+    const before = kart.heading;
+    for (let i = 0; i < 60; i += 1) stepKart(kart, input({ throttle: 1, steer }), flat, KART.STEP);
+    return kart.heading - before;
+  };
+  assert.equal(
+    Math.sign(turn(padSteer(TOUCH_STEER_SPAN))), Math.sign(turn(KEYBOARD_RIGHT)),
+    "a right drag and the D key must turn the kart the same way",
+  );
+  assert.equal(
+    Math.sign(turn(padSteer(-TOUCH_STEER_SPAN))), Math.sign(turn(1)),
+    "and a left drag must match the A key",
+  );
+
+  /* REDUCED MOTION MUST ACTUALLY DO SOMETHING.
+     A preference that changes nothing is worse than none at all: it tells a
+     player their accessibility setting was honoured when it was ignored. */
+  {
+    const grid = startingGrid(MOONBERRY_COURSES[0], 2);
+    const boosting = {
+      id: "p", seat: 0, name: "P",
+      x: grid[0].position.x, y: grid[0].position.y, z: grid[0].position.z,
+      heading: grid[0].heading, lean: 1, driftSide: 1 as const, driftCharge: 0.6,
+      boosting: true, airborne: false, spinning: false, local: true,
+      position: 1, finished: false,
+    };
+    const frame = (r: MoonberryRacingRenderer) => {
+      for (let i = 0; i < 90; i += 1) {
+        r.update(
+          { karts: [boosting], shots: [], raceTime: 3, followId: "p", rearView: false, itemBoxesTaken: new Set() } as never,
+          16 / 9, 0.016,
+        );
+      }
+      return r.camera.fov;
+    };
+
+    const normal = new MoonberryRacingRenderer(MOONBERRY_COURSES[0], false);
+    const calm = new MoonberryRacingRenderer(MOONBERRY_COURSES[0], true);
+    const normalFov = frame(normal);
+    const calmFov = frame(calm);
+    const restFov = calm.camera.fov;
+
+    assert.ok(normalFov > calmFov + 4, `boost must punch the FOV normally (${normalFov.toFixed(1)} vs ${calmFov.toFixed(1)})`);
+    // Reduced motion holds the field of view steady rather than easing it.
+    assert.ok(Math.abs(restFov - 68) < 0.6, `reduced motion keeps FOV at rest, got ${restFov.toFixed(1)}`);
+    normal.dispose();
+    calm.dispose();
+  }
+
+  results.push("qol       prefs coerced from any junk · SSR-safe · tiers ordered · pad steering matches the keyboard · reduced motion holds the FOV");
 }
 
 console.log(`\nMoonberry Racing: all checks passed\n${results.map((l) => `  ${l}`).join("\n")}\n`);

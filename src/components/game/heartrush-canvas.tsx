@@ -9,6 +9,7 @@ import {
   type HeartRushState,
 } from "@/lib/game/heartrush-shared";
 import { companionArtAsset } from "@/lib/game/companion-art";
+import { loadPrefs, QUALITY_SETTINGS } from "@/lib/game/player-prefs";
 import {
   HEARTRUSH_GRAVITY,
   HEARTRUSH_JUMP_VELOCITY,
@@ -888,8 +889,12 @@ export function HeartRushCanvas({
     scene.fog = new THREE.Fog(0xbfe9ff, 60, 190);
 
     const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 400);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    /* Fit the device before the first frame. Full pixel ratio with shadows on
+       is a slideshow on a phone, and the quality tier is picked from the
+       hardware unless the player has chosen one. */
+    const quality = QUALITY_SETTINGS[loadPrefs().quality];
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.maxPixelRatio));
+    renderer.shadowMap.enabled = quality.shadows;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(renderer.domElement);
 
@@ -897,7 +902,7 @@ export function HeartRushCanvas({
     const sun = new THREE.DirectionalLight(0xfff4e0, 1.5);
     sun.position.set(18, 40, 20);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
     sun.shadow.camera.near = 1;
     sun.shadow.camera.far = 140;
     sun.shadow.camera.left = -60;

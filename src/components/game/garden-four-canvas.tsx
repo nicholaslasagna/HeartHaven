@@ -66,7 +66,7 @@ export function GardenFourCanvas({
     if (metadata) {
       window.dispatchEvent(new CustomEvent("hearthaven:garden-four-sync", { detail: metadata }));
     }
-  }, [metadata, mySeatIndex, sessionId, submitDrop]);
+  }, [metadata, mySeatIndex, onReward, sessionId, submitDrop]);
 
   useEffect(() => {
     let destroyed = false;
@@ -619,6 +619,13 @@ export function GardenFourCanvas({
       destroyed = true;
       game?.destroy(true);
     };
+    /* Deliberately keyed on speciesId alone, not the whole companion.
+       The scene reads `activeCompanion?.name` for the mascot label, so a
+       rename leaves that label stale until the next rebuild. Adding `name`
+       here would fix the label by DESTROYING and recreating the scene, and
+       renaming a companion mid-match would reset the game in progress. A
+       stale label is the cheaper of the two wrongs. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompanion?.speciesId]);
 
   return (

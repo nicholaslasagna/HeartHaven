@@ -6,6 +6,7 @@ import { Logo } from "@/components/brand/logo";
 import { AnnouncementsLoginToast } from "@/components/game/announcements-login-toast";
 import { BanNotificationsHost } from "@/components/game/ban-notifications-host";
 import { CozyAudioDock } from "@/components/game/cozy-audio-dock";
+import { DisplaySettingsDock } from "@/components/game/display-settings-dock";
 import { Phase2PersistenceBridge } from "@/components/game/phase2-persistence-bridge";
 import { PartyFollowToast } from "@/components/game/party-follow-toast";
 import { PlaceInviteInboxHost } from "@/components/game/place-invite-inbox-host";
@@ -45,6 +46,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
             <SeasonalEventPill />
             <ThemeModeDock />
             <CozyAudioDock />
+            <DisplaySettingsDock />
             <RewardWalletPanel compact />
             <KeeperAccountButton />
           </div>
@@ -53,6 +55,7 @@ export function GameShell({ children }: { children: React.ReactNode }) {
               <SeasonalEventPill className="hidden sm:inline-flex" />
               <ThemeModeDock />
               <CozyAudioDock />
+            <DisplaySettingsDock />
             </div>
           </div>
         </div>

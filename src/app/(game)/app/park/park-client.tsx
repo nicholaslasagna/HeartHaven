@@ -137,16 +137,20 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
   }, [isGuestVisit, realtime.decorLoading, realtime.decorVersion, realtimeDecor]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  /* Depend on the MEMBERS, not the `realtime` object holding them. It
+     re-identifies on every presence tick; these three only change when the
+     plots actually do. */
+  const { plots: remotePlots, plotsLoading: remotePlotsLoading, savePlots: saveRemotePlots } = realtime;
   useEffect(() => {
-    if (realtime.plotsLoading) return;
-    const merged = mergeGardenPlotsWithDefaults(defaultPlots, realtime.plots);
+    if (remotePlotsLoading) return;
+    const merged = mergeGardenPlotsWithDefaults(defaultPlots, remotePlots);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setGardenPlots(merged);
-    if (!realtime.plots && canEditGarden && !isGuestVisit && !seededPlotsRef.current) {
+    if (!remotePlots && canEditGarden && !isGuestVisit && !seededPlotsRef.current) {
       seededPlotsRef.current = true;
-      void realtime.savePlots(defaultPlots);
+      void saveRemotePlots(defaultPlots);
     }
-  }, [canEditGarden, defaultPlots, isGuestVisit, realtime.plots, realtime.plotsLoading, realtime.savePlots]);
+  }, [canEditGarden, defaultPlots, isGuestVisit, remotePlots, remotePlotsLoading, saveRemotePlots]);
 
   const handlePlotCare = useCallback(
     async (plotId: string, action: "water" | "harvest") => {

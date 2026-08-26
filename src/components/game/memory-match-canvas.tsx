@@ -83,7 +83,7 @@ export function MemoryMatchCanvas({
     if (metadata) {
       window.dispatchEvent(new CustomEvent("hearthaven:memory-match-sync", { detail: metadata }));
     }
-  }, [metadata, mySeatIndex, seats, sessionId, submitFlip]);
+  }, [metadata, mySeatIndex, onReward, seats, sessionId, submitFlip]);
 
   useEffect(() => {
     rewardedRef.current = false;
@@ -502,6 +502,11 @@ export function MemoryMatchCanvas({
       destroyed = true;
       game?.destroy(true);
     };
+    /* Keyed on speciesId, not the whole companion. The scene reads
+       `activeCompanion?.name` for its label, so a rename leaves that stale
+       until the next rebuild — and rebuilding here would destroy and
+       recreate the scene, resetting a match in progress. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompanion?.speciesId, mode]);
 
   return (

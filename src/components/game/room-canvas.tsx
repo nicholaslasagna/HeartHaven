@@ -2910,7 +2910,7 @@ export function RoomCanvas({
       roomSceneRef.current = null;
       game?.destroy(true);
     };
-  }, [activeEvent, canEditRoom, onAvatarMove, onRoomEmote, roomName, roomPortals, roomSurfaces, roomTheme, worldHeight, worldWidth]);
+  }, [activeEvent, canEditRoom, isLargeRoom, onAvatarMove, onRoomEmote, roomName, roomPortals, roomSurfaces, roomTheme, worldHeight, worldWidth]);
 
   return (
     <section className="block w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-cream-300 bg-cream-100 shadow-[0_24px_70px_rgba(91,63,63,0.16)]">

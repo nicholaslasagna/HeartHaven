@@ -2127,7 +2127,7 @@ export class LanternRenderer {
           pet.bubble.scale.setScalar(1 + Math.sin(snapshot.time * 3 + player.seat) * 0.05);
           pet.body.position.y = Math.sin(snapshot.time * 2.2 + player.seat) * 0.06 + 0.15;
         }
-        this.updateContactShadow(pet.shadow, player, pet.root.position.x, pet.root.position.y);
+        this.updateContactShadow(pet.shadow, player, pet.root.position.x);
       } else {
         if (pet) pet.root.visible = false;
         if (!rig) {
@@ -2175,7 +2175,7 @@ export class LanternRenderer {
           rig.bubble.scale.setScalar(1 + Math.sin(snapshot.time * 3 + player.seat) * 0.05);
           rig.body.position.y = Math.sin(snapshot.time * 2.2 + player.seat) * 0.06 + 0.15;
         }
-        this.updateContactShadow(rig.shadow, player, rig.root.position.x, rig.root.position.y);
+        this.updateContactShadow(rig.shadow, player, rig.root.position.x);
       }
     }
 
@@ -2193,7 +2193,9 @@ export class LanternRenderer {
     }
   }
 
-  private updateContactShadow(shadow: THREE.Mesh, player: RenderPlayer, x: number, y: number) {
+  // No `y` parameter: the shadow sits on the ground under the player, which
+  // is looked up from the level rather than taken from the caller's sprite.
+  private updateContactShadow(shadow: THREE.Mesh, player: RenderPlayer, x: number) {
     const ground = this.groundBelow(player.x, player.y);
     const height = player.y - ground;
     if (Number.isFinite(ground) && height < 6 && !player.bubbled) {
