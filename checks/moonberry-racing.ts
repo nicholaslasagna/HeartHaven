@@ -1552,6 +1552,63 @@ const results: string[] = [];
   results.push(`leaks     200 shots allocate nothing · 8 rigs built once (${perKart.toFixed(0)} each) · 60 frames add zero · dispose drains to zero`);
 }
 
+{
+  /* -- wheels roll with the ground, and only the front pair steers --
+     Spinning wheels on a stationary kart, or still wheels on a moving one, is
+     the detail that makes a model read as a toy. The roll is taken from the
+     rig's own movement, so this drives the renderer and reads the result
+     rather than trusting the formula. */
+  type WheelGroup = { rotation: { x: number; y: number } };
+  const renderer = new MoonberryRacingRenderer(MOONBERRY_COURSES[0]);
+  const grid = startingGrid(MOONBERRY_COURSES[0], 2);
+  const view = {
+    id: "p", seat: 0, name: "P",
+    x: grid[0].position.x, y: grid[0].position.y, z: grid[0].position.z,
+    heading: grid[0].heading, lean: 0, driftSide: 0 as const, driftCharge: 0,
+    boosting: false, airborne: false, spinning: false, local: true,
+    position: 1, finished: false,
+  };
+  const frame = () =>
+    renderer.update(
+      { karts: [view], shots: [], raceTime: 1, followId: "p", rearView: false, itemBoxesTaken: new Set() } as never,
+      16 / 9, 0.016,
+    );
+
+  frame();
+  let wheels: WheelGroup[] | undefined;
+  renderer.scene.traverse((object) => {
+    const found = (object.userData as { wheels?: WheelGroup[] }).wheels;
+    if (found) wheels = found;
+  });
+  assert.ok(wheels && wheels.length === 4, "a kart rig carries four steerable wheel groups");
+  const wheelGroups = wheels as WheelGroup[];
+
+  // Parked: another frame must not turn the wheels at all.
+  const parked = wheelGroups[0].rotation.x;
+  frame();
+  assert.equal(wheelGroups[0].rotation.x, parked, "a stationary kart's wheels do not spin");
+
+  // Roll two radians' worth of travel and read the angle back.
+  const radius = 0.42;
+  view.z += radius * 2;
+  frame();
+  const rolled = wheelGroups[0].rotation.x - parked;
+  assert.ok(Math.abs(rolled - 2) < 1e-6, `travel of two radii rolls two radians, got ${rolled.toFixed(4)}`);
+
+  // Steering: a left lean aims the front wheels at world +X (screen left),
+  // matching the steering convention the input path is pinned to.
+  view.lean = 1;
+  frame();
+  assert.ok(wheelGroups[0].rotation.y > 0.4, "a full left lean turns the front wheels left");
+  assert.equal(wheelGroups[2].rotation.y, 0, "and leaves the rear pair pointing straight");
+  view.lean = -1;
+  frame();
+  assert.ok(wheelGroups[1].rotation.y < -0.4, "a right lean turns them the other way");
+
+  renderer.dispose();
+  results.push("wheels    roll with distance covered, not time · parked wheels hold still · front pair steers, rear does not");
+}
+
 /* ------------------------------------------------------------------ */
 /* Chained drift boosts                                                */
 /* ------------------------------------------------------------------ */

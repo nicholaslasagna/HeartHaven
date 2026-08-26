@@ -111,6 +111,45 @@ function surfaceTint(kind: SurfaceKind | undefined, base: THREE.Color) {
   }
 }
 
+/**
+ * The kart hull, as a plan-view outline extruded upward.
+ *
+ * A plain box was the single biggest tell that these were placeholders. The
+ * outline tapers toward the nose and bulges at the rear axle, and the bevel
+ * rounds every edge, so the hull catches light along its length instead of
+ * showing four flat faces.
+ *
+ * The shape is drawn with the nose at -y because extruding along +z and then
+ * rotating -90 degrees about X maps shape -y onto world +z (forward) and the
+ * extrusion onto world +y (up).
+ */
+/** Tyre radius, shared by the wheel mesh and the roll-per-metre maths. */
+const WHEEL_RADIUS = 0.42;
+
+function kartChassisGeometry() {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.40, -1.18);
+  shape.quadraticCurveTo(-0.66, -0.72, -0.64, -0.18);
+  shape.quadraticCurveTo(-0.63, 0.62, -0.58, 1.12);
+  shape.lineTo(0.58, 1.12);
+  shape.quadraticCurveTo(0.63, 0.62, 0.64, -0.18);
+  shape.quadraticCurveTo(0.66, -0.72, 0.40, -1.18);
+  shape.lineTo(-0.40, -1.18);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.34,
+    bevelEnabled: true,
+    bevelThickness: 0.07,
+    bevelSize: 0.06,
+    bevelSegments: 2,
+    curveSegments: 6,
+  });
+  geometry.rotateX(-Math.PI / 2);
+  geometry.translate(0, 0.36, 0);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export class MoonberryRacingRenderer {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
@@ -128,6 +167,26 @@ export class MoonberryRacingRenderer {
   private readonly projectileAsset: { geometry: THREE.BufferGeometry; material: THREE.Material };
   private readonly trapAsset: { geometry: THREE.BufferGeometry; material: THREE.Material };
   private readonly wheelAsset: { geometry: THREE.BufferGeometry; material: THREE.Material };
+  /* Every kart is the same shape, so the SHAPES are built once for the whole
+     field and only the two painted materials differ per seat. Eight racers
+     used to mean eight copies of each hull. */
+  private readonly kartParts: {
+    chassis: THREE.BufferGeometry;
+    nose: THREE.BufferGeometry;
+    pod: THREE.BufferGeometry;
+    spoiler: THREE.BufferGeometry;
+    stay: THREE.BufferGeometry;
+    hoop: THREE.BufferGeometry;
+    exhaust: THREE.BufferGeometry;
+    rim: THREE.BufferGeometry;
+    torso: THREE.BufferGeometry;
+    helmet: THREE.BufferGeometry;
+    visor: THREE.BufferGeometry;
+    arm: THREE.BufferGeometry;
+    trim: THREE.Material;
+    rubberTrim: THREE.Material;
+    glass: THREE.Material;
+  };
 
   /** How many GPU resources are held. Flat over time, or something leaks. */
   get resourceCount() {
@@ -159,8 +218,29 @@ export class MoonberryRacingRenderer {
     };
 
     this.wheelAsset = {
-      geometry: this.track(new THREE.CylinderGeometry(0.42, 0.42, 0.36, 14)),
+      geometry: this.track(new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.36, 14)),
       material: this.track(new THREE.MeshStandardMaterial({ color: 0x2a2028, roughness: 0.75 })),
+    };
+
+    this.kartParts = {
+      chassis: this.track(kartChassisGeometry()),
+      nose: this.track(new THREE.ConeGeometry(0.44, 0.95, 14)),
+      pod: this.track(new THREE.BoxGeometry(0.3, 0.34, 1.25)),
+      spoiler: this.track(new THREE.BoxGeometry(1.24, 0.08, 0.34)),
+      stay: this.track(new THREE.BoxGeometry(0.09, 0.42, 0.1)),
+      hoop: this.track(new THREE.TorusGeometry(0.34, 0.06, 8, 16, Math.PI)),
+      exhaust: this.track(new THREE.CylinderGeometry(0.075, 0.09, 0.5, 10)),
+      rim: this.track(new THREE.CylinderGeometry(0.24, 0.24, 0.38, 12)),
+      torso: this.track(new THREE.CapsuleGeometry(0.26, 0.3, 5, 12)),
+      helmet: this.track(new THREE.SphereGeometry(0.235, 14, 12)),
+      // A shallow cap of a sphere: the visor sits proud of the helmet face.
+      visor: this.track(new THREE.SphereGeometry(0.238, 14, 10, 0, Math.PI, 1.05, 0.75)),
+      arm: this.track(new THREE.CapsuleGeometry(0.075, 0.3, 4, 8)),
+      trim: this.track(new THREE.MeshStandardMaterial({ color: 0xe9e2d6, roughness: 0.45, metalness: 0.35 })),
+      rubberTrim: this.track(new THREE.MeshStandardMaterial({ color: 0x3a2f38, roughness: 0.85 })),
+      glass: this.track(new THREE.MeshStandardMaterial({
+        color: 0x2a3550, roughness: 0.12, metalness: 0.6, emissive: 0x101828, emissiveIntensity: 0.4,
+      })),
     };
 
     this.buildLights();
@@ -562,48 +642,123 @@ export class MoonberryRacingRenderer {
   private makeKartRig(view: KartView) {
     const group = new THREE.Group();
     const color = kartColor(view.seat);
+    const parts = this.kartParts;
 
-    const body = new THREE.Mesh(
-      this.track(new THREE.BoxGeometry(1.5, 0.55, 2.4)),
-      this.track(new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.25 })),
-    );
-    body.position.y = 0.55;
-    body.castShadow = true;
+    /* Two painted materials per kart: the shell and a darkened accent for the
+       parts that should read as trim rather than bodywork. */
+    const shell = this.track(new THREE.MeshStandardMaterial({
+      color, roughness: 0.28, metalness: 0.3,
+    }));
+    const accent = this.track(new THREE.MeshStandardMaterial({
+      color: new THREE.Color(color).multiplyScalar(0.62),
+      roughness: 0.42,
+      metalness: 0.2,
+    }));
+
+    /* `body` is a GROUP now, so the lean tips the whole car — hull, driver and
+       spoiler together. Leaning only the hull left the driver standing
+       bolt-upright through every corner. */
+    const body = new THREE.Group();
     body.name = "body";
     group.add(body);
 
-    const nose = new THREE.Mesh(
-      this.track(new THREE.ConeGeometry(0.5, 1.1, 12)),
-      this.track(new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.25 })),
-    );
+    const chassis = new THREE.Mesh(parts.chassis, shell);
+    chassis.castShadow = true;
+    body.add(chassis);
+
+    const nose = new THREE.Mesh(parts.nose, shell);
     nose.rotation.x = Math.PI / 2;
-    nose.position.set(0, 0.55, 1.6);
-    group.add(nose);
+    nose.position.set(0, 0.5, 1.52);
+    nose.castShadow = true;
+    body.add(nose);
 
-    // A driver blob so a kart reads as carrying someone.
-    const driver = new THREE.Mesh(
-      this.track(new THREE.CapsuleGeometry(0.32, 0.4, 6, 12)),
-      this.track(new THREE.MeshStandardMaterial({
-        color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55),
-        roughness: 0.5,
-      })),
-    );
-    driver.position.set(0, 1.15, -0.2);
-    driver.castShadow = true;
-    driver.name = "driver";
-    group.add(driver);
+    for (const side of [-1, 1]) {
+      const pod = new THREE.Mesh(parts.pod, accent);
+      pod.position.set(side * 0.7, 0.44, 0.05);
+      pod.castShadow = true;
+      body.add(pod);
 
-    // Wheels are identical on every kart, so they are allocated once for the
-    // whole field rather than four-per-rig times eight racers.
-    const wheelGeom = this.wheelAsset.geometry;
-    const wheelMat = this.wheelAsset.material;
-    for (const [wx, wz] of [[-0.82, 0.85], [0.82, 0.85], [-0.82, -0.85], [0.82, -0.85]]) {
-      const wheel = new THREE.Mesh(wheelGeom, wheelMat);
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(wx, 0.42, wz);
-      wheel.castShadow = true;
-      group.add(wheel);
+      const exhaust = new THREE.Mesh(parts.exhaust, parts.trim);
+      exhaust.rotation.x = Math.PI / 2;
+      exhaust.position.set(side * 0.26, 0.6, -1.32);
+      body.add(exhaust);
     }
+
+    // Rear wing: the clearest silhouette cue that this is a kart from behind.
+    const spoiler = new THREE.Mesh(parts.spoiler, accent);
+    spoiler.position.set(0, 0.98, -1.16);
+    spoiler.castShadow = true;
+    body.add(spoiler);
+    for (const side of [-1, 1]) {
+      const stay = new THREE.Mesh(parts.stay, parts.trim);
+      stay.position.set(side * 0.44, 0.77, -1.16);
+      body.add(stay);
+    }
+
+    // Roll hoop behind the seat.
+    const hoop = new THREE.Mesh(parts.hoop, parts.trim);
+    hoop.position.set(0, 0.86, -0.62);
+    hoop.castShadow = true;
+    body.add(hoop);
+
+    /* The driver. Still hidden wholesale when a companion sprite takes over,
+       which is why it stays one named object. */
+    const driver = new THREE.Group();
+    driver.name = "driver";
+    driver.position.set(0, 0.68, -0.18);
+    body.add(driver);
+
+    const suit = this.track(new THREE.MeshStandardMaterial({
+      color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.5),
+      roughness: 0.6,
+    }));
+    const torso = new THREE.Mesh(parts.torso, suit);
+    torso.position.y = 0.28;
+    torso.rotation.x = -0.18;
+    torso.castShadow = true;
+    driver.add(torso);
+
+    const helmet = new THREE.Mesh(parts.helmet, parts.trim);
+    helmet.position.set(0, 0.72, 0.02);
+    helmet.castShadow = true;
+    driver.add(helmet);
+
+    const visor = new THREE.Mesh(parts.visor, parts.glass);
+    visor.position.copy(helmet.position);
+    visor.rotation.y = -Math.PI / 2;
+    driver.add(visor);
+
+    // Arms reaching forward to the wheel, so the pose reads as driving.
+    for (const side of [-1, 1]) {
+      const arm = new THREE.Mesh(parts.arm, suit);
+      arm.position.set(side * 0.21, 0.34, 0.26);
+      arm.rotation.set(1.15, 0, side * -0.22);
+      driver.add(arm);
+    }
+
+    /* Wheels: a tyre plus a bright rim, grouped so the pair can spin with
+       road speed and the front pair can steer. YXZ order keeps the steer
+       outside the spin — with the default order the two fight each other. */
+    const wheels: THREE.Group[] = [];
+    for (const [wx, wz] of [[-0.82, 0.9], [0.82, 0.9], [-0.86, -0.92], [0.86, -0.92]]) {
+      const wheel = new THREE.Group();
+      wheel.rotation.order = "YXZ";
+      wheel.position.set(wx, 0.42, wz);
+
+      const tyre = new THREE.Mesh(this.wheelAsset.geometry, this.wheelAsset.material);
+      tyre.rotation.z = Math.PI / 2;
+      tyre.castShadow = true;
+      wheel.add(tyre);
+
+      const rim = new THREE.Mesh(parts.rim, parts.trim);
+      rim.rotation.z = Math.PI / 2;
+      wheel.add(rim);
+
+      group.add(wheel);
+      wheels.push(wheel);
+    }
+    // Front pair first, so the steering update does not have to search.
+    group.userData.wheels = wheels;
 
     // Drift sparks: shown only while charging, colour-coded by band so the
     // sweet spot is readable from the kart itself, not just the HUD.
@@ -725,6 +880,30 @@ export class MoonberryRacingRenderer {
         // modulo form escapes the +/-PI range and spins the kart.
         const delta = angleDelta(view.heading, rig.rotation.y);
         rig.rotation.y += delta * k;
+      }
+
+      /* Wheels roll with the distance actually covered, so they never spin
+         while the kart is stopped and never slide while it moves. Taking it
+         from the rig's own movement rather than a reported speed means remote
+         karts, which are damped toward their pose, stay consistent too. */
+      const wheels = rig.userData.wheels as THREE.Group[] | undefined;
+      if (wheels) {
+        const previous = rig.userData.prevPos as THREE.Vector3 | undefined;
+        const travelled = previous ? rig.position.distanceTo(previous) : 0;
+        if (previous) previous.copy(rig.position);
+        else rig.userData.prevPos = rig.position.clone();
+
+        // Rolling without slipping: one radius of travel is one radian.
+        const roll = travelled / WHEEL_RADIUS;
+        // lean is driftSide, or steer scaled — positive is a left turn, and a
+        // positive Y rotation aims the wheel at world +X, which is left.
+        const steer = Math.max(-1, Math.min(1, view.lean)) * 0.5;
+        for (let i = 0; i < wheels.length; i += 1) {
+          // Wrapped so a long race cannot grind the angle's precision away.
+          wheels[i].rotation.x = (wheels[i].rotation.x + roll) % (Math.PI * 2);
+          // The first two are the front pair; only they steer.
+          if (i < 2) wheels[i].rotation.y = steer;
+        }
       }
 
       const body = rig.getObjectByName("body");

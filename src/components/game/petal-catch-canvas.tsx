@@ -605,7 +605,8 @@ export function PetalCatchCanvas({
             coins,
             hearts,
           });
-          // TODO: Persist mini-game rewards to game_reward_events and wallets through Supabase.
+          // Persistence is the client's job: onReward -> useMiniGameSession.handleReward
+          // -> claimRun, which is the server-validated path. Nothing to do here.
         }
 
         private restartRound() {
