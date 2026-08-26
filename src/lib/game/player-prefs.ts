@@ -168,3 +168,23 @@ export function padSteer(dragPixels: number, span = TOUCH_STEER_SPAN) {
   // compared against zero, and a signed zero there is just a trap.
   return -clamped || 0;
 }
+
+export const TOUCH_STICK_SPAN = 64;
+
+/**
+ * Drag offset to a movement vector, for the twin-axis stick the platformer
+ * uses (the kart only ever needed one axis).
+ *
+ * Clamped to the unit DISC, not the unit square: normalising a diagonal keeps
+ * a thumb pushed corner-ways from travelling ~1.41x faster than one pushed
+ * straight, which is the classic way a touch stick outruns the keyboard.
+ * Screen down is +y, and the runner reads +z as away from camera, so y maps
+ * to z untouched.
+ */
+export function padVector(dragX: number, dragY: number, span = TOUCH_STICK_SPAN) {
+  const x = dragX / span;
+  const z = dragY / span;
+  const length = Math.hypot(x, z);
+  if (length <= 1) return { x: x || 0, z: z || 0 };
+  return { x: x / length || 0, z: z / length || 0 };
+}

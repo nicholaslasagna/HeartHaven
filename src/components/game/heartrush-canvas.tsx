@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import {
   heartRushSeatColor,
@@ -9,7 +9,14 @@ import {
   type HeartRushState,
 } from "@/lib/game/heartrush-shared";
 import { companionArtAsset } from "@/lib/game/companion-art";
-import { loadPrefs, QUALITY_SETTINGS } from "@/lib/game/player-prefs";
+import {
+  getPrefsSnapshot,
+  loadPrefs,
+  padVector,
+  QUALITY_SETTINGS,
+  subscribePrefs,
+  TOUCH_STICK_SPAN,
+} from "@/lib/game/player-prefs";
 import {
   HEARTRUSH_GRAVITY,
   HEARTRUSH_JUMP_VELOCITY,
@@ -856,6 +863,15 @@ export function HeartRushCanvas({
   const raceStartRef = useRef(raceStartAt);
   const callbacksRef = useRef({ onLocalState, onFinish, onProgress });
   const resetRef = useRef<(() => void) | null>(null);
+  /* Touch lives in a ref, not state: the pad updates it on every pointer move
+     and the loop reads it once a frame. Through state this would re-render the
+     component ~60 times a second to change nothing React draws. */
+  const touchRef = useRef<Input>({ x: 0, z: 0, jump: false, dive: false });
+  const showTouch = useSyncExternalStore(
+    subscribePrefs,
+    () => getPrefsSnapshot().touchControls,
+    () => false,
+  );
 
   useEffect(() => {
     raceStartRef.current = raceStartAt;
@@ -1056,17 +1072,32 @@ export function HeartRushCanvas({
       course.update(courseTime);
       effects.update(dt);
 
+      /* Keyboard and touch are summed, not switched between: a tester on a
+         laptop with a touchscreen can use either without one input killing
+         the other. The stick is already clamped to the unit disc, so the sum
+         only needs re-clamping when both are pushed the same way. */
+      const pad = touchRef.current;
+      const active: Input = pad.x || pad.z || pad.jump || pad.dive
+        ? {
+            x: clampAxis(input.x + pad.x),
+            z: clampAxis(input.z + pad.z),
+            jump: input.jump || pad.jump,
+            dive: input.dive || pad.dive,
+          }
+        : input;
+
       accumulator += dt;
       while (accumulator >= STEP) {
         accumulator -= STEP;
         if (running && !player.finished) {
-          player.step(STEP, input, course, effects);
+          player.step(STEP, active, course, effects);
         } else {
           // Idle bob on the start pad before the gun.
           player.step(STEP, { x: 0, z: 0, jump: false, dive: false }, course, effects);
         }
       }
       input.jump = false;
+      pad.jump = false;
 
       if (running && !player.finished) {
         for (const checkpoint of course.checkpoints) {
@@ -1152,5 +1183,113 @@ export function HeartRushCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companion, mySeatIndex, myName]);
 
-  return <div className="min-h-[360px] w-full overflow-hidden rounded-lg bg-sky-100" ref={mountRef} />;
+  return (
+    <div className="relative w-full">
+      <div className="min-h-[360px] w-full overflow-hidden rounded-lg bg-sky-100" ref={mountRef} />
+      {showTouch && (
+        <HeartRushTouchPad
+          onDive={(down) => { touchRef.current.dive = down; }}
+          onJump={() => { touchRef.current.jump = true; }}
+          onMove={(x, z) => {
+            touchRef.current.x = x;
+            touchRef.current.z = z;
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function clampAxis(value: number) {
+  return value < -1 ? -1 : value > 1 ? 1 : value || 0;
+}
+
+/** Twin-axis stick plus jump and dive, for the platformer on a phone. */
+function HeartRushTouchPad({
+  onMove,
+  onJump,
+  onDive,
+}: {
+  onMove: (x: number, z: number) => void;
+  onJump: () => void;
+  onDive: (down: boolean) => void;
+}) {
+  const stickRef = useRef<{ pointerId: number; originX: number; originY: number } | null>(null);
+  const [knob, setKnob] = useState({ x: 0, z: 0 });
+
+  const beginStick = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    // The stick centres wherever the thumb lands, so it never has to be found.
+    stickRef.current = { pointerId: event.pointerId, originX: event.clientX, originY: event.clientY };
+    onMove(0, 0);
+    setKnob({ x: 0, z: 0 });
+  };
+  const moveStick = (event: React.PointerEvent<HTMLDivElement>) => {
+    const active = stickRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const vector = padVector(event.clientX - active.originX, event.clientY - active.originY);
+    onMove(vector.x, vector.z);
+    setKnob(vector);
+  };
+  const endStick = (event: React.PointerEvent<HTMLDivElement>) => {
+    const active = stickRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    stickRef.current = null;
+    onMove(0, 0);
+    setKnob({ x: 0, z: 0 });
+  };
+
+  const buttonClass =
+    "pointer-events-auto select-none rounded-full border border-cream-50/40 bg-ink-900/60 " +
+    "px-4 py-3 text-[11px] font-black uppercase tracking-wide text-cream-50 " +
+    "min-w-[3.5rem] active:bg-cream-50/30";
+
+  return (
+    <div className="pointer-events-none absolute inset-0 touch-none select-none">
+      <div
+        aria-label="Movement stick"
+        className="pointer-events-auto absolute bottom-0 left-0 h-2/3 w-1/2"
+        onPointerCancel={endStick}
+        onPointerDown={beginStick}
+        onPointerMove={moveStick}
+        onPointerUp={endStick}
+        role="presentation"
+      >
+        <div className="absolute bottom-4 left-4 size-24 rounded-full border-2 border-cream-50/30 bg-ink-900/40">
+          <span
+            className="absolute left-1/2 top-1/2 size-9 rounded-full border-2 border-cream-50/70 bg-cream-50/30"
+            style={{
+              transform: `translate(-50%, -50%) translate(${knob.x * (TOUCH_STICK_SPAN / 2)}px, ${knob.z * (TOUCH_STICK_SPAN / 2)}px)`,
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="absolute bottom-4 right-4 flex items-end gap-2">
+        {/* Dive is a hold; up, cancel and leave all release it so a lost touch
+            can never weld the runner into a permanent dive. */}
+        <button
+          className={buttonClass}
+          onPointerCancel={() => onDive(false)}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            onDive(true);
+          }}
+          onPointerLeave={() => onDive(false)}
+          onPointerUp={() => onDive(false)}
+          type="button"
+        >
+          Dive
+        </button>
+        {/* Jump is an edge, matching the spacebar: the loop consumes it. */}
+        <button
+          className={`${buttonClass} bg-honey-400/80 text-ink-900`}
+          onPointerDown={onJump}
+          type="button"
+        >
+          Jump
+        </button>
+      </div>
+    </div>
+  );
 }

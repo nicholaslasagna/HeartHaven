@@ -74,5 +74,33 @@ assert.doesNotThrow(() => prefs.savePrefs({ ...prefs.getPrefsSnapshot(), quality
   "a blocked localStorage (private mode) must not throw");
 assert.doesNotThrow(() => prefs.loadPrefs(), "nor must reading it");
 
+/* -- twin-axis stick: diagonals must not outrun straight pushes -- */
+{
+  const span = prefs.TOUCH_STICK_SPAN;
+  const straight = prefs.padVector(span, 0);
+  assert.equal(straight.x, 1, "a full push right reads +1");
+  assert.equal(straight.z, 0, "and adds no forward component");
+
+  const diagonal = prefs.padVector(span, span);
+  const speed = Math.hypot(diagonal.x, diagonal.z);
+  assert.ok(Math.abs(speed - 1) < 1e-9, `a corner push stays on the unit disc, got ${speed}`);
+  assert.ok(diagonal.x > 0 && diagonal.z > 0, "and keeps both signs");
+
+  // Inside the disc the raw ratio survives: small pushes stay analogue.
+  const gentle = prefs.padVector(span / 2, 0);
+  assert.equal(gentle.x, 0.5, "half a span reads 0.5, not snapped to full tilt");
+
+  // Screen down is +y and the runner reads +z as away from camera.
+  assert.equal(prefs.padVector(0, span).z, 1, "dragging down pushes away from the camera");
+
+  const centred = prefs.padVector(0, 0);
+  assert.ok(Object.is(centred.x, 0) && Object.is(centred.z, 0), "a centred stick is exactly zero, not -0");
+
+  // Way past the edge still clamps, and stays a direction.
+  const overshoot = prefs.padVector(span * 9, span * -3);
+  assert.ok(Math.abs(Math.hypot(overshoot.x, overshoot.z) - 1) < 1e-9, "overshoot clamps to the rim");
+}
+results.push("stick     unit disc, so diagonals match straight pushes · analogue inside the rim · down = away · centre is +0");
+
 results.push("store     snapshot reference-stable · write notifies once · listeners see fresh values · junk coerced · private mode survives");
 console.log(`\nPlayer prefs: all checks passed\n${results.map((line) => `  ${line}`).join("\n")}\n`);
