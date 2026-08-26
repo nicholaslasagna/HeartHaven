@@ -6,6 +6,7 @@ import { LanternGame, type GameEvent } from "@/lib/game/lantern-leap/game";
 import { levelById } from "@/lib/game/lantern-leap/levels";
 import { LanternRenderer, type RenderCompanion, type RenderSnapshot } from "@/lib/game/lantern-leap/renderer";
 import type { PlayerInput } from "@/lib/game/lantern-leap/physics";
+import { loadPrefs, QUALITY_SETTINGS } from "@/lib/game/player-prefs";
 
 /**
  * Glue: owns the canvas, the input, and the frame loop. Rules live in
@@ -78,23 +79,26 @@ export function LanternLeapCanvas({
       return;
     }
 
+    /* Honour the player's quality tier, as the other three 3D games do. This
+       was pinned at 1.5x with shadows always on, so someone who dropped to
+       Low because their phone was struggling still paid full price here. */
+    const quality = QUALITY_SETTINGS[loadPrefs().quality];
+
     let disposed = false;
     let game: LanternGame;
     let view: LanternRenderer;
     try {
       const level = levelById(levelId);
       game = new LanternGame(level);
-      view = new LanternRenderer(level);
+      view = new LanternRenderer(level, quality.shadowMapSize);
     } catch (error) {
       onError?.(error instanceof Error ? error.message : "Lantern Leap could not build the level.");
       renderer.dispose();
       return;
     }
 
-    // Keep the browser GPU budget predictable on Retina/tablet screens. The
-    // game remains sharp while avoiding expensive 2x/3x render targets.
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    renderer.shadowMap.enabled = true;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.maxPixelRatio));
+    renderer.shadowMap.enabled = quality.shadows;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;

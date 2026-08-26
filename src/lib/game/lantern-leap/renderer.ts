@@ -497,7 +497,11 @@ export class LanternRenderer {
   /** Visible world height in tiles. Width follows the aspect ratio. */
   viewHeight = 15;
 
-  constructor(private readonly level: Level) {
+  constructor(
+    private readonly level: Level,
+    /** Shadow resolution from the player's quality tier. */
+    private readonly shadowMapSize = 1024,
+  ) {
     this.theme = THEMES[level.theme];
     this.camera = new THREE.OrthographicCamera(-16, 16, 9, -9, 0.1, 400);
     this.camera.position.set(0, 0, CAM_DISTANCE);
@@ -699,7 +703,7 @@ export class LanternRenderer {
     const key = new THREE.DirectionalLight(theme.key, theme.keyPower);
     key.position.set(-16, 26, 34);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.set(this.shadowMapSize, this.shadowMapSize);
     key.shadow.camera.near = 1;
     key.shadow.camera.far = 140;
     key.shadow.camera.left = -30;
