@@ -21,6 +21,9 @@ import {
   seedBowlingPlayback,
   startBowlingPlaybackMove,
 } from "../src/lib/game/moonberry-bowling/playback";
+import {
+  computeBowlingState, readSwipe, SWIPE_MIN_TRAVEL, type BowlingRoll,
+} from "../src/lib/game/bowling-scoring";
 
 // --- determinism: the whole multiplayer model rests on this ---
 const a = simulateThrow({ aim: 0.2, power: 0.7, spin: 0.5, seed: 42 });
@@ -187,6 +190,105 @@ assert.equal(playback.activeMoveKey, null);
 assert.equal(playback.queuedMoveKeys.has("6"), true);
 assert.equal(startBowlingPlaybackMove(playback, "6"), true, "returned roll can resume once");
 assert.equal(finishBowlingPlaybackMove(playback, "6"), true);
+
+/* --- scoring arithmetic against the canonical games ---
+   The suite exercised the physics and the playback queue but never the
+   scoring itself, which is where ten-pin implementations traditionally go
+   wrong: the tenth frame takes bonus balls that must count toward the frame
+   without opening an eleventh, and a strike's bonus is the NEXT TWO balls,
+   which for consecutive strikes live in later frames. */
+{
+  const rollsOf = (pins: number[]): BowlingRoll[] => pins.map((p) => ({ seat: 0, pins: p }));
+  const scoreOf = (pins: number[]) => computeBowlingState(rollsOf(pins), 1).players[0].total;
+  const nineFrames = Array(9).fill([9, 0]).flat(); // 81, no bonuses in play
+
+  const games: Array<[string, number[], number]> = [
+    ["a perfect game", Array(12).fill(10), 300],
+    ["all spares, 5/5 with a final 5", [...Array(10).fill([5, 5]).flat(), 5], 150],
+    ["all gutters", Array(20).fill(0), 0],
+    ["all nines, no spares", Array(10).fill([9, 0]).flat(), 90],
+    ["a lone strike then nothing", [10, ...Array(18).fill(0)], 10],
+    ["a lone spare then nothing", [5, 5, ...Array(18).fill(0)], 10],
+    ["strike carrying the next two balls", [10, 5, 4, ...Array(16).fill(0)], 28],
+    ["tenth-frame strike plus two bonus strikes", [...nineFrames, 10, 10, 10], 111],
+    ["tenth-frame spare plus a bonus strike", [...nineFrames, 5, 5, 10], 101],
+    ["tenth frame left open", [...nineFrames, 4, 3], 88],
+  ];
+
+  for (const [name, pins, expected] of games) {
+    const got = scoreOf(pins);
+    assert.equal(got, expected, `${name} must score ${expected}, got ${got}`);
+    assert.equal(computeBowlingState(rollsOf(pins), 1).gameOver, true, `${name} must end the game`);
+  }
+
+  // An unfinished game must not claim to be over, and must not over-score.
+  const partial = computeBowlingState(rollsOf([10, 10, 10]), 1);
+  assert.equal(partial.gameOver, false, "three strikes is not a finished game");
+  assert.ok(partial.players[0].total <= 300, "a running total can never exceed 300");
+
+  // No sequence of legal rolls may exceed a perfect game. Seeded rather
+  // than random, so a failure here is reproducible.
+  let lcg = 20260827;
+  const nextRandom = () => {
+    lcg = (Math.imul(lcg, 1664525) + 1013904223) >>> 0;
+    return lcg / 4294967296;
+  };
+  for (let trial = 0; trial < 300; trial += 1) {
+    const pins: number[] = [];
+    let standing = 10;
+    for (let ball = 0; ball < 21; ball += 1) {
+      const knocked = Math.floor(nextRandom() * (standing + 1));
+      pins.push(knocked);
+      standing = knocked >= standing ? 10 : standing - knocked;
+    }
+    const t = computeBowlingState(rollsOf(pins), 1).players[0].total;
+    assert.ok(t >= 0 && t <= 300, `a legal game scored ${t}, outside 0..300`);
+  }
+}
+
+/* --- swipe controls ---
+   The throw is a flick, so the reading must not depend on how finely the
+   browser happened to sample it. Browsers coalesce pointermove events under
+   load, and a hard flick can arrive as a single move. */
+{
+  const W = 400, H = 800;
+  const flickPower = (moves: Array<{ x: number; y: number; t: number }>) =>
+    readSwipe({ x: 200, y: 700, t: 0 }, moves, W, H)?.power ?? null;
+
+  // One physical flick — 500px up in 45ms — sampled three different ways.
+  const dense = flickPower(Array.from({ length: 9 }, (_, i) => ({ x: 200, y: 700 - (i + 1) * 55, t: (i + 1) * 5 })));
+  const two = flickPower([{ x: 200, y: 450, t: 22 }, { x: 200, y: 200, t: 45 }]);
+  const coalesced = flickPower([{ x: 200, y: 200, t: 45 }]);
+  assert.ok(dense !== null && two !== null && coalesced !== null, "a 500px flick must register as a throw");
+  assert.ok(
+    Math.abs((dense as number) - (coalesced as number)) < 0.35,
+    `sampling density must not change the throw: dense=${dense} coalesced=${coalesced}`,
+  );
+  assert.ok((coalesced as number) > 0.5, `a hard flick delivered as one coalesced move must not read as a weak throw (${coalesced})`);
+  assert.ok(Math.abs((dense as number) - (two as number)) < 0.35, "two samples must agree with nine");
+
+  // A tap, or a nudge shorter than the minimum travel, is not a throw.
+  assert.equal(readSwipe({ x: 200, y: 700, t: 0 }, [], W, H), null, "no movement is not a throw");
+  const nudge = Math.floor(H * SWIPE_MIN_TRAVEL * 0.5);
+  assert.equal(readSwipe({ x: 200, y: 700, t: 0 }, [{ x: 200, y: 700 - nudge, t: 40 }], W, H), null,
+    "a nudge under the travel minimum is not a throw");
+
+  // A slow push must not read as a hard throw.
+  const slow = flickPower([{ x: 200, y: 200, t: 1400 }]);
+  assert.ok(slow !== null && slow < 0.5, `a slow push should be gentle, got ${slow}`);
+
+  // Aim follows the sideways component, and stays in range.
+  const left = readSwipe({ x: 200, y: 700, t: 0 }, [{ x: 120, y: 200, t: 45 }], W, H);
+  const right = readSwipe({ x: 200, y: 700, t: 0 }, [{ x: 280, y: 200, t: 45 }], W, H);
+  assert.ok(left && right, "angled flicks still throw");
+  assert.ok((left as { aim: number }).aim < 0, "drifting left aims left");
+  assert.ok((right as { aim: number }).aim > 0, "drifting right aims right");
+  const wild = readSwipe({ x: 200, y: 700, t: 0 }, [{ x: 100000, y: 200, t: 45 }], W, H);
+  assert.ok(wild && (wild as { aim: number }).aim <= 1, "aim is clamped to the lane");
+
+  // A zero-sized surface must not divide by zero.
+  assert.equal(readSwipe({ x: 0, y: 0, t: 0 }, [{ x: 0, y: -10, t: 10 }], 0, 0), null, "a zero-sized surface yields no throw");
+}
 
 console.log("moonberry bowling OK", {
   match: seats.join(" "),

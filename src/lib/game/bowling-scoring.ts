@@ -537,8 +537,16 @@ export function readSwipe(start: SwipeSample, tail: SwipeSample[], width: number
   const travel = (start.y - last.y) / height;
   if (travel < SWIPE_MIN_TRAVEL) return null;
 
+  /* Measure velocity over the tail of the swipe, but never over a window
+     that has collapsed to a single point. Browsers coalesce pointermove
+     events, so a hard fast flick can arrive as ONE move: `find` then returns
+     `last` itself, the elapsed distance is zero, and the fiercest throw in
+     the game reads as power 0 and trundles down the lane. Falling back to
+     the swipe's start measures the whole gesture instead — less precise than
+     a proper tail, but the right order of magnitude rather than nothing. */
   const cutoff = last.t - SWIPE_VELOCITY_WINDOW_MS;
-  const from = tail.find((sample) => sample.t >= cutoff) ?? start;
+  const windowStart = tail.find((sample) => sample.t >= cutoff);
+  const from = !windowStart || windowStart.t >= last.t ? start : windowStart;
   const seconds = Math.max(0.016, (last.t - from.t) / 1000);
   const speed = ((from.y - last.y) / height) / seconds;
 
