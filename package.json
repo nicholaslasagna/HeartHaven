@@ -18,11 +18,12 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "check:lantern-leap": "esbuild checks/lantern-leap.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-ll.mjs --log-level=error && node node_modules/.cache/check-ll.mjs",
     "check:haven-trails": "esbuild checks/haven-trails-map.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-trails.mjs --log-level=error && node node_modules/.cache/check-trails.mjs",
-    "check": "npm run check:lantern-leap && npm run check:moonberry-bowling && npm run check:moonberry-racing && npm run check:heartrush && npm run check:haven-trails && npm run check:player-prefs",
+    "check": "npm run check:lantern-leap && npm run check:moonberry-bowling && npm run check:moonberry-racing && npm run check:heartrush && npm run check:pool && npm run check:haven-trails && npm run check:player-prefs",
     "check:moonberry-bowling": "esbuild checks/moonberry-bowling.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mb.mjs --log-level=error && node node_modules/.cache/check-mb.mjs",
     "check:moonberry-racing": "esbuild checks/moonberry-racing.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mr.mjs --log-level=error && node node_modules/.cache/check-mr.mjs",
     "check:player-prefs": "esbuild checks/player-prefs.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-pp.mjs --log-level=error && node node_modules/.cache/check-pp.mjs",
-    "check:heartrush": "esbuild checks/heartrush.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-hr.mjs --log-level=error && node node_modules/.cache/check-hr.mjs"
+    "check:heartrush": "esbuild checks/heartrush.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-hr.mjs --log-level=error && node node_modules/.cache/check-hr.mjs",
+    "check:pool": "esbuild checks/pool.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-pool.mjs --log-level=error && node node_modules/.cache/check-pool.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",

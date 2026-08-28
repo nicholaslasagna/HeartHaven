@@ -232,8 +232,19 @@ export function parsePoolSessionMetadata(value: unknown, playerCount = 2): PoolS
   const parsedBalls = rawBalls
     .map((ball) => parsePoolBall(ball, fallbackById.get(String((ball as Record<string, unknown> | null)?.id ?? ""))))
     .filter((ball): ball is PoolBall => Boolean(ball));
-  const ballsById = new Map(parsedBalls.map((ball) => [ball.id, ball]));
-  const balls = fallback.balls.map((ball) => ballsById.get(ball.id) ?? { ...ball });
+  /* Trust the server's list when it is usable, rather than rebuilding from
+     the local rack and merging by id. The old form always returned the
+     CLIENT's rack, so when the server racked a different number of balls the
+     client quietly invented the difference and the two never converged —
+     which is exactly how the server and client drifted to 10 balls versus 16
+     without anyone noticing. Keeping the server's own list means a mismatch
+     shows up immediately instead of hiding.
+
+     A payload with no cue ball is unusable (getCueBall would find nothing),
+     so that still falls back to a full local rack. */
+  const balls = parsedBalls.some((ball) => ball.kind === "cue")
+    ? parsedBalls
+    : fallback.balls.map((ball) => ({ ...ball }));
   const rawScores = Array.isArray(source.scores) ? source.scores : null;
   const scores = rawScores
     ? Array.from({ length: Math.max(1, playerCount) }, (_, index) => Math.max(0, Math.floor(Number(rawScores[index] ?? 0))))
