@@ -470,6 +470,14 @@ export function PoolCanvas({
     if (!isMultiplayer) resetRound();
   }, [isMultiplayer, roundKey, resetRound]);
 
+  /* A fresh round restarts shot numbering. Without clearing this, a rematch
+     would treat its first shots as ones already rolled live and the opponent
+     would see the balls teleport instead of roll. resetRound bails early in
+     multiplayer, so this cannot live there. */
+  useEffect(() => {
+    liveShotsSeenRef.current = new Set();
+  }, [roundKey]);
+
   /* Snap the table to the server's copy. Every sync path ends here, which is
      what lets the replay below trust its own starting positions. */
   const applySessionState = useCallback(
