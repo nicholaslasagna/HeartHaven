@@ -225,7 +225,11 @@ export function planHeartRushCourse(seed: number, level: number): CoursePlan {
   const deckY = 0.25 + (steps - 1) * 0.29;
   plan.pads.push({ x: 0, y: deckY, z: z - 6, width: 14, depth: 12, color: 0xc8ffd8 });
   plan.gateZ = z - 4;
-  plan.finishZ = z - 2;
+  /* The run ends when the player crosses the GATE plane, not two units in
+     front of it. `finishZ = z - 2` sat nearer the start than `gateZ`, and
+     the player travels toward -Z, so the run completed while they were
+     still short of the arch and they never passed through it. */
+  plan.finishZ = plan.gateZ;
 
   return plan;
 }
