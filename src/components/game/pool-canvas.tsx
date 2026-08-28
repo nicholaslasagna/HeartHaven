@@ -74,6 +74,14 @@ export type PoolSubmittedShot = {
   summary: PoolShotSummary;
 };
 
+/** A shot as it leaves the cue, before anyone knows where it ends up. */
+export type PoolLiveShot = {
+  seat: number;
+  shotNumber: number;
+  angle: number;
+  power: number;
+};
+
 type PoolCanvasProps = {
   roundKey: number;
   mode?: "solo" | "multiplayer";
@@ -82,6 +90,11 @@ type PoolCanvasProps = {
   currentPlayerName?: string;
   submittingShot?: boolean;
   onSubmitShot?: (shot: PoolSubmittedShot) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** Fired the instant the cue is struck, so the table rolls on both screens
+      at once instead of the opponent waiting out the whole shot twice. */
+  onShotStarted?: (shot: PoolLiveShot) => void;
+  /** Register for the opponent's live shots. Returns an unsubscribe. */
+  subscribeLiveShot?: (handler: (shot: PoolLiveShot) => void) => () => void;
   onRoundStart?: () => void;
   onGameOver?: (result: { score: number; shotsTaken: number; cleared: boolean }) => void;
 };
@@ -391,6 +404,8 @@ export function PoolCanvas({
   currentPlayerName = "partner",
   submittingShot = false,
   onSubmitShot,
+  onShotStarted,
+  subscribeLiveShot,
   onGameOver,
   onRoundStart,
 }: PoolCanvasProps) {
@@ -409,6 +424,10 @@ export function PoolCanvas({
   const pendingSyncRef = useRef<PoolSessionMetadata | null>(null);
   const lastSyncedShotNumberRef = useRef<number | null>(null);
   const replayStepsRef = useRef(0);
+  /* Shot numbers already rolled from a live broadcast. The persisted state
+     arrives afterwards carrying the same shot; without this it would replay
+     a second time. */
+  const liveShotsSeenRef = useRef<Set<number>>(new Set());
   const physicsCarryRef = useRef(0);
   const [hud, setHud] = useState<HudState>(INITIAL_HUD);
   const hudRef = useRef<HudState>(INITIAL_HUD);
@@ -505,6 +524,8 @@ export function PoolCanvas({
       pendingSyncRef.current === null &&
       previousShotNumber !== null &&
       sessionState.shotNumber === previousShotNumber + 1 &&
+      // Already rolled live as it was struck; snap quietly instead.
+      !liveShotsSeenRef.current.has(sessionState.shotNumber) &&
       mySeatIndex !== null &&
       shot.seat !== mySeatIndex &&
       Number.isFinite(shot.angle) &&
@@ -531,6 +552,44 @@ export function PoolCanvas({
 
     applySessionState(sessionState);
   }, [applySessionState, canonicalKey, commitHud, currentPlayerName, isMultiplayer, mySeatIndex, sessionState]);
+
+  /* The opponent's shot, as it happens. This is the same replay the
+     persisted state would have triggered, just started when the cue is
+     struck rather than after their table settled AND the result round
+     tripped through the database. Both screens hold the same pre-shot table
+     and the simulation is deterministic, so the two roll in step.
+
+     The authoritative state still arrives afterwards and still wins: the
+     watching phase holds until it lands, then snaps. A dropped broadcast
+     costs nothing — the persisted path replays it as before. */
+  useEffect(() => {
+    if (!isMultiplayer || !subscribeLiveShot || mySeatIndex === null) return;
+    return subscribeLiveShot((shot) => {
+      if (shot.seat === mySeatIndex) return;
+      if (!Number.isFinite(shot.angle) || !Number.isFinite(shot.power) || shot.power <= 0) return;
+      // A replay already rolling, or my own turn resolving: let the
+      // authoritative state sort it out rather than launching over the top.
+      if (hudRef.current.phase === "watching" || hudRef.current.phase === "resolving") return;
+      if (pendingSyncRef.current !== null) return;
+      if (liveShotsSeenRef.current.has(shot.shotNumber)) return;
+      if (getCueBall(ballsRef.current).potted) return;
+
+      liveShotsSeenRef.current.add(shot.shotNumber);
+      pottedThisShotRef.current = new Set();
+      scratchedThisShotRef.current = false;
+      settleFramesRef.current = 0;
+      replayStepsRef.current = 0;
+      physicsCarryRef.current = 0;
+      dragRef.current = EMPTY_DRAG;
+      activeShotRef.current = null;
+      launchCueBall(ballsRef.current, { x: Math.cos(shot.angle), y: Math.sin(shot.angle) }, shot.power);
+      commitHud({
+        ...hudRef.current,
+        phase: "watching",
+        message: `${currentPlayerName} is shooting…`,
+      });
+    });
+  }, [commitHud, currentPlayerName, isMultiplayer, mySeatIndex, subscribeLiveShot]);
 
   const addSparkle = useCallback((x: number, y: number, color: string, label?: string) => {
     sparkleIdRef.current += 1;
@@ -816,10 +875,24 @@ export function PoolCanvas({
       pottedThisShotRef.current = new Set();
       scratchedThisShotRef.current = false;
       settleFramesRef.current = 0;
-      activeShotRef.current = {
-        angle: Math.atan2(shot.direction.y, shot.direction.x),
-        power: shot.power,
-      };
+      const angle = Math.atan2(shot.direction.y, shot.direction.x);
+      activeShotRef.current = { angle, power: shot.power };
+
+      /* Tell the other table NOW, as the cue strikes — not once the balls
+         have settled and the result has been written. The simulation is
+         deterministic and both screens hold the same pre-shot table, so
+         broadcasting the aim and power is enough for the shot to roll on
+         both at the same moment. Waiting for the settle plus the write made
+         the opponent sit through the shot twice over. */
+      if (isMultiplayer && mySeatIndex !== null && onShotStarted) {
+        onShotStarted({
+          seat: mySeatIndex,
+          shotNumber: (sessionState?.shotNumber ?? hudRef.current.shotsTaken) + 1,
+          angle,
+          power: shot.power,
+        });
+      }
+
       launchCueBall(ballsRef.current, shot.direction, shot.power);
       commitHud({
         ...hudRef.current,
@@ -828,7 +901,7 @@ export function PoolCanvas({
         lastShot: `Power ${Math.round(shot.power * 100)}%`,
       });
     },
-    [cancelDrag, commitHud],
+    [cancelDrag, commitHud, isMultiplayer, mySeatIndex, onShotStarted, sessionState?.shotNumber],
   );
 
   const onPointerCancel = useCallback(

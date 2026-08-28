@@ -5,9 +5,10 @@ import { CircleDot, Gift, Sparkles, Trophy, UsersRound } from "lucide-react";
 import { CompanionCameo } from "@/components/game/companion-cameo";
 import { GameHubButton } from "@/components/game/game-hub-button";
 import { PoolCanvasLoader } from "@/components/game/pool-canvas-loader";
-import type { PoolSubmittedShot } from "@/components/game/pool-canvas";
+import type { PoolLiveShot, PoolSubmittedShot } from "@/components/game/pool-canvas";
 import { RewardWalletPanel } from "@/components/game/reward-wallet-panel";
 import { Button } from "@/components/ui/button";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { useGameRewardRun } from "@/lib/game/use-game-reward-run";
@@ -112,6 +113,43 @@ export function PoolClient() {
     });
     void startRun();
   }, [isMultiplayer, session.sessionId, startRun]);
+
+  /* -- realtime: the shot as it is struck, never persisted --
+     The authoritative result still goes through submit_pool_shot once the
+     balls settle. This is purely so the other table starts rolling at the
+     same moment rather than waiting out the shot, then the write, then
+     rolling it again — which made every turn feel twice as long as it was. */
+  const liveChannelRef = useRef<RealtimeChannel | null>(null);
+  const liveShotHandlersRef = useRef(new Set<(shot: PoolLiveShot) => void>());
+
+  useEffect(() => {
+    if (!isMultiplayer || !session.sessionId || !isSupabaseConfigured()) return;
+    const supabase = getSupabaseBrowserClient();
+    // One colon only: extra colons are parsed as a postgres_changes filter
+    // and the channel silently never connects.
+    const channel = supabase
+      .channel(`pool.${session.sessionId}`, { config: { broadcast: { self: false } } })
+      .on("broadcast", { event: "shot" }, ({ payload }) => {
+        const shot = payload as PoolLiveShot;
+        if (typeof shot?.seat !== "number" || typeof shot?.angle !== "number") return;
+        for (const handler of liveShotHandlersRef.current) handler(shot);
+      })
+      .subscribe();
+    liveChannelRef.current = channel;
+    return () => {
+      liveChannelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [isMultiplayer, session.sessionId]);
+
+  const onShotStarted = useCallback((shot: PoolLiveShot) => {
+    liveChannelRef.current?.send({ type: "broadcast", event: "shot", payload: shot });
+  }, []);
+
+  const subscribeLiveShot = useCallback((handler: (shot: PoolLiveShot) => void) => {
+    liveShotHandlersRef.current.add(handler);
+    return () => { liveShotHandlersRef.current.delete(handler); };
+  }, []);
 
   const handleGameOver = useCallback((nextResult: PoolResult) => {
     setSoloResult(nextResult);
@@ -251,10 +289,12 @@ export function PoolClient() {
         mySeatIndex={mySeatIndex}
         onGameOver={handleGameOver}
         onRoundStart={handleRoundStart}
+        onShotStarted={onShotStarted}
         onSubmitShot={submitSharedShot}
         roundKey={roundKey}
         sessionState={isMultiplayer ? poolState : null}
         submittingShot={submittingShot}
+        subscribeLiveShot={subscribeLiveShot}
       />
 
       <section className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">

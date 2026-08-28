@@ -21,6 +21,11 @@ export type MemoryMatchState = {
   finalScore: number | null;
   winnerSeats: number[];
   lastResult: "match" | "miss" | null;
+  /* The two cards the last turn actually turned over. The server clears
+     `revealed` the moment it resolves a pair, so without this the other
+     player never sees the second card — they watch one card go up and then
+     vanish, which removes the only thing memory match is about. */
+  lastPair: number[];
 };
 
 function readIntArray(value: unknown): number[] {
@@ -50,6 +55,7 @@ export function parseMemoryMatchState(
     board,
     matched: readIntArray(metadata.matched),
     revealed: readIntArray(metadata.revealed),
+    lastPair: readIntArray(metadata.lastPair).slice(0, 2),
     currentTurnSeat: Number(metadata.currentTurnSeat ?? 0),
     turnOrder: readIntArray(metadata.turnOrder),
     scores: readIntArray(metadata.scores),

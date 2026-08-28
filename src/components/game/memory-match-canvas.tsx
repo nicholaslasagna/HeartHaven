@@ -45,6 +45,10 @@ type MatchCard = {
 };
 
 const GAME_WIDTH = 920;
+/** Six columns of twelve pairs: 24 cards in four rows. */
+const MEMORY_MATCH_COLUMNS = 6;
+const CARD_WIDTH = 118;
+const CARD_HEIGHT = 84;
 const GAME_HEIGHT = 600;
 
 export function MemoryMatchCanvas({
@@ -156,17 +160,27 @@ export function MemoryMatchCanvas({
           const prevMoves = this.lastSyncedMoves;
           const missResolve = prevMoves >= 0 && state.moves > prevMoves && state.lastResult === "miss";
 
+          /* On a miss the server has already emptied `revealed`, so the only
+             record of what was turned over is `lastPair`. Showing it is what
+             lets the other player actually see the second card instead of
+             watching the first one vanish on its own. */
+          const holdPair = missResolve ? state.lastPair : [];
+
           for (const card of this.cards) {
             const matched = state.matched.includes(card.index);
-            const revealed = matched || state.revealed.includes(card.index);
+            const shown = state.revealed.includes(card.index) || holdPair.includes(card.index);
+            const revealed = matched || shown;
             card.matched = matched;
-            if (!missResolve || matched || state.revealed.includes(card.index)) {
+            if (!missResolve || matched || shown) {
               this.revealCard(card, revealed, false);
             }
           }
 
           if (missResolve) {
-            this.time.delayedCall(720, () => {
+            /* Long enough to read and remember two cards. The pair is the
+               only information the watching player gets all turn, so this is
+               the one wait in the game worth keeping. */
+            this.time.delayedCall(1150, () => {
               for (const card of this.cards) {
                 if (!card.matched) this.revealCard(card, false, false);
               }
@@ -201,15 +215,19 @@ export function MemoryMatchCanvas({
         }
 
         private createCards(board: MemoryMatchPairId[]) {
-          const startX = 178;
-          const startY = 160;
-          const gapX = 188;
-          const gapY = 102;
+          /* Six across rather than four: the table grew from eight pairs to
+             twelve, and four columns would have needed six rows, which does
+             not fit the 600px stage. Centred from the column count so the
+             grid stays balanced if the deck changes again. */
+          const gapX = 140;
+          const gapY = 100;
+          const startX = (GAME_WIDTH - (MEMORY_MATCH_COLUMNS - 1) * gapX) / 2;
+          const startY = 158;
 
           board.forEach((pair, index) => {
             const data = MEMORY_MATCH_PAIR_DATA[pair];
-            const x = startX + (index % 4) * gapX;
-            const y = startY + Math.floor(index / 4) * gapY;
+            const x = startX + (index % MEMORY_MATCH_COLUMNS) * gapX;
+            const y = startY + Math.floor(index / MEMORY_MATCH_COLUMNS) * gapY;
             const card = this.createCard(index, pair, data.label, data.color, x, y);
             this.cards.push(card);
           });
@@ -310,10 +328,10 @@ export function MemoryMatchCanvas({
           y: number,
         ): MatchCard {
           const container = this.add.container(x, y).setDepth(y);
-          const shadow = this.add.rectangle(5, 9, 128, 88, 0x3a2a2a, 0.12);
-          const back = this.add.rectangle(0, 0, 128, 88, 0xfbe3e3).setStrokeStyle(3, 0xd87e8c, 0.55);
-          const front = this.add.rectangle(0, 0, 128, 88, color).setStrokeStyle(3, 0x8b5e3c, 0.28);
-          const frontGlow = this.add.rectangle(0, 0, 106, 66, 0xffffff, 0.22);
+          const shadow = this.add.rectangle(4, 8, CARD_WIDTH, CARD_HEIGHT, 0x3a2a2a, 0.12);
+          const back = this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, 0xfbe3e3).setStrokeStyle(3, 0xd87e8c, 0.55);
+          const front = this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, color).setStrokeStyle(3, 0x8b5e3c, 0.28);
+          const frontGlow = this.add.rectangle(0, 0, CARD_WIDTH - 22, CARD_HEIGHT - 22, 0xffffff, 0.22);
           const art = this.createCardArt(pair);
           const text = this.add.text(0, 30, label, {
             align: "center",
@@ -404,20 +422,12 @@ export function MemoryMatchCanvas({
         }
 
         private createCardArt(pair: MemoryMatchPairId) {
-          if (pair === "casper") {
-            return this.add.image(0, -12, "casper-sprite").setDisplaySize(56, 56);
+          // Art comes from the deck, so a pair cannot exist without its own
+          // picture and quietly render as a duplicate of another card.
+          const art = MEMORY_MATCH_PAIR_DATA[pair].art;
+          if (art.texture === "casper-sprite") {
+            return this.add.image(0, art.y, "casper-sprite").setDisplaySize(art.width, art.height);
           }
-
-          const mapping: Record<string, { texture: string; frame: number; width: number; height: number; y: number }> = {
-            heart: { texture: "minigame-props", frame: 3, width: 68, height: 86, y: -12 },
-            petal: { texture: "minigame-props", frame: 4, width: 68, height: 86, y: -12 },
-            lantern: { texture: "minigame-props", frame: 6, width: 74, height: 92, y: -14 },
-            tree: { texture: "cozy-furniture-sprites", frame: 7, width: 86, height: 92, y: -14 },
-            moon: { texture: "cozy-furniture-sprites", frame: 4, width: 82, height: 92, y: -14 },
-            note: { texture: "cozy-furniture-sprites", frame: 6, width: 80, height: 86, y: -14 },
-            garden: { texture: "minigame-props", frame: 7, width: 78, height: 90, y: -14 },
-          };
-          const art = mapping[pair] ?? mapping.heart;
           return this.add.image(0, art.y, art.texture, art.frame).setDisplaySize(art.width, art.height);
         }
 
