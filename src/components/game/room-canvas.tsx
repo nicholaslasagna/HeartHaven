@@ -37,6 +37,7 @@ import {
   type PetSpeciesId,
   type PetToneId,
 } from "@/lib/game/avatar-customization";
+import { remoteGlideMs } from "@/lib/game/remote-interpolation";
 import { playCozyCue, setHeroicCompanionTheme } from "@/lib/game/cozy-audio";
 import type { GardenChatMessage } from "@/lib/game/chat-moderation";
 import {
@@ -175,6 +176,12 @@ type RemoteAvatarObject = {
   /** Whose body the remote keeper is currently driving. */
   controlMode: "keeper" | "companion";
   movingUntil: number;
+  /* The pet moves independently when its owner takes direct control — room
+     movement updates petX/petY without moving the keeper — so it cannot
+     share the keeper's movement flag or its glide timing. */
+  petMovingUntil: number;
+  /** When the last position update was applied, for pacing the glide. */
+  lastSyncAt: number;
   walkAnimation: KeeperAnimationId;
 };
 
@@ -490,8 +497,10 @@ export function RoomCanvas({
           this.updateAvatar(delta);
           this.updatePet(delta);
           this.updateRemoteAvatarAnimation();
+          /* Positions are sent every 110ms; polling at 250ms applied them
+             unevenly. The refresh returns immediately when nothing changed. */
           this.remotePlayersRefreshTimer += delta;
-          if (this.remotePlayersRefreshTimer > 250) {
+          if (this.remotePlayersRefreshTimer > 60) {
             this.remotePlayersRefreshTimer = 0;
             this.refreshRemotePlayersFromReact();
           }
@@ -1639,6 +1648,7 @@ export function RoomCanvas({
         private updateRemoteAvatarAnimation() {
           this.remoteAvatars.forEach((remote) => {
             const moving = this.time.now < remote.movingUntil;
+            const petMoving = this.time.now < remote.petMovingUntil;
             const facingLeft = remote.facing === "left";
             const petFacingLeft = remote.petFacing === "left";
             this.setRemoteKeeperFlip(remote, facingLeft);
@@ -1652,8 +1662,8 @@ export function RoomCanvas({
                 remote.shadow.setScale(1, 1);
               }
               remote.petSprite
-                .setFrame(petFrame(remote.petSpeciesId, moving ? petGaitPose(this.time.now + 90) : "idle"))
-                .setY(-46 - Math.abs(petWave) * (moving ? 5 : 3))
+                .setFrame(petFrame(remote.petSpeciesId, petMoving ? petGaitPose(this.time.now + 90) : "idle"))
+                .setY(-46 - Math.abs(petWave) * (petMoving ? 5 : 3))
                 .setRotation(petWave * 0.04 * (petFacingLeft ? -1 : 1));
               remote.petShadow.setScale(0.84 + Math.abs(petWave) * 0.1, 0.72);
               if (!moving) {
@@ -1665,27 +1675,28 @@ export function RoomCanvas({
               return;
             }
 
-            if (!moving) {
-              this.setRemoteKeeperAnimation(remote, "idle", 520);
-              this.setRemoteKeeperMotion(remote, -66, 0);
+            /* Posed independently. The keeper being still used to return
+               early and pin the pet to its idle frame, so a companion its
+               owner was walking slid across the room without a gait. */
+            const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+
+            this.setRemoteKeeperAnimation(remote, moving ? remote.walkAnimation : "idle", moving ? 105 : 520);
+            this.setRemoteKeeperMotion(remote, -66, 0);
+            remote.shadow.setScale(1, 1);
+
+            if (petMoving) {
+              remote.petSprite
+                .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
+                .setY(-36 - Math.abs(petWave) * 2.2)
+                .setRotation(petWave * 0.03 * (petFacingLeft ? -1 : 1));
+              remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
+            } else {
               remote.petSprite
                 .setFrame(petFrame(remote.petSpeciesId, "idle"))
                 .setY(-36)
                 .setRotation(0);
-              remote.shadow.setScale(1, 1);
               remote.petShadow.setScale(1, 1);
-              return;
             }
-
-            const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
-            this.setRemoteKeeperAnimation(remote, remote.walkAnimation, 105);
-            this.setRemoteKeeperMotion(remote, -66, 0);
-            remote.petSprite
-              .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
-              .setY(-36 - Math.abs(petWave) * 2.2)
-              .setRotation(petWave * 0.03 * (petFacingLeft ? -1 : 1));
-            remote.shadow.setScale(1, 1);
-            remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
           });
         }
 
@@ -1831,13 +1842,26 @@ export function RoomCanvas({
               if (Math.abs(dx) > 2) facingLeft = dx < 0;
               existing.facing = facingLeft ? "left" : "right";
               existing.walkAnimation = keeperWalkAnimationFromDelta(dx, dy, existing.facing);
-              existing.movingUntil = distance > 2 ? this.time.now + 280 : this.time.now;
               // Honor broadcast pet position when present — companion-mode
               // movement only updates `petX`/`petY`, not the keeper's
               // coords. Fall back to the auto-trailing offset for clients
               // that don't broadcast pet position.
               const petX = typeof player.petX === "number" ? player.petX : player.x + (facingLeft ? 54 : -54);
               const petY = typeof player.petY === "number" ? player.petY : player.y + 14;
+              const petDistance = PhaserModule.Math.Distance.Between(
+                existing.petContainer.x,
+                existing.petContainer.y,
+                petX,
+                petY,
+              );
+              /* Glide for as long as updates actually take to arrive. Timing
+                 the pet from the KEEPER's distance meant a companion its
+                 owner was walking got the short "barely moved" tween and
+                 froze between packets. */
+              const glide = remoteGlideMs(existing.lastSyncAt > 0 ? this.time.now - existing.lastSyncAt : null);
+              existing.lastSyncAt = this.time.now;
+              existing.movingUntil = distance > 2 ? this.time.now + glide + 120 : this.time.now;
+              existing.petMovingUntil = petDistance > 2 ? this.time.now + glide + 120 : this.time.now;
               existing.petFacing = (player.petFacing ?? player.facing) as FacingDirection;
               existing.controlMode = player.controlMode ?? "keeper";
               const changed =
@@ -1874,20 +1898,20 @@ export function RoomCanvas({
                 targets: existing.container,
                 x: player.x,
                 y: player.y,
-                duration: distance > 2 ? 190 : 80,
+                duration: distance > 2 ? glide : 80,
                 ease: "Sine.out",
                 onComplete: () => existing.container.setDepth(player.y),
               });
-              this.tweens.add({ targets: existing.shadow, x: player.x, y: player.y + 20, duration: distance > 2 ? 190 : 80, ease: "Sine.out" });
+              this.tweens.add({ targets: existing.shadow, x: player.x, y: player.y + 20, duration: distance > 2 ? glide : 80, ease: "Sine.out" });
               this.tweens.add({
                 targets: existing.petContainer,
                 x: petX,
                 y: petY,
-                duration: distance > 2 ? 230 : 100,
+                duration: petDistance > 2 ? glide : 80,
                 ease: "Sine.out",
                 onComplete: () => existing.petContainer.setDepth(petY - 1),
               });
-              this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: distance > 2 ? 230 : 100, ease: "Sine.out" });
+              this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: petDistance > 2 ? glide : 80, ease: "Sine.out" });
               return;
             }
 
@@ -1972,6 +1996,8 @@ export function RoomCanvas({
               petFacing: remotePetFacing,
               controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
+              petMovingUntil: 0,
+              lastSyncAt: 0,
               walkAnimation: facingLeft ? "walkLeft" : "walkRight",
             };
             this.remoteAvatars.set(player.id, remoteAvatar);

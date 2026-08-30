@@ -54,6 +54,7 @@ import {
   type DigSpot,
 } from "@/lib/game/garden-abilities";
 import { PLOT_STATUS_DAMP_PREFIX } from "@/lib/game/garden-plots";
+import { remoteGlideMs } from "@/lib/game/remote-interpolation";
 import { readAchievementState } from "@/lib/game/achievements";
 import {
   isAbilityUnlocked,
@@ -187,6 +188,12 @@ type RemoteGardenAvatarObject = {
    *  glance who's actually being controlled. */
   controlMode: "keeper" | "companion";
   movingUntil: number;
+  /* The pet moves on its own when its owner takes direct control, so it
+     cannot share the keeper's movement flag — doing so drew a walking pet in
+     its idle frame and timed its glide from how far the KEEPER had moved. */
+  petMovingUntil: number;
+  /** When the last position update was applied, for pacing the glide. */
+  lastSyncAt: number;
   walkAnimation: KeeperAnimationId;
 };
 
@@ -721,8 +728,14 @@ export function GardenCanvas({
           this.updateRemoteAvatarAnimation();
           this.updateNavigationDebugOverlay();
           this.refreshDailyDiscoveries(delta);
+          /* Positions are sent every 120ms, so polling for them every 250ms
+             sampled the stream unevenly and applied roughly every other
+             packet — motion arrived in irregular lumps however well it was
+             interpolated afterwards. The refresh returns immediately when
+             the snapshot reference has not changed, so the real work still
+             happens once per packet; this only stops updates waiting. */
           this.remotePlayersRefreshTimer += delta;
-          if (this.remotePlayersRefreshTimer > 250) {
+          if (this.remotePlayersRefreshTimer > 60) {
             this.remotePlayersRefreshTimer = 0;
             this.refreshRemotePlayersFromReact();
           }
@@ -3056,6 +3069,7 @@ export function GardenCanvas({
         private updateRemoteAvatarAnimation() {
           this.remoteAvatars.forEach((remote) => {
             const moving = this.time.now < remote.movingUntil;
+            const petMoving = this.time.now < remote.petMovingUntil;
             const facingLeft = remote.facing === "left";
             const petFacingLeft = remote.petFacing === "left";
             this.setRemoteKeeperFlip(remote, facingLeft);
@@ -3069,8 +3083,8 @@ export function GardenCanvas({
                 remote.shadow.setScale(1, 1);
               }
               remote.petSprite
-                .setFrame(petFrame(remote.petSpeciesId, moving ? petGaitPose(this.time.now + 90) : "idle"))
-                .setY(-48 - Math.abs(petWave) * (moving ? 5 : 3))
+                .setFrame(petFrame(remote.petSpeciesId, petMoving ? petGaitPose(this.time.now + 90) : "idle"))
+                .setY(-48 - Math.abs(petWave) * (petMoving ? 5 : 3))
                 .setRotation(petWave * 0.04 * (petFacingLeft ? -1 : 1));
               remote.petShadow.setScale(0.84 + Math.abs(petWave) * 0.1, 0.72);
               if (!moving) {
@@ -3082,27 +3096,33 @@ export function GardenCanvas({
               return;
             }
 
-            if (!moving) {
+            /* Keeper and pet are posed independently. Previously the
+               keeper being still returned early and pinned the pet to its
+               idle frame, so a pet its owner was walking around slid across
+               the grass without a gait. */
+            const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
+
+            if (moving) {
+              this.setRemoteKeeperAnimation(remote, remote.walkAnimation, 105);
+            } else {
               this.setRemoteKeeperAnimation(remote, "idle", 520);
-              this.setRemoteKeeperMotion(remote, -66, 0);
+            }
+            this.setRemoteKeeperMotion(remote, -66, 0);
+            remote.shadow.setScale(1, 1);
+
+            if (petMoving) {
+              remote.petSprite
+                .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
+                .setY(-38 - Math.abs(petWave) * 2.3)
+                .setRotation(petWave * 0.03 * (petFacingLeft ? -1 : 1));
+              remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
+            } else {
               remote.petSprite
                 .setFrame(petFrame(remote.petSpeciesId, "idle"))
                 .setY(-38)
                 .setRotation(0);
-              remote.shadow.setScale(1, 1);
               remote.petShadow.setScale(1, 1);
-              return;
             }
-
-            const petWave = Math.sin(gaitPhase(this.time.now + 90) * Math.PI * 2);
-            this.setRemoteKeeperAnimation(remote, remote.walkAnimation, 105);
-            this.setRemoteKeeperMotion(remote, -66, 0);
-            remote.petSprite
-              .setFrame(petFrame(remote.petSpeciesId, petGaitPose(this.time.now + 90)))
-              .setY(-38 - Math.abs(petWave) * 2.3)
-              .setRotation(petWave * 0.03 * (petFacingLeft ? -1 : 1));
-            remote.shadow.setScale(1, 1);
-            remote.petShadow.setScale(1 + Math.abs(petWave) * 0.08, 1);
           });
         }
 
@@ -3927,12 +3947,32 @@ export function GardenCanvas({
                 playerPosition.x,
                 playerPosition.y,
               );
+              /* The pet's own travel, which is what should time the pet's
+                 glide. Using the KEEPER's distance meant that when someone
+                 took direct control of their companion — keeper standing
+                 still, pet running — the pet got the 100ms "barely moved"
+                 tween, finished it, and then sat frozen until the next packet
+                 ~165ms later. That stutter is what looked like server lag. */
+              const petDistance = PhaserModule.Math.Distance.Between(
+                existing.petContainer.x,
+                existing.petContainer.y,
+                petPosition.x,
+                petPosition.y,
+              );
+              /* Glide for exactly as long as updates actually take to arrive,
+                 measured rather than assumed, so each tween runs out just as
+                 the next one starts and the motion is continuous. */
+              const glide = remoteGlideMs(existing.lastSyncAt > 0 ? this.time.now - existing.lastSyncAt : null);
+              existing.lastSyncAt = this.time.now;
               const dx = playerPosition.x - existing.container.x;
               const dy = playerPosition.y - existing.container.y;
               if (Math.abs(dx) > 2) facingLeft = dx < 0;
               existing.facing = facingLeft ? "left" : "right";
               existing.walkAnimation = keeperWalkAnimationFromDelta(dx, dy, existing.facing);
-              existing.movingUntil = distance > 2 ? this.time.now + 280 : this.time.now;
+              // Held a little past the glide so the gait does not flicker
+              // off in the gap between packets.
+              existing.movingUntil = distance > 2 ? this.time.now + glide + 120 : this.time.now;
+              existing.petMovingUntil = petDistance > 2 ? this.time.now + glide + 120 : this.time.now;
               // Prefer the broadcast pet position when the sender includes
               // it — that's the path that fixes "multiplayer companion
               // doesn't appear to move". Fall back to the auto-trailing
@@ -3976,7 +4016,7 @@ export function GardenCanvas({
                 targets: existing.container,
                 x: playerPosition.x,
                 y: playerPosition.y,
-                duration: distance > 2 ? 190 : 80,
+                duration: distance > 2 ? glide : 80,
                 ease: "Sine.out",
                 onComplete: () => existing.container.setDepth(playerPosition.y),
               });
@@ -3984,18 +4024,18 @@ export function GardenCanvas({
                 targets: existing.shadow,
                 x: playerPosition.x,
                 y: playerPosition.y + 22,
-                duration: distance > 2 ? 190 : 80,
+                duration: distance > 2 ? glide : 80,
                 ease: "Sine.out",
               });
               this.tweens.add({
                 targets: existing.petContainer,
                 x: petX,
                 y: petY,
-                duration: distance > 2 ? 230 : 100,
+                duration: petDistance > 2 ? glide : 80,
                 ease: "Sine.out",
                 onComplete: () => existing.petContainer.setDepth(petY - 1),
               });
-              this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: distance > 2 ? 230 : 100, ease: "Sine.out" });
+              this.tweens.add({ targets: existing.petShadow, x: petX, y: petY + 16, duration: petDistance > 2 ? glide : 80, ease: "Sine.out" });
               return;
             }
 
@@ -4082,6 +4122,8 @@ export function GardenCanvas({
               petFacing: remotePetFacing,
               controlMode: player.controlMode ?? "keeper",
               movingUntil: 0,
+              petMovingUntil: 0,
+              lastSyncAt: 0,
               walkAnimation: facingLeft ? "walkLeft" : "walkRight",
             };
             this.remoteAvatars.set(player.id, remoteAvatar);
