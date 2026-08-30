@@ -23,6 +23,7 @@ import {
   recordPlayedWith,
   SOCIAL_EVENT,
 } from "@/lib/game/social";
+import { hydrateWalletStateFromServer } from "@/lib/game/wallet-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import {
@@ -156,16 +157,26 @@ export function GardenClient({ games, plots, embedded = false }: GardenClientPro
   const handlePlotCare = useCallback(
     async (plotId: string, action: "water" | "harvest") => {
       if (!canEditGarden) {
-        setDecorSaveStatus("You don't have permission to tend plots in this garden.");
-        return;
+        const denied = "You don't have permission to tend plots in this garden.";
+        setDecorSaveStatus(denied);
+        return denied;
       }
       setDecorSaveStatus(action === "water" ? "Watering plot..." : "Harvesting plot...");
       const result = await realtime.applyPlotAction(plotId, action);
       if (result.ok) {
-        setDecorSaveStatus(`Plot ${action === "water" ? "watered" : "harvested"} · v${result.version}`);
-        return;
+        /* Show what actually happened. The server writes the outcome into the
+           plot's status — the coins a harvest paid, how long until the soil
+           takes water again, how far off a harvest is — which is worth far
+           more to the player than "watered". */
+        setDecorSaveStatus(result.plotStatus ?? `Plot ${action === "water" ? "watered" : "harvested"} · v${result.version}`);
+        // A harvest is paid out server-side, so pull the wallet rather than
+        // crediting locally, which would count it twice.
+        if (action === "harvest") void hydrateWalletStateFromServer();
+        return result.plotStatus;
       }
-      setDecorSaveStatus(result.message ?? "Plot action could not be saved.");
+      const failed = result.message ?? "Plot action could not be saved.";
+      setDecorSaveStatus(failed);
+      return failed;
     },
     [canEditGarden, realtime],
   );

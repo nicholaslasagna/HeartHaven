@@ -27,16 +27,16 @@ export const inventoryItems = mockInventoryCatalog.map((item, index) => ({
 }));
 
 export const gardenPlots = [
-  { id: "plot-moonberry", name: "Moonberry", stage: "Blooming", progress: 64, accent: "#F4B5BE", status: "Watered" },
-  { id: "plot-honey-clover", name: "Honey Clover", stage: "Sprout", progress: 31, accent: "#D9A53E", status: "Needs sun" },
-  { id: "plot-lavender-star", name: "Lavender Star", stage: "Growing", progress: 48, accent: "#8E70BD", status: "Watered" },
-  { id: "plot-sky-mint", name: "Sky Mint", stage: "Seed", progress: 12, accent: "#5E94B0", status: "New" },
+  { id: "plot-moonberry", name: "Moonberry", stage: "Blooming", progress: 64, accent: "#F4B5BE", status: "Watered", wateredAt: null, tended: 0 },
+  { id: "plot-honey-clover", name: "Honey Clover", stage: "Sprout", progress: 31, accent: "#D9A53E", status: "Needs sun", wateredAt: null, tended: 0 },
+  { id: "plot-lavender-star", name: "Lavender Star", stage: "Growing", progress: 48, accent: "#8E70BD", status: "Watered", wateredAt: null, tended: 0 },
+  { id: "plot-sky-mint", name: "Sky Mint", stage: "Seed", progress: 12, accent: "#5E94B0", status: "New", wateredAt: null, tended: 0 },
 ];
 
 export const partnerGardenPlots = [
-  { id: "shared-rose", name: "Distance Rose", stage: "Blooming", progress: 88, accent: "#F4B5BE", status: "Shared" },
-  { id: "shared-lily", name: "Promise Lily", stage: "Growing", progress: 72, accent: "#FAE3A8", status: "Shared" },
-  { id: "shared-tree", name: "Casper Tree", stage: "Guardian", progress: 100, accent: "#C0A8DC", status: "Protected" },
+  { id: "shared-rose", name: "Distance Rose", stage: "Blooming", progress: 88, accent: "#F4B5BE", status: "Shared", wateredAt: null, tended: 0 },
+  { id: "shared-lily", name: "Promise Lily", stage: "Growing", progress: 72, accent: "#FAE3A8", status: "Shared", wateredAt: null, tended: 0 },
+  { id: "shared-tree", name: "Casper Tree", stage: "Guardian", progress: 100, accent: "#C0A8DC", status: "Protected", wateredAt: null, tended: 0 },
 ];
 
 export const loveNotes = [

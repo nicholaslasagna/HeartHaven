@@ -53,6 +53,7 @@ import {
   markForageSpotGathered,
   type DigSpot,
 } from "@/lib/game/garden-abilities";
+import { PLOT_STATUS_DAMP_PREFIX } from "@/lib/game/garden-plots";
 import { readAchievementState } from "@/lib/game/achievements";
 import {
   isAbilityUnlocked,
@@ -125,7 +126,9 @@ type GardenCanvasProps = {
   }) => void;
   onNavigate?: (href: string) => void;
   onDecorChange?: (decor: GardenDecorPlacement[]) => void;
-  onPlotCare?: (plotId: string, action: "water" | "harvest") => void;
+  /* May resolve with the plot's resulting status so the world can report
+     what actually happened rather than assuming it worked. */
+  onPlotCare?: (plotId: string, action: "water" | "harvest") => void | Promise<string | void>;
 };
 
 export type GardenDecorKind =
@@ -1187,13 +1190,32 @@ export function GardenCanvas({
         private waterPlot(plot: GardenPlotState, x: number, y: number) {
           playCozyCue("water");
           const action = plot.progress >= 80 ? "harvest" : "water";
-          onPlotCareRef.current?.(plot.id, action);
-          setStatus(
-            action === "harvest"
-              ? `${plot.name} harvested — new seeds are tucked in.`
-              : `${plot.name} watered. ${plot.stage} growth sparkles wake up.`,
-          );
-          if (action === "water") recordActivity("garden-watered");
+
+          /* Do not announce success before the server has answered. Watering
+             is on a cooldown now, so "watered" was sometimes simply untrue —
+             the plot was still damp and nothing had happened. */
+          setStatus(action === "harvest" ? `Harvesting ${plot.name}...` : `Watering ${plot.name}...`);
+
+          const pending = onPlotCareRef.current?.(plot.id, action);
+          void Promise.resolve(pending).then((status) => {
+            if (typeof status === "string" && status.length > 0) {
+              setStatus(`${plot.name}: ${status}`);
+              // A refused watering is not a watering, and must not count
+              // toward the metrics that unlock abilities.
+              if (action === "water" && !status.startsWith(PLOT_STATUS_DAMP_PREFIX)) {
+                recordActivity("garden-watered");
+              }
+              return;
+            }
+            // No status came back (offline or a demo garden): fall back to
+            // the old optimistic wording rather than leaving it mid-sentence.
+            setStatus(
+              action === "harvest"
+                ? `${plot.name} harvested — new seeds are tucked in.`
+                : `${plot.name} watered. ${plot.stage} growth sparkles wake up.`,
+            );
+            if (action === "water") recordActivity("garden-watered");
+          });
           for (let index = 0; index < 14; index += 1) {
             const drop = this.add.circle(x + PhaserModule.Math.Between(-54, 54), y - 74, 4, 0x5e94b0, 0.82).setDepth(6000);
             this.tweens.add({

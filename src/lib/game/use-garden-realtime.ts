@@ -48,7 +48,12 @@ export type SaveDecorResult =
   | { ok: true; version: number }
   | { ok: false; reason: "conflict" | "unauthorized" | "network" | "invalid"; serverVersion?: number; message?: string };
 
-export type SavePlotsResult = SaveDecorResult;
+/* Plot actions carry the acted-on plot's status back. The server writes the
+   outcome there — "+24 coins", "Soil still damp · 1h 50m", "Not ready ·
+   25/80" — and it is far more use to the player than a generic "saved". */
+export type SavePlotsResult =
+  | { ok: true; version: number; plotStatus?: string }
+  | { ok: false; reason: "conflict" | "unauthorized" | "network" | "invalid"; serverVersion?: number; message?: string };
 
 type ConnectionState = "demo" | "connecting" | "connected" | "offline" | "error";
 
@@ -846,7 +851,11 @@ export function useGardenRealtime({
             payload: { plots: safe, version: safeVersion, updatedAt: Date.now() },
           });
         }
-        return { ok: true, version: safeVersion };
+        return {
+          ok: true,
+          version: safeVersion,
+          plotStatus: safe.find((plot) => plot.id === plotId)?.status,
+        };
       } catch (error) {
         return {
           ok: false,

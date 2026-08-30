@@ -26,6 +26,7 @@ import {
   SOCIAL_EVENT,
 } from "@/lib/game/social";
 import { mergeGardenPlotsWithDefaults, type GardenPlotState } from "@/lib/game/garden-plots";
+import { hydrateWalletStateFromServer } from "@/lib/game/wallet-store";
 import { useGardenRealtime } from "@/lib/game/use-garden-realtime";
 import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 import {
@@ -157,7 +158,18 @@ export function ParkClient({ embedded = false }: { embedded?: boolean } = {}) {
       if (!canEditGarden) return;
       setDecorSaveStatus(action === "water" ? "Watering park plot..." : "Harvesting park plot...");
       const result = await realtime.applyPlotAction(plotId, action);
-      setDecorSaveStatus(result.ok ? `Plot updated · v${result.version}` : (result.message ?? "Plot action failed."));
+      if (!result.ok) {
+        const failed = result.message ?? "Plot action failed.";
+        setDecorSaveStatus(failed);
+        return failed;
+      }
+      /* The server writes the outcome into the plot's own status — the coins
+         a harvest paid, or how long until the soil takes water again. */
+      setDecorSaveStatus(result.plotStatus ?? `Plot updated · v${result.version}`);
+      // Harvest pays out server-side; pull rather than credit locally, which
+      // would count it twice.
+      if (action === "harvest") void hydrateWalletStateFromServer();
+      return result.plotStatus;
     },
     [canEditGarden, realtime],
   );

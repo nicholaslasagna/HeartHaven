@@ -14,6 +14,7 @@ import { CompanionMiniCard } from "@/components/game/park/companion-mini-card";
 import { SeasonalEventBanner } from "@/components/seasonal/seasonal-event-banner";
 import { Badge } from "@/components/ui/badge";
 import { recordActivity } from "@/lib/game/activity";
+import { hydrateWalletStateFromServer } from "@/lib/game/wallet-store";
 import {
   getSocialState,
   isFriendCodeShape,
@@ -184,7 +185,18 @@ export function PartnerGardenClient({ invite, plots }: PartnerGardenClientProps)
       if (!canEditGarden) return;
       setDecorSaveStatus(action === "water" ? "Watering shared plot..." : "Harvesting shared plot...");
       const result = await realtime.applyPlotAction(plotId, action);
-      setDecorSaveStatus(result.ok ? `Plot updated · v${result.version}` : (result.message ?? "Plot action failed."));
+      if (!result.ok) {
+        const failed = result.message ?? "Plot action failed.";
+        setDecorSaveStatus(failed);
+        return failed;
+      }
+      /* The server writes the outcome into the plot's own status — the coins
+         a harvest paid, or how long until the soil takes water again. */
+      setDecorSaveStatus(result.plotStatus ?? `Plot updated · v${result.version}`);
+      // Harvest pays out server-side; pull rather than credit locally, which
+      // would count it twice.
+      if (action === "harvest") void hydrateWalletStateFromServer();
+      return result.plotStatus;
     },
     [canEditGarden, realtime],
   );
