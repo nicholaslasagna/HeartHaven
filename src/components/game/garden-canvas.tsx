@@ -42,12 +42,23 @@ import {
 import { recordActivity } from "@/lib/game/activity";
 import { playCozyCue, setHeroicCompanionTheme } from "@/lib/game/cozy-audio";
 import {
+  getBuriedDigSpots,
   getDailyDigSpots,
+  getDailyForageSpots,
   getGardenSqueezeGaps,
   isDigSpotDug,
+  isForageSpotGathered,
+  markBuriedSpotDug,
   markDigSpotDug,
+  markForageSpotGathered,
   type DigSpot,
 } from "@/lib/game/garden-abilities";
+import { readAchievementState } from "@/lib/game/achievements";
+import {
+  isAbilityUnlocked,
+  KEEPER_ABILITY_BY_ID,
+  type KeeperAbilityId,
+} from "@/lib/game/keeper-abilities";
 import {
   PET_VITALS_EVENT,
   cancelPetNap,
@@ -207,6 +218,15 @@ const WORLD_SCALE = GARDEN_NAVIGATION_WORLD_SCALE;
 const BASE_GARDEN_WORLD_WIDTH = 3400;
 const BASE_GARDEN_WORLD_HEIGHT = 1133;
 const GARDEN_WORLD_WIDTH = Math.round(BASE_GARDEN_WORLD_WIDTH * WORLD_SCALE);
+
+/* Unlockable ability tuning. Sprint is short and on a cooldown so it stays a
+   burst rather than a new walking speed; the lantern lasts long enough to
+   cross the garden and dig what it reveals. */
+const SPRINT_DURATION_MS = 3200;
+const SPRINT_COOLDOWN_MS = 9000;
+const SPRINT_SPEED_MULTIPLIER = 1.7;
+const LANTERN_DURATION_MS = 20000;
+
 const GARDEN_WORLD_HEIGHT = Math.round(BASE_GARDEN_WORLD_HEIGHT * WORLD_SCALE);
 const WORLD_EDGE_INSET = 80;
 const MAX_CLICK_SNAP_DISTANCE = 130;
@@ -589,12 +609,23 @@ export function GardenCanvas({
         private sniffKeyHandler?: () => void;
         private squeezeKeyHandler?: () => void;
         private digKeyHandler?: () => void;
+        private sprintKeyHandler?: () => void;
+        private forageKeyHandler?: () => void;
+        private lanternKeyHandler?: () => void;
         private deleteKeyHandler?: () => void;
         private backspaceKeyHandler?: () => void;
         private companionActionBusyUntil = 0;
         private digSpots: DigSpot[] = getDailyDigSpots(variant);
+        private forageSpots: DigSpot[] = getDailyForageSpots(variant);
+        /* Drawn only while a lantern is lit — the ability is worthless if you
+           can see the caches without it. */
+        private buriedSpots: DigSpot[] = getBuriedDigSpots(variant);
         private abilitySpotObjects: Phaser.GameObjects.Container[] = [];
         private digSpotObjects = new Map<string, Phaser.GameObjects.Container>();
+        private sprintUntil = 0;
+        private sprintReadyAt = 0;
+        private lanternUntil = 0;
+        private lanternGlow?: Phaser.GameObjects.Arc;
 
         constructor() {
           super("HeartHavenGarden");
@@ -681,6 +712,7 @@ export function GardenCanvas({
 
         update(_time: number, delta: number) {
           this.checkRightHold();
+          this.updateAbilityTimers();
           this.updateAvatar(delta);
           this.updatePet(delta);
           this.updateRemoteAvatarAnimation();
@@ -1538,6 +1570,8 @@ export function GardenCanvas({
           readDiscoveriesState();
           this.renderDiscoveryGlowPatches();
           this.digSpots = getDailyDigSpots(variant, nextDay);
+          this.forageSpots = getDailyForageSpots(variant, nextDay);
+          this.buriedSpots = getBuriedDigSpots(variant, nextDay);
           this.drawCompanionAbilitySpots();
           setStatus("A new day began — fresh sniff spots are hidden around the map.");
         }
@@ -1601,6 +1635,60 @@ export function GardenCanvas({
             this.abilitySpotObjects.push(marker);
             this.digSpotObjects.set(spot.id, marker);
           });
+
+          // Moonberry bushes, for the forage ability.
+          this.forageSpots.forEach((spot) => {
+            const x = spot.x / 100 * GARDEN_WORLD_WIDTH;
+            const y = spot.y / 100 * GARDEN_WORLD_HEIGHT;
+            const picked = isForageSpotGathered(spot.id);
+            const marker = this.add.container(x, y).setDepth(3).setAlpha(picked ? 0.42 : 1);
+            const bush = this.add.ellipse(0, 0, worldRadius(70), worldRadius(46), picked ? 0x9fb98c : 0x6f9a58, picked ? 0.26 : 0.5)
+              .setStrokeStyle(2, 0x3f6b3a, 0.42);
+            const berry = this.add.text(0, -4, picked ? "✓" : "🫐", {
+              color: "#fffaf0", fontFamily: "Nunito, sans-serif", fontSize: picked ? "16px" : "19px", fontStyle: "900",
+            }).setOrigin(0.5);
+            const label = this.add.text(0, worldRadius(30), picked ? "Picked today" : "Moonberries · G", {
+              color: "#3F5B3F",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "11px",
+              fontStyle: "900",
+              backgroundColor: "#E8F5DC",
+              padding: { x: 7, y: 3 },
+            }).setOrigin(0.5, 0);
+            marker.add([bush, berry, label]);
+            this.abilitySpotObjects.push(marker);
+          });
+
+          /* Buried caches. Nothing is drawn unless a lantern is burning, so
+             the ground looks ordinary until it is lit. */
+          if (this.time.now < this.lanternUntil) {
+            this.buriedSpots.forEach((spot) => {
+              const x = spot.x / 100 * GARDEN_WORLD_WIDTH;
+              const y = spot.y / 100 * GARDEN_WORLD_HEIGHT;
+              const dug = isDigSpotDug(spot.id);
+              const marker = this.add.container(x, y).setDepth(3).setAlpha(dug ? 0.42 : 1);
+              const halo = this.add.ellipse(0, 0, worldRadius(96), worldRadius(48), 0xf3d489, dug ? 0.16 : 0.34);
+              const soil = this.add.ellipse(0, 0, worldRadius(72), worldRadius(32), dug ? 0xb89a74 : 0x7d5638, dug ? 0.24 : 0.56)
+                .setStrokeStyle(2, 0xd9a53e, 0.6);
+              const mark = this.add.text(0, -4, dug ? "✓" : "✦", {
+                color: "#fff3d2", fontFamily: "Nunito, sans-serif", fontSize: dug ? "16px" : "20px", fontStyle: "900",
+              }).setOrigin(0.5);
+              const label = this.add.text(0, worldRadius(25), dug ? "Cache emptied" : "Buried cache · F", {
+                color: "#5B3F3F",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "11px",
+                fontStyle: "900",
+                backgroundColor: "#FFF3D2",
+                padding: { x: 7, y: 3 },
+              }).setOrigin(0.5, 0);
+              marker.add([halo, soil, mark, label]);
+              if (!dug) {
+                this.tweens.add({ targets: halo, alpha: 0.5, scaleX: 1.1, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+              }
+              this.abilitySpotObjects.push(marker);
+              this.digSpotObjects.set(spot.id, marker);
+            });
+          }
         }
 
         private drawFireflies() {
@@ -1735,6 +1823,24 @@ export function GardenCanvas({
             this.tryDig();
           };
           this.input.keyboard?.on("keydown-F", this.digKeyHandler);
+          if (this.sprintKeyHandler) this.input.keyboard?.off("keydown-SHIFT", this.sprintKeyHandler);
+          this.sprintKeyHandler = () => {
+            if (this.textInputFocused || isTextInputFocused()) return;
+            this.trySprint();
+          };
+          this.input.keyboard?.on("keydown-SHIFT", this.sprintKeyHandler);
+          if (this.forageKeyHandler) this.input.keyboard?.off("keydown-G", this.forageKeyHandler);
+          this.forageKeyHandler = () => {
+            if (this.textInputFocused || isTextInputFocused()) return;
+            this.tryForage();
+          };
+          this.input.keyboard?.on("keydown-G", this.forageKeyHandler);
+          if (this.lanternKeyHandler) this.input.keyboard?.off("keydown-T", this.lanternKeyHandler);
+          this.lanternKeyHandler = () => {
+            if (this.textInputFocused || isTextInputFocused()) return;
+            this.tryLantern();
+          };
+          this.input.keyboard?.on("keydown-T", this.lanternKeyHandler);
           if (this.deleteKeyHandler) this.input.keyboard?.off("keydown-DELETE", this.deleteKeyHandler);
           this.deleteKeyHandler = () => {
             if (this.textInputFocused || isTextInputFocused()) return;
@@ -1879,6 +1985,9 @@ export function GardenCanvas({
           }
           if (action === "squeeze") { this.trySqueeze(); return; }
           if (action === "dig") { this.tryDig(); return; }
+          if (action === "sprint") { this.trySprint(); return; }
+          if (action === "forage") { this.tryForage(); return; }
+          if (action === "lantern") { this.tryLantern(); return; }
         }
 
         private canUseGardenCompanionAbility(label: string) {
@@ -1982,9 +2091,88 @@ export function GardenCanvas({
           });
         }
 
-        private tryDig() {
-          if (!this.canUseGardenCompanionAbility("Dig")) return;
-          const nearest = this.digSpots
+        /** An ability is available once the metric that gates it is met. */
+        private abilityUnlocked(id: KeeperAbilityId) {
+          const ability = KEEPER_ABILITY_BY_ID[id];
+          if (isAbilityUnlocked(ability, readAchievementState().progress)) return true;
+          setStatus(ability.lockedHint);
+          playCozyCue("miss");
+          return false;
+        }
+
+        private sprintMultiplier() {
+          return this.time.now < this.sprintUntil ? SPRINT_SPEED_MULTIPLIER : 1;
+        }
+
+        /* Keeps the lantern's glow on the keeper and puts the caches away
+           when it burns out. Cheap enough to run every frame. */
+        private updateAbilityTimers() {
+          if (this.lanternGlow) {
+            if (this.time.now < this.lanternUntil) {
+              this.lanternGlow.setPosition(this.avatar.x, this.avatar.y);
+            } else {
+              this.lanternGlow.destroy();
+              this.lanternGlow = undefined;
+              this.drawCompanionAbilitySpots();
+              setStatus("Your lantern burned out. The buried caches are hidden again.");
+            }
+          }
+        }
+
+        private trySprint() {
+          if (!this.abilityUnlocked("sprint")) return;
+          if (variant === "park") { setStatus("Second wind is a garden ability."); return; }
+          if (this.time.now < this.sprintReadyAt) {
+            const wait = Math.ceil((this.sprintReadyAt - this.time.now) / 1000);
+            setStatus(`Catching your breath — ${wait}s.`);
+            return;
+          }
+          this.sprintUntil = this.time.now + SPRINT_DURATION_MS;
+          this.sprintReadyAt = this.time.now + SPRINT_DURATION_MS + SPRINT_COOLDOWN_MS;
+          playCozyCue("score");
+          setStatus("Second wind! Everything moves a little quicker.");
+          // A few trailing motes so the burst reads without a HUD element.
+          for (let index = 0; index < 10; index += 1) {
+            const mote = this.add.circle(this.avatar.x, this.avatar.y + 6, 4 + index % 3, 0xbfe6ff, 0.7).setDepth(this.avatar.y - 2);
+            this.tweens.add({
+              targets: mote,
+              x: this.avatar.x + PhaserModule.Math.Between(-46, 46),
+              y: this.avatar.y + PhaserModule.Math.Between(-10, 26),
+              alpha: 0,
+              scale: 0.3,
+              delay: index * 26,
+              duration: 520,
+              ease: "Cubic.out",
+              onComplete: () => mote.destroy(),
+            });
+          }
+        }
+
+        private tryLantern() {
+          if (!this.abilityUnlocked("lantern")) return;
+          if (variant === "park") { setStatus("Lantern sense is a garden ability."); return; }
+          if (this.time.now < this.lanternUntil) {
+            setStatus("Your lantern is already lit.");
+            return;
+          }
+          this.lanternUntil = this.time.now + LANTERN_DURATION_MS;
+          playCozyCue("reward");
+
+          this.lanternGlow?.destroy();
+          this.lanternGlow = this.add.circle(this.avatar.x, this.avatar.y, worldRadius(150), 0xffe6a8, 0.16).setDepth(2);
+          this.tweens.add({ targets: this.lanternGlow, alpha: 0.28, duration: 1100, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+
+          this.drawCompanionAbilitySpots();
+          const remaining = this.buriedSpots.filter((spot) => !isDigSpotDug(spot.id)).length;
+          setStatus(remaining > 0
+            ? `Lantern lit — ${remaining} buried cache${remaining === 1 ? "" : "s"} showing. Dig them with F.`
+            : "Lantern lit, but every cache here is already empty today.");
+        }
+
+        private tryForage() {
+          if (!this.abilityUnlocked("forage")) return;
+          if (!this.canUseGardenCompanionAbility("Forage")) return;
+          const nearest = this.forageSpots
             .map((spot) => ({
               spot,
               distance: PhaserModule.Math.Distance.Between(
@@ -1992,6 +2180,90 @@ export function GardenCanvas({
                 this.pet.y,
                 spot.x / 100 * GARDEN_WORLD_WIDTH,
                 spot.y / 100 * GARDEN_WORLD_HEIGHT,
+              ),
+            }))
+            .sort((left, right) => left.distance - right.distance)[0];
+          if (!nearest || nearest.distance > worldRadius(175)) {
+            setStatus("Stand by a moonberry bush, then press G to forage.");
+            playCozyCue("miss");
+            return;
+          }
+          if (isForageSpotGathered(nearest.spot.id)) {
+            setStatus("This bush is bare until tomorrow. Try another one.");
+            return;
+          }
+          const result = markForageSpotGathered(nearest.spot.id);
+          if (!result.ok) return;
+
+          this.clearNavigationTarget();
+          this.companionActionBusyUntil = this.time.now + 900;
+          this.petMood = "happy";
+          this.applyPetLocomotion(false, "walk1");
+          playCozyCue("pet");
+          setStatus("Picking moonberries...");
+
+          for (let index = 0; index < 9; index += 1) {
+            const berry = this.add.circle(this.pet.x, this.pet.y - 10, 4 + index % 2, 0x8f6bd0, 0.85).setDepth(this.pet.y + 3);
+            this.tweens.add({
+              targets: berry,
+              x: this.pet.x + PhaserModule.Math.Between(-38, 38),
+              y: this.pet.y - 40 - index * 3,
+              alpha: 0,
+              scale: 0.4,
+              delay: index * 30,
+              duration: 560,
+              ease: "Cubic.out",
+              onComplete: () => berry.destroy(),
+            });
+          }
+
+          this.tweens.add({
+            targets: this.pet,
+            scaleX: 1.05,
+            scaleY: 0.94,
+            duration: 130,
+            yoyo: true,
+            repeat: 2,
+            ease: "Sine.inOut",
+            onComplete: () => {
+              this.pet.setScale(1);
+              this.petMood = "happy";
+              this.petMoodTimer = 0;
+              this.applyPetLocomotion(false, "happy");
+              this.drawCompanionAbilitySpots();
+              creditWallet({
+                gameId: `garden-forage-${nearest.spot.id}`,
+                label: "Moonberry harvest",
+                score: result.coins,
+                coins: result.coins,
+                hearts: 0,
+              });
+              recordActivity("coins-earned", result.coins, { source: "garden-forage", spotId: nearest.spot.id });
+              this.spawnSparkleBurst(this.pet.x, this.pet.y - 30, 0x8f6bd0, 12);
+              playCozyCue("reward");
+              setStatus(`Gathered ${result.coins} coins of moonberries. This bush regrows tomorrow.`);
+            },
+          });
+        }
+
+        private tryDig() {
+          if (!this.canUseGardenCompanionAbility("Dig")) return;
+          /* A lit lantern adds the buried caches to what can be dug. Same
+             key, same motion — the lantern only decides whether the ground
+             shows you anything. */
+          const lanternLit = this.time.now < this.lanternUntil;
+          const candidates = [
+            ...this.digSpots.map((spot) => ({ spot, buried: false })),
+            ...(lanternLit ? this.buriedSpots.map((spot) => ({ spot, buried: true })) : []),
+          ];
+          const nearest = candidates
+            .map((entry) => ({
+              ...entry,
+              distance: PhaserModule.Math.Distance.Between(
+                this.pet.x,
+                this.pet.y,
+                entry.spot.x / 100 * GARDEN_WORLD_WIDTH,
+                entry.spot.y / 100 * GARDEN_WORLD_HEIGHT,
               ),
             }))
             .sort((left, right) => left.distance - right.distance)[0];
@@ -2004,7 +2276,7 @@ export function GardenCanvas({
             setStatus("Your companion already dug here today. Try another fresh patch.");
             return;
           }
-          const result = markDigSpotDug(nearest.spot.id);
+          const result = nearest.buried ? markBuriedSpotDug(nearest.spot.id) : markDigSpotDug(nearest.spot.id);
           if (!result.ok) return;
 
           this.clearNavigationTarget();
@@ -2056,7 +2328,9 @@ export function GardenCanvas({
               recordActivity("coins-earned", result.coins, { source: "garden-dig", spotId: nearest.spot.id });
               this.spawnSparkleBurst(this.pet.x, this.pet.y - 34, 0xd9a53e, 14);
               playCozyCue("reward");
-              setStatus(`Your companion uncovered ${result.coins} coins! This patch refreshes tomorrow.`);
+              setStatus(nearest.buried
+                ? `A buried cache! ${result.coins} coins. Lantern sense paid for itself.`
+                : `Your companion uncovered ${result.coins} coins! This patch refreshes tomorrow.`);
             },
           });
         }
@@ -2461,11 +2735,17 @@ export function GardenCanvas({
             if (this.sniffKeyHandler) this.input.keyboard?.off("keydown-Q", this.sniffKeyHandler);
             if (this.squeezeKeyHandler) this.input.keyboard?.off("keydown-E", this.squeezeKeyHandler);
             if (this.digKeyHandler) this.input.keyboard?.off("keydown-F", this.digKeyHandler);
+            if (this.sprintKeyHandler) this.input.keyboard?.off("keydown-SHIFT", this.sprintKeyHandler);
+            if (this.forageKeyHandler) this.input.keyboard?.off("keydown-G", this.forageKeyHandler);
+            if (this.lanternKeyHandler) this.input.keyboard?.off("keydown-T", this.lanternKeyHandler);
             if (this.deleteKeyHandler) this.input.keyboard?.off("keydown-DELETE", this.deleteKeyHandler);
             if (this.backspaceKeyHandler) this.input.keyboard?.off("keydown-BACKSPACE", this.backspaceKeyHandler);
             this.sniffKeyHandler = undefined;
             this.squeezeKeyHandler = undefined;
             this.digKeyHandler = undefined;
+            this.sprintKeyHandler = undefined;
+            this.forageKeyHandler = undefined;
+            this.lanternKeyHandler = undefined;
             this.deleteKeyHandler = undefined;
             this.backspaceKeyHandler = undefined;
             // Stop the breathing tween so the GC can collect the pet sprite
@@ -3021,7 +3301,7 @@ export function GardenCanvas({
           }
 
           const keyboard = this.readKeyboard();
-          const speed = 0.24 * delta;
+          const speed = 0.24 * this.sprintMultiplier() * delta;
           let moving = false;
           let moveDx = 0;
           let moveDy = 0;
@@ -3124,7 +3404,7 @@ export function GardenCanvas({
           const keyboard = this.readKeyboard();
           // Direct control should feel as reliable as keeper control. Vitals
           // still drive mood/poses, but never throttle the player's input.
-          const speed = 0.24 * 1.6 * delta;
+          const speed = 0.24 * 1.6 * this.sprintMultiplier() * delta;
           const prevPetX = this.pet.x;
           let petMoving = false;
           let petMoveDx = 0;

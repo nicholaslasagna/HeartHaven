@@ -20,6 +20,7 @@ export type DigSpot = AbilityPoint & {
 type GardenAbilitiesState = {
   dayKey: string;
   dugSpotIds: string[];
+  gatheredSpotIds: string[];
 };
 
 const GARDEN_SQUEEZE_GAPS: SqueezeGap[] = [
@@ -90,7 +91,11 @@ export function getDailyDigSpots(
 }
 
 function freshState(): GardenAbilitiesState {
-  return { dayKey: getDiscoveryDayKey(), dugSpotIds: [] };
+  return { dayKey: getDiscoveryDayKey(), dugSpotIds: [], gatheredSpotIds: [] };
+}
+
+function readIds(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
 }
 
 export function readGardenAbilitiesState(): GardenAbilitiesState {
@@ -106,7 +111,9 @@ export function readGardenAbilitiesState(): GardenAbilitiesState {
     }
     return {
       dayKey: parsed.dayKey,
-      dugSpotIds: Array.isArray(parsed.dugSpotIds) ? parsed.dugSpotIds.filter((id): id is string => typeof id === "string") : [],
+      dugSpotIds: readIds(parsed.dugSpotIds),
+      // Absent on state written before foraging existed; treated as none.
+      gatheredSpotIds: readIds(parsed.gatheredSpotIds),
     };
   } catch {
     return freshState();
@@ -122,6 +129,88 @@ export function markDigSpotDug(spotId: string): { ok: boolean; coins: number } {
   const state = readGardenAbilitiesState();
   if (state.dugSpotIds.includes(spotId)) return { ok: false, coins: 0 };
   const coins = 4 + (hashSeed(`${state.dayKey}:${spotId}`) % 5);
+  window.localStorage.setItem(
+    GARDEN_ABILITIES_STATE_KEY,
+    JSON.stringify({ ...state, dugSpotIds: [...state.dugSpotIds, spotId] }),
+  );
+  return { ok: true, coins };
+}
+
+/* ------------------------------------------------------------------ */
+/* Unlockable abilities                                                */
+/* ------------------------------------------------------------------ */
+
+/** Bushes the forage ability harvests. Separate pool so berries and dirt
+    never land on the same tile. */
+const FORAGE_POSITION_POOL: AbilityPoint[] = [
+  { x: 21, y: 41 },
+  { x: 30, y: 58 },
+  { x: 43, y: 30 },
+  { x: 52, y: 71 },
+  { x: 58, y: 45 },
+  { x: 66, y: 33 },
+  { x: 74, y: 63 },
+  { x: 81, y: 44 },
+  { x: 88, y: 57 },
+  { x: 93, y: 74 },
+];
+
+/** Deeper caches. No marker is drawn for these until a lantern lights the
+    ground, which is the entire point of the ability. */
+const BURIED_POSITION_POOL: AbilityPoint[] = [
+  { x: 14, y: 66 },
+  { x: 28, y: 84 },
+  { x: 45, y: 86 },
+  { x: 57, y: 24 },
+  { x: 69, y: 72 },
+  { x: 79, y: 28 },
+  { x: 91, y: 49 },
+];
+
+export function getDailyForageSpots(
+  variant: GardenAbilityVariant,
+  dayKey = getDiscoveryDayKey(),
+): DigSpot[] {
+  if (variant === "park") return [];
+  return seededShuffle(FORAGE_POSITION_POOL, `${dayKey}:${variant}:forage`)
+    .slice(0, 4)
+    .map((point, index) => ({ ...point, id: `${variant}-forage-${index + 1}`, label: `Moonberry bush ${index + 1}` }));
+}
+
+export function getBuriedDigSpots(
+  variant: GardenAbilityVariant,
+  dayKey = getDiscoveryDayKey(),
+): DigSpot[] {
+  if (variant === "park") return [];
+  return seededShuffle(BURIED_POSITION_POOL, `${dayKey}:${variant}:buried`)
+    .slice(0, 2)
+    .map((point, index) => ({ ...point, id: `${variant}-buried-${index + 1}`, label: `Buried cache ${index + 1}` }));
+}
+
+export function isForageSpotGathered(spotId: string): boolean {
+  return readGardenAbilitiesState().gatheredSpotIds.includes(spotId);
+}
+
+export function markForageSpotGathered(spotId: string): { ok: boolean; coins: number } {
+  if (typeof window === "undefined") return { ok: false, coins: 0 };
+  const state = readGardenAbilitiesState();
+  if (state.gatheredSpotIds.includes(spotId)) return { ok: false, coins: 0 };
+  // A little less than digging: berries are easier to reach.
+  const coins = 3 + (hashSeed(`${state.dayKey}:${spotId}:berry`) % 4);
+  window.localStorage.setItem(
+    GARDEN_ABILITIES_STATE_KEY,
+    JSON.stringify({ ...state, gatheredSpotIds: [...state.gatheredSpotIds, spotId] }),
+  );
+  return { ok: true, coins };
+}
+
+/** Buried caches share the dug list, so a cache cannot be dug twice, but pay
+    considerably more — otherwise the lantern is not worth carrying. */
+export function markBuriedSpotDug(spotId: string): { ok: boolean; coins: number } {
+  if (typeof window === "undefined") return { ok: false, coins: 0 };
+  const state = readGardenAbilitiesState();
+  if (state.dugSpotIds.includes(spotId)) return { ok: false, coins: 0 };
+  const coins = 11 + (hashSeed(`${state.dayKey}:${spotId}:cache`) % 7);
   window.localStorage.setItem(
     GARDEN_ABILITIES_STATE_KEY,
     JSON.stringify({ ...state, dugSpotIds: [...state.dugSpotIds, spotId] }),

@@ -45,6 +45,10 @@ export function useAchievements() {
       badges,
       unlockedCount,
       totalCount: badges.length,
+      /* Raw metric totals. Keeper abilities unlock off the same numbers as
+         the badges, so they read them from here rather than keeping a second
+         copy of progress that could drift. */
+      progress: state?.progress ?? {},
       ready: state !== null,
     }),
     [badges, unlockedCount, state],
