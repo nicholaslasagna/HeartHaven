@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AtSign, BadgeCheck, Save, ShieldAlert } from "lucide-react";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { USERNAME_INPUT_PROPS } from "@/lib/ui/text-input-props";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -143,6 +144,7 @@ export function UsernameSettingsPanel({ serverHistory, serverUsername }: Usernam
             disabled={!status.allowed}
             maxLength={24}
             minLength={3}
+            {...USERNAME_INPUT_PROPS}
             name="username"
             onChange={(event) => {
               setDraft(event.target.value);

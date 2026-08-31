@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/cozy/confirm-dialog";
+import { CODE_INPUT_PROPS, CODE_OR_LINK_INPUT_PROPS } from "@/lib/ui/text-input-props";
 import { CozyButton } from "@/components/cozy/cozy-button";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { GiftDialog } from "@/components/cozy/gift-dialog";
@@ -29,7 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { useSocial } from "@/lib/game/use-social";
 import { useSafety } from "@/lib/game/use-safety";
 import { useInventory } from "@/lib/game/use-inventory";
-import { isFriendCodeShape, normalizeFriendCode } from "@/lib/game/social";
+import { isFriendCodeShape, looksLikeInviteLink, normalizeFriendCode } from "@/lib/game/social";
 import type { FriendCode } from "@/lib/game/social";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
 import { cn } from "@/lib/utils";
@@ -423,6 +424,7 @@ export function FriendsClient() {
           </p>
           <div className="mt-3 flex gap-2">
             <input
+              {...CODE_INPUT_PROPS}
               value={lookupInput}
               onChange={(event) => {
                 setLookupInput(event.target.value.toUpperCase());
@@ -499,9 +501,16 @@ export function FriendsClient() {
         </p>
         <div className="mt-3 flex gap-2">
           <input
+            {...CODE_OR_LINK_INPUT_PROPS}
             value={acceptInput}
             onChange={(event) => {
-              setAcceptInput(event.target.value.toUpperCase());
+              /* Codes are matched uppercase, links are case-sensitive. This
+                 folded everything, which broke every pasted link: the token
+                 is base64url and `?accept=` is a case-sensitive parameter
+                 name, so the lookup returned null and the paste silently
+                 failed. */
+              const raw = event.target.value;
+              setAcceptInput(looksLikeInviteLink(raw) ? raw : raw.toUpperCase());
               if (acceptMessage.kind !== "idle") setAcceptMessage({ kind: "idle", message: "" });
             }}
             placeholder="HH-XXXXX-NNN or invite link"

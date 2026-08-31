@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { KeyRound, Loader2, ShieldCheck, ShieldPlus, Trash2 } from "lucide-react";
 import { CozyCard } from "@/components/cozy/cozy-card";
+import { OTP_INPUT_PROPS } from "@/lib/ui/text-input-props";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -217,7 +218,7 @@ export function MfaPanel() {
               <label className="grid gap-2 text-sm font-extrabold text-ink-700">
                 6-digit code
                 <Input
-                  inputMode="numeric"
+                  {...OTP_INPUT_PROPS}
                   maxLength={6}
                   onChange={(event) => setEnrollCode(event.target.value)}
                   value={enrollCode}
@@ -244,7 +245,7 @@ export function MfaPanel() {
                 <>
                   <Input
                     className="w-36"
-                    inputMode="numeric"
+                    {...OTP_INPUT_PROPS}
                     maxLength={6}
                     onChange={(event) => setSessionCode(event.target.value)}
                     placeholder="2FA code"

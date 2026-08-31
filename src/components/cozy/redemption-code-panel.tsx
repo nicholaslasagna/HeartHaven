@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Gift, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import { CozyButton } from "@/components/cozy/cozy-button";
+import { CODE_INPUT_PROPS } from "@/lib/ui/text-input-props";
 import { CozyCard } from "@/components/cozy/cozy-card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -194,8 +195,8 @@ export function RedemptionCodePanel() {
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
         <Input
+          {...CODE_INPUT_PROPS}
           aria-label="HeartHaven redemption code"
-          autoComplete="off"
           className="h-12 flex-1 font-black uppercase tracking-normal"
           disabled={pending}
           maxLength={32}

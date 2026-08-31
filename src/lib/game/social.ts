@@ -599,6 +599,22 @@ export function buildInviteToken(payload: Omit<InviteTokenPayload, "sentAt"> & {
   return base64UrlEncode(JSON.stringify(data));
 }
 
+/**
+ * Does this look like an invite LINK rather than a bare friend code?
+ *
+ * It matters because the two want opposite treatment. A friend code is
+ * matched uppercase, so the entry field folds case as you type. A link must
+ * not be touched: its token is base64url of JSON, which is case-sensitive,
+ * and `?accept=` is a query parameter NAME, which is also case-sensitive —
+ * uppercasing a pasted link turned it into `?ACCEPT=` and made
+ * `searchParams.get("accept")` return null every time.
+ */
+export function looksLikeInviteLink(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) || trimmed.includes("?accept=") || trimmed.includes("?ACCEPT=");
+}
+
 export function parseInviteToken(token: string): InviteTokenPayload | null {
   try {
     const json = base64UrlDecode(token);
