@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import { LanternGame, type GameEvent } from "@/lib/game/lantern-leap/game";
+import { RotateHint } from "@/components/game/rotate-hint";
 import { levelById } from "@/lib/game/lantern-leap/levels";
 import { TOUCH_BUTTON_BASE } from "@/lib/game/touch-controls";
 import { LanternRenderer, type RenderCompanion, type RenderSnapshot } from "@/lib/game/lantern-leap/renderer";
@@ -333,6 +334,7 @@ export function LanternLeapCanvas({
 
   return (
     <div className="relative w-full">
+      <RotateHint gameKey="lantern-leap" label="the climb" />
       <div className="w-full overflow-hidden rounded-lg bg-[#1b1430]" ref={mountRef} />
       {showTouch && (
         <LanternTouchPad

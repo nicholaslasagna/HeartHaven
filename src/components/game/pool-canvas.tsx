@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { CircleDot, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RotateHint } from "@/components/game/rotate-hint";
 import {
   POOL_CANVAS_HEIGHT,
   POOL_CANVAS_WIDTH,
@@ -931,7 +932,8 @@ export function PoolCanvas({
 
   return (
     <section className="grid gap-4 rounded-2xl border border-garden-300/45 bg-white/82 p-3 shadow-sm lg:grid-cols-[minmax(0,1fr)_280px]">
-      <div className="overflow-hidden rounded-2xl border border-honey-500/30 bg-cream-50 shadow-inner">
+      <div className="relative overflow-hidden rounded-2xl border border-honey-500/30 bg-cream-50 shadow-inner">
+        <RotateHint gameKey="pool" label="the table" />
         <canvas
           aria-label="Moonberry Pool table"
           className="block aspect-[48/29] w-full touch-none select-none"

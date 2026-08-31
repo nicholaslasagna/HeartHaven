@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import { MoonberryRacingRenderer, kartColor, type KartView, type RacingSnapshot } from "@/lib/game/moonberry-racing/renderer";
+import { RotateHint } from "@/components/game/rotate-hint";
 import { KART, NO_KART_INPUT, applyBoostPad, chargeBand, stepKart, type KartInput } from "@/lib/game/moonberry-racing/kart";
 import { Race, type RacerCompanion, type RacerReport } from "@/lib/game/moonberry-racing/race";
 import { Arena, type CombatRacer } from "@/lib/game/moonberry-racing/combat";
@@ -567,6 +568,7 @@ export function MoonberryRacingCanvas({
 
   return (
     <div className="relative overflow-hidden rounded-lg border border-cream-300 bg-ink-900 shadow-sm">
+      <RotateHint gameKey="moonberry-racing" label="the track" />
       <div ref={mountRef} className="aspect-video w-full" />
 
       {/* HUD */}

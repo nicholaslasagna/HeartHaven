@@ -9,6 +9,7 @@ import {
   type HeartRushState,
 } from "@/lib/game/heartrush-shared";
 import { companionArtAsset } from "@/lib/game/companion-art";
+import { RotateHint } from "@/components/game/rotate-hint";
 import { TOUCH_BUTTON_BASE } from "@/lib/game/touch-controls";
 import {
   getPrefsSnapshot,
@@ -1186,6 +1187,7 @@ export function HeartRushCanvas({
 
   return (
     <div className="relative w-full">
+      <RotateHint gameKey="heartrush" label="the course" />
       <div className="min-h-[360px] w-full overflow-hidden rounded-lg bg-sky-100" ref={mountRef} />
       {showTouch && (
         <HeartRushTouchPad

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import * as THREE from "three";
 import { MoonberryRenderer } from "@/lib/game/moonberry-bowling/renderer";
+import { RotateHint } from "@/components/game/rotate-hint";
 import {
   createPins,
   HEAD_PIN_Z,
@@ -525,6 +526,7 @@ export function MoonberryBowlingCanvas({
   return (
     <div className="grid gap-3">
       <div className="relative overflow-hidden rounded-lg border border-cream-300 bg-ink-900 shadow-sm">
+      <RotateHint gameKey="moonberry-bowling" label="the lane" />
         <div ref={mountRef} className="aspect-[16/9] w-full" />
 
         <div
