@@ -51,11 +51,46 @@ export const MEMORY_MATCH_PAIR_DATA: Record<
 };
 
 /**
- * Cards on the table: two of every pair.
+ * The table this client deals on its own (solo, or seeding a fresh session):
+ * two of every pair it knows.
  *
- * The server builds the same deck in memory_match_shuffled_board(), and
- * parseMemoryMatchState refuses a board shorter than this. All three have to
- * agree — a client and server that disagreed on a board size is exactly how
- * multiplayer Pool came to reject every shot.
+ * This is NOT a requirement placed on the server. The server chooses the size
+ * of the deal, and the client renders whatever coherent board arrives — see
+ * readPairBoard. Demanding a particular size here is what made the migration
+ * and the deploy have to land in a specific order, and got the table filled
+ * with duplicate hearts when they did not.
  */
 export const MEMORY_MATCH_BOARD_SIZE = MEMORY_MATCH_PAIR_IDS.length * 2;
+
+/** Smallest table worth playing: two pairs. */
+export const MEMORY_MATCH_MIN_BOARD_SIZE = 4;
+
+/**
+ * Columns for a board of `count` cards.
+ *
+ * Chosen from the divisors of the count so no row is left short, preferring
+ * the one closest to a comfortable landscape shape. Sixteen cards lay out
+ * four by four, twenty-four lay out six by four — and a deal this client has
+ * never seen still gets a sensible grid rather than a hardcoded six.
+ */
+export function memoryMatchColumns(count: number): number {
+  if (!Number.isFinite(count) || count <= 0) return 1;
+  const ideal = Math.sqrt(count * 1.6);
+
+  let best = 4;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let columns = 3; columns <= 8; columns += 1) {
+    const rows = Math.ceil(count / columns);
+    const leftover = columns * rows - count;
+    /* Prefer a landscape shape, strongly prefer a full last row, and refuse
+       to stack more rows than the stage can show — an earlier version only
+       considered exact divisors, so 44 cards chose 4 columns and eleven
+       rows purely because nothing else divided cleanly. */
+    const score = Math.abs(columns - ideal) + leftover * 0.6 + Math.max(0, rows - 6) * 4;
+    if (score < bestScore) {
+      bestScore = score;
+      best = columns;
+    }
+  }
+  return best;
+}

@@ -20,6 +20,7 @@ import {
   MEMORY_MATCH_PAIR_IDS,
   MEMORY_MATCH_PAIR_DATA,
   MEMORY_MATCH_BOARD_SIZE,
+  memoryMatchColumns,
 } from "../src/lib/game/memory-match-deck";
 import { parseMemoryMatchState } from "../src/lib/game/memory-match-state";
 
@@ -70,6 +71,25 @@ const results: string[] = [];
   results.push(`deck      ${MEMORY_MATCH_PAIR_IDS.length} pairs / ${MEMORY_MATCH_BOARD_SIZE} cards · every pair has its own art, label and colour`);
 }
 
+/* -- the grid follows the deal -- */
+{
+  assert.equal(memoryMatchColumns(16), 4, "sixteen cards lay out four by four");
+  assert.equal(memoryMatchColumns(24), 6, "twenty-four lay out six by four");
+  assert.equal(memoryMatchColumns(12), 4, "twelve lay out four by three");
+
+  // Whatever the size, the grid must stay on the stage: a sane column count
+  // and never more rows than can be shown.
+  for (let cards = 4; cards <= 48; cards += 2) {
+    const columns = memoryMatchColumns(cards);
+    const rows = Math.ceil(cards / columns);
+    assert.ok(columns >= 1 && columns <= 8, `${cards} cards asked for ${columns} columns`);
+    assert.ok(rows <= 8, `${cards} cards in ${columns} columns gives ${rows} rows, too tall for the stage`);
+  }
+  assert.ok(memoryMatchColumns(0) >= 1, "a degenerate count must not divide by zero");
+  assert.ok(memoryMatchColumns(Number.NaN) >= 1, "junk must not produce NaN columns");
+  results.push("layout    16 -> 4 columns, 24 -> 6 · columns divide the deal so no row is short · junk is safe");
+}
+
 /* -- session state, including the second card the watcher must see -- */
 {
   const board = [...MEMORY_MATCH_PAIR_IDS, ...MEMORY_MATCH_PAIR_IDS];
@@ -82,10 +102,36 @@ const results: string[] = [];
   assert.ok(parsed, "a full board must parse");
   assert.equal(parsed.board.length, MEMORY_MATCH_BOARD_SIZE, "the parsed board keeps every card");
 
-  // A board shorter than the deck must be refused rather than padded — the
-  // client and server have to agree on the table.
-  assert.equal(parseMemoryMatchState({ ...base, board: board.slice(0, 16) }), null,
-    "a short board must be rejected, not silently accepted");
+  /* THE REGRESSION that broke the live table. An unknown card id used to be
+     substituted with "heart", so the moment the server dealt a deck the
+     running client did not know — a migration landing ahead of the deploy
+     that understands it, which is the normal order — every unknown card
+     became another heart. The board filled with duplicates and could not be
+     won. It must be refused instead. */
+  const unknown = parseMemoryMatchState({ ...base, board: board.map((id, i) => (i === 3 ? "sunhat" : id)) });
+  assert.equal(unknown, null, "an unknown card must refuse the board, never become a heart");
+
+  const allUnknown = parseMemoryMatchState({ ...base, board: board.map(() => "sunhat") });
+  assert.equal(allUnknown, null, "a wholly unreadable deal is refused rather than rendered as hearts");
+
+  /* And the size is the SERVER's to choose. Pinning it in the client is what
+     made the migration and the deploy have to land in a particular order.
+     Both a sixteen-card and a twenty-four-card deal must play. */
+  const eightPairs = MEMORY_MATCH_PAIR_IDS.slice(0, 8);
+  const small = parseMemoryMatchState({ ...base, board: [...eightPairs, ...eightPairs] });
+  assert.ok(small, "a sixteen-card deal from an older server must still play");
+  assert.equal(small.board.length, 16, "and keeps its own size rather than being padded");
+
+  const full = parseMemoryMatchState({ ...base, board });
+  assert.equal(full?.board.length, MEMORY_MATCH_BOARD_SIZE, "as does the full deal");
+
+  // A deal that cannot be cleared is refused: odd length, or a card with no
+  // partner.
+  assert.equal(parseMemoryMatchState({ ...base, board: board.slice(0, 23) }), null,
+    "an odd number of cards can never be cleared");
+  const orphan = [...board.slice(0, 22), MEMORY_MATCH_PAIR_IDS[0], MEMORY_MATCH_PAIR_IDS[1]];
+  assert.equal(parseMemoryMatchState({ ...base, board: orphan }), null,
+    "a card without exactly one partner is refused");
 
   /* THE REGRESSION. On a miss the server empties `revealed`, so `lastPair`
      is the only record of what was turned over. Without it the watching
@@ -105,7 +151,7 @@ const results: string[] = [];
     assert.doesNotThrow(() => parseMemoryMatchState(junk as Record<string, unknown>), "junk metadata must not throw");
   }
 
-  results.push("state     short boards refused · resolved pair survives so the watcher sees card two · junk never throws");
+  results.push("state     unknown cards refuse the board (never become hearts) · 16- and 24-card deals both play · unpairable deals refused · resolved pair survives");
 }
 
 console.log(`\nMemory Match: all checks passed\n${results.map((line) => `  ${line}`).join("\n")}\n`);

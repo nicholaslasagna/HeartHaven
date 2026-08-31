@@ -7,6 +7,7 @@ import { companionArtAsset } from "@/lib/game/companion-art";
 import type { GameReward } from "@/lib/game/rewards";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import {
+  memoryMatchColumns,
   MEMORY_MATCH_PAIR_DATA,
   type MemoryMatchPairId,
 } from "@/lib/game/memory-match-deck";
@@ -45,10 +46,6 @@ type MatchCard = {
 };
 
 const GAME_WIDTH = 920;
-/** Six columns of twelve pairs: 24 cards in four rows. */
-const MEMORY_MATCH_COLUMNS = 6;
-const CARD_WIDTH = 118;
-const CARD_HEIGHT = 84;
 const GAME_HEIGHT = 600;
 
 export function MemoryMatchCanvas({
@@ -103,6 +100,12 @@ export function MemoryMatchCanvas({
 
       class MemoryMatchScene extends PhaserModule.Scene {
         private cards: MatchCard[] = [];
+        /* Card geometry follows the deal, so it is computed when the board
+           is laid out rather than fixed for one table size. */
+        /** The deal these cards were built for; a change means rebuild. */
+        private dealSignature = "";
+        private cardWidth = 118;
+        private cardHeight = 84;
         private busy = false;
         private lastSyncedMoves = -1;
         private memoryMatchSyncHandler?: (event: Event) => void;
@@ -153,8 +156,18 @@ export function MemoryMatchCanvas({
             return;
           }
 
-          if (this.cards.length === 0) {
+          /* Rebuild whenever the deal changes, not just the first time.
+             Cards were created once and never torn down, so a table that
+             changed size or contents — a rematch, or a server that started
+             dealing a different deck — left the previous cards on screen at
+             their old positions while the state referred to the new board.
+             That is duplicated cards and flips landing on the wrong ones. */
+          const deal = state.board.join("|");
+          if (this.cards.length !== state.board.length || this.dealSignature !== deal) {
+            this.destroyCards();
             this.createCards(state.board);
+            this.dealSignature = deal;
+            this.lastSyncedMoves = -1;
           }
 
           const prevMoves = this.lastSyncedMoves;
@@ -214,20 +227,30 @@ export function MemoryMatchCanvas({
           }
         }
 
+        private destroyCards() {
+          for (const card of this.cards) card.container.destroy(true);
+          this.cards = [];
+        }
+
         private createCards(board: MemoryMatchPairId[]) {
-          /* Six across rather than four: the table grew from eight pairs to
-             twelve, and four columns would have needed six rows, which does
-             not fit the 600px stage. Centred from the column count so the
-             grid stays balanced if the deck changes again. */
-          const gapX = 140;
-          const gapY = 100;
-          const startX = (GAME_WIDTH - (MEMORY_MATCH_COLUMNS - 1) * gapX) / 2;
+          /* The layout follows the deal rather than assuming it. The server
+             decides how many cards are on the table, so a hardcoded six
+             columns would misplace any other size — and pinning the size in
+             the client is what caused the duplicate-hearts board in the first
+             place. Sixteen cards lay out 4x4, twenty-four 6x4. */
+          const columns = memoryMatchColumns(board.length);
+          const rows = Math.max(1, Math.ceil(board.length / columns));
+          const gapX = Math.min(188, Math.floor((GAME_WIDTH - 80) / columns));
+          const gapY = rows > 1 ? Math.min(102, Math.floor((GAME_HEIGHT - 250) / (rows - 1))) : 0;
+          this.cardWidth = Math.max(72, Math.min(128, gapX - 22));
+          this.cardHeight = Math.max(56, Math.min(88, (gapY || 100) - 16));
+          const startX = (GAME_WIDTH - (columns - 1) * gapX) / 2;
           const startY = 158;
 
           board.forEach((pair, index) => {
             const data = MEMORY_MATCH_PAIR_DATA[pair];
-            const x = startX + (index % MEMORY_MATCH_COLUMNS) * gapX;
-            const y = startY + Math.floor(index / MEMORY_MATCH_COLUMNS) * gapY;
+            const x = startX + (index % columns) * gapX;
+            const y = startY + Math.floor(index / columns) * gapY;
             const card = this.createCard(index, pair, data.label, data.color, x, y);
             this.cards.push(card);
           });
@@ -328,10 +351,12 @@ export function MemoryMatchCanvas({
           y: number,
         ): MatchCard {
           const container = this.add.container(x, y).setDepth(y);
-          const shadow = this.add.rectangle(4, 8, CARD_WIDTH, CARD_HEIGHT, 0x3a2a2a, 0.12);
-          const back = this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, 0xfbe3e3).setStrokeStyle(3, 0xd87e8c, 0.55);
-          const front = this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, color).setStrokeStyle(3, 0x8b5e3c, 0.28);
-          const frontGlow = this.add.rectangle(0, 0, CARD_WIDTH - 22, CARD_HEIGHT - 22, 0xffffff, 0.22);
+          const cardWidth = this.cardWidth;
+          const cardHeight = this.cardHeight;
+          const shadow = this.add.rectangle(4, 8, cardWidth, cardHeight, 0x3a2a2a, 0.12);
+          const back = this.add.rectangle(0, 0, cardWidth, cardHeight, 0xfbe3e3).setStrokeStyle(3, 0xd87e8c, 0.55);
+          const front = this.add.rectangle(0, 0, cardWidth, cardHeight, color).setStrokeStyle(3, 0x8b5e3c, 0.28);
+          const frontGlow = this.add.rectangle(0, 0, cardWidth - 22, cardHeight - 22, 0xffffff, 0.22);
           const art = this.createCardArt(pair);
           const text = this.add.text(0, 30, label, {
             align: "center",

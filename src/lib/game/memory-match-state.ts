@@ -1,6 +1,6 @@
 import type { GameSessionSeat } from "@/lib/game/use-game-session";
 import {
-  MEMORY_MATCH_BOARD_SIZE,
+  MEMORY_MATCH_MIN_BOARD_SIZE,
   MEMORY_MATCH_PAIR_DATA,
   type MemoryMatchPairId,
 } from "@/lib/game/memory-match-deck";
@@ -33,12 +33,42 @@ function readIntArray(value: unknown): number[] {
   return value.map((entry) => Number(entry)).filter((entry) => Number.isFinite(entry));
 }
 
-function readPairBoard(value: unknown): MemoryMatchPairId[] {
-  if (!Array.isArray(value) || value.length < MEMORY_MATCH_BOARD_SIZE) return [];
-  return value.slice(0, MEMORY_MATCH_BOARD_SIZE).map((entry) => {
+/**
+ * Read the board the server actually dealt.
+ *
+ * Two rules, both learned the hard way:
+ *
+ * 1. NEVER substitute an unknown card. This used to fall back to "heart", so
+ *    the moment the server dealt an id the running client did not know — a
+ *    migration applied ahead of the deploy that understands it, which is the
+ *    normal order — every unknown card became another heart. The table filled
+ *    with duplicates and could not be won. A board we cannot read is refused
+ *    outright; the client then says it is waiting for the server, which is
+ *    true and recoverable.
+ *
+ * 2. Do not demand a particular SIZE. The size is the server's to choose. As
+ *    long as the deal is coherent, a sixteen-card table and a twenty-four-card
+ *    table are both perfectly playable, and neither the migration nor the
+ *    deploy has to land first.
+ */
+function readPairBoard(value: unknown): MemoryMatchPairId[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length < MEMORY_MATCH_MIN_BOARD_SIZE || value.length % 2 !== 0) return null;
+
+  const board: MemoryMatchPairId[] = [];
+  const seen = new Map<string, number>();
+  for (const entry of value) {
     const id = String(entry);
-    return id in MEMORY_MATCH_PAIR_DATA ? (id as MemoryMatchPairId) : "heart";
-  });
+    if (!(id in MEMORY_MATCH_PAIR_DATA)) return null;
+    board.push(id as MemoryMatchPairId);
+    seen.set(id, (seen.get(id) ?? 0) + 1);
+  }
+
+  // Every card must have exactly one partner, or the table cannot be cleared.
+  for (const count of seen.values()) {
+    if (count !== 2) return null;
+  }
+  return board;
 }
 
 export function parseMemoryMatchState(
@@ -46,7 +76,7 @@ export function parseMemoryMatchState(
 ): MemoryMatchState | null {
   if (!metadata) return null;
   const board = readPairBoard(metadata.board);
-  if (board.length < MEMORY_MATCH_BOARD_SIZE) return null;
+  if (!board) return null;
 
   const mode = metadata.mode === "party" ? "party" : "couples";
 
