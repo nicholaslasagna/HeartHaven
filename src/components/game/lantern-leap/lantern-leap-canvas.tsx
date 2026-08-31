@@ -1,12 +1,19 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import { LanternGame, type GameEvent } from "@/lib/game/lantern-leap/game";
 import { levelById } from "@/lib/game/lantern-leap/levels";
 import { LanternRenderer, type RenderCompanion, type RenderSnapshot } from "@/lib/game/lantern-leap/renderer";
 import type { PlayerInput } from "@/lib/game/lantern-leap/physics";
-import { loadPrefs, QUALITY_SETTINGS } from "@/lib/game/player-prefs";
+import {
+  getPrefsSnapshot,
+  loadPrefs,
+  padWalk,
+  QUALITY_SETTINGS,
+  subscribePrefs,
+  TOUCH_WALK_RUN_SPAN,
+} from "@/lib/game/player-prefs";
 
 /**
  * Glue: owns the canvas, the input, and the frame loop. Rules live in
@@ -55,6 +62,16 @@ export function LanternLeapCanvas({
   devBots = 0,
 }: LanternLeapCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  /* Touch lives in a ref, not state: the pad writes to it on every pointer
+     move and the frame loop reads it. Through state the pad would
+     re-render the component many times a second to change nothing React
+     draws. */
+  const touchRef = useRef<LanternTouchState>({ moveX: 0, jump: false, run: false, duck: false });
+  const showTouch = useSyncExternalStore(
+    subscribePrefs,
+    () => getPrefsSnapshot().touchControls,
+    () => false,
+  );
   const remotesRef = useRef(remotes);
   const simulatedRemoteIdsRef = useRef(new Set<string>());
   const companionRef = useRef(companion);
@@ -135,16 +152,25 @@ export function LanternLeapCanvas({
     /* -- input -- */
     const held = new Set<string>();
     const input: PlayerInput = { moveX: 0, jump: false, run: false, duck: false, pound: false };
+    const touch = touchRef.current;
     const readInput = () => {
       const left = held.has("left");
       const right = held.has("right");
-      input.moveX = Number(right) - Number(left);
-      input.jump = held.has("jump");
-      input.run = held.has("run");
-      input.duck = held.has("duck");
+      /* Keyboard and touch are summed rather than switched between, so a
+         touchscreen laptop can use either without one silencing the other.
+         moveX stays -1, 0 or 1 — the physics expects a direction, not a
+         magnitude — so the two are combined and then clamped. */
+      const keyboardX = Number(right) - Number(left);
+      const combined = keyboardX + touch.moveX;
+      input.moveX = combined === 0 ? 0 : combined < 0 ? -1 : 1;
+      input.jump = held.has("jump") || touch.jump;
+      input.run = held.has("run") || touch.run;
+      input.duck = held.has("duck") || touch.duck;
       // Down while airborne is a ground pound.
-      input.pound = held.has("duck");
+      input.pound = input.duck;
     };
+    // The pad writes into the ref and asks for a re-read on the next frame.
+    touch.onChange = readInput;
     const isTyping = () => {
       const el = document.activeElement;
       if (!el) return false;
@@ -304,5 +330,111 @@ export function LanternLeapCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelId, playerId, playerName, seatIndex, devBots]);
 
-  return <div className="w-full overflow-hidden rounded-lg bg-[#1b1430]" ref={mountRef} />;
+  return (
+    <div className="relative w-full">
+      <div className="w-full overflow-hidden rounded-lg bg-[#1b1430]" ref={mountRef} />
+      {showTouch && (
+        <LanternTouchPad
+          onDuck={(down) => { writeTouch(touchRef, { duck: down }); }}
+          onJump={(down) => { writeTouch(touchRef, { jump: down }); }}
+          onWalk={(moveX, run) => { writeTouch(touchRef, { moveX, run }); }}
+        />
+      )}
+    </div>
+  );
+}
+
+type LanternTouchState = {
+  moveX: number;
+  jump: boolean;
+  run: boolean;
+  duck: boolean;
+  onChange?: () => void;
+};
+
+/** Write into the shared touch state and let the loop re-read it. */
+function writeTouch(
+  ref: { current: LanternTouchState },
+  patch: Partial<Omit<LanternTouchState, "onChange">>,
+) {
+  Object.assign(ref.current, patch);
+  ref.current.onChange?.();
+}
+
+/** Walk with the left thumb, jump and pound with the right. */
+function LanternTouchPad({
+  onWalk,
+  onJump,
+  onDuck,
+}: {
+  onWalk: (moveX: number, run: boolean) => void;
+  onJump: (down: boolean) => void;
+  onDuck: (down: boolean) => void;
+}) {
+  const walkRef = useRef<{ pointerId: number; originX: number } | null>(null);
+  const [walkVisual, setWalkVisual] = useState({ moveX: 0, run: false });
+
+  const beginWalk = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    walkRef.current = { pointerId: event.pointerId, originX: event.clientX };
+  };
+  const moveWalk = (event: React.PointerEvent<HTMLDivElement>) => {
+    const active = walkRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const walk = padWalk(event.clientX - active.originX);
+    onWalk(walk.moveX, walk.run);
+    setWalkVisual(walk);
+  };
+  const endWalk = (event: React.PointerEvent<HTMLDivElement>) => {
+    const active = walkRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    walkRef.current = null;
+    onWalk(0, false);
+    setWalkVisual({ moveX: 0, run: false });
+  };
+
+  /* Up, cancel AND leave all release. A lost touch that welds jump down
+     would hold the runner against the ceiling for the rest of the race. */
+  const hold = (set: (down: boolean) => void) => ({
+    onPointerCancel: () => set(false),
+    onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      set(true);
+    },
+    onPointerLeave: () => set(false),
+    onPointerUp: () => set(false),
+  });
+
+  const buttonClass =
+    "pointer-events-auto select-none rounded-full border border-white/35 bg-black/45 " +
+    "px-4 py-3 text-[11px] font-black uppercase tracking-wide text-white active:bg-white/25";
+
+  return (
+    <div className="pointer-events-none absolute inset-0 touch-none select-none">
+      <div
+        aria-label="Walk"
+        className="pointer-events-auto absolute bottom-0 left-0 h-2/3 w-1/2"
+        onPointerCancel={endWalk}
+        onPointerDown={beginWalk}
+        onPointerMove={moveWalk}
+        onPointerUp={endWalk}
+        role="presentation"
+      >
+        <div className="absolute bottom-4 left-4 h-2 w-32 rounded-full bg-black/45">
+          <span
+            className={`absolute top-1/2 size-7 -translate-y-1/2 rounded-full border-2 ${walkVisual.run ? "border-amber-200 bg-amber-200/50" : "border-white/70 bg-white/30"}`}
+            style={{
+              left: "calc(50% - 0.875rem)",
+              transform: `translateX(${walkVisual.moveX * (walkVisual.run ? TOUCH_WALK_RUN_SPAN : TOUCH_WALK_RUN_SPAN / 2)}px)`,
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="absolute bottom-4 right-4 flex items-end gap-2">
+        <button className={buttonClass} type="button" {...hold(onDuck)}>Pound</button>
+        <button className={`${buttonClass} bg-amber-300/85 text-ink-900`} type="button" {...hold(onJump)}>Jump</button>
+      </div>
+    </div>
+  );
 }

@@ -100,6 +100,33 @@ assert.doesNotThrow(() => prefs.loadPrefs(), "nor must reading it");
   const overshoot = prefs.padVector(span * 9, span * -3);
   assert.ok(Math.abs(Math.hypot(overshoot.x, overshoot.z) - 1) < 1e-9, "overshoot clamps to the rim");
 }
+/* -- platformer walk: one thumb gives direction and pace -- */
+{
+  const { TOUCH_WALK_DEADZONE, TOUCH_WALK_RUN_SPAN } = prefs;
+
+  // A thumb resting on the pad must not creep the runner sideways. Without a
+  // deadzone a still thumb reads as a tiny drag and the character never
+  // quite stands still.
+  assert.deepEqual(prefs.padWalk(0), { moveX: 0, run: false }, "a centred thumb stands still");
+  assert.deepEqual(prefs.padWalk(TOUCH_WALK_DEADZONE - 1), { moveX: 0, run: false }, "inside the deadzone is still");
+  assert.deepEqual(prefs.padWalk(-(TOUCH_WALK_DEADZONE - 1)), { moveX: 0, run: false }, "in both directions");
+
+  // Past the deadzone you walk; further out you run.
+  assert.deepEqual(prefs.padWalk(TOUCH_WALK_DEADZONE), { moveX: 1, run: false }, "just past the deadzone walks right");
+  assert.deepEqual(prefs.padWalk(-TOUCH_WALK_DEADZONE), { moveX: -1, run: false }, "and left");
+  assert.deepEqual(prefs.padWalk(TOUCH_WALK_RUN_SPAN), { moveX: 1, run: true }, "a long drag runs");
+  assert.deepEqual(prefs.padWalk(-TOUCH_WALK_RUN_SPAN * 4), { moveX: -1, run: true }, "overshoot still runs, not faster");
+
+  // moveX is a DIRECTION: the physics expects -1, 0 or 1, never a magnitude.
+  for (const drag of [-500, -60, -13, 0, 13, 60, 500]) {
+    const walk = prefs.padWalk(drag);
+    assert.ok([-1, 0, 1].includes(walk.moveX), `moveX must be a direction, got ${walk.moveX}`);
+  }
+  assert.ok(TOUCH_WALK_DEADZONE < TOUCH_WALK_RUN_SPAN, "you must be able to walk before you run");
+  assert.deepEqual(prefs.padWalk(Number.NaN), { moveX: 0, run: false }, "junk stands still rather than bolting");
+  results.push("walk      deadzone holds still · past it walks · further runs · moveX stays a direction · junk is safe");
+}
+
 results.push("stick     unit disc, so diagonals match straight pushes · analogue inside the rim · down = away · centre is +0");
 
 results.push("store     snapshot reference-stable · write notifies once · listeners see fresh values · junk coerced · private mode survives");

@@ -188,3 +188,32 @@ export function padVector(dragX: number, dragY: number, span = TOUCH_STICK_SPAN)
   if (length <= 1) return { x: x || 0, z: z || 0 };
   return { x: x / length || 0, z: z / length || 0 };
 }
+
+export const TOUCH_WALK_DEADZONE = 12;
+export const TOUCH_WALK_RUN_SPAN = 58;
+
+/**
+ * Horizontal drag to a platformer's walk input.
+ *
+ * One thumb gives both direction and pace: past the deadzone you walk, and
+ * further out you run. That keeps the run button off the screen entirely,
+ * which matters on a phone where the jump button is the one that has to be
+ * big and easy to hit.
+ *
+ * The deadzone is what stops a thumb resting on the pad from creeping the
+ * runner sideways — without it a still thumb reads as a tiny drag and the
+ * character never quite stands still.
+ */
+export function padWalk(
+  dragPixels: number,
+  deadzone = TOUCH_WALK_DEADZONE,
+  runSpan = TOUCH_WALK_RUN_SPAN,
+): { moveX: number; run: boolean } {
+  if (!Number.isFinite(dragPixels) || Math.abs(dragPixels) < deadzone) {
+    return { moveX: 0, run: false };
+  }
+  return {
+    moveX: dragPixels < 0 ? -1 : 1,
+    run: Math.abs(dragPixels) >= runSpan,
+  };
+}
