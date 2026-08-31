@@ -18,7 +18,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "check:lantern-leap": "esbuild checks/lantern-leap.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-ll.mjs --log-level=error && node node_modules/.cache/check-ll.mjs",
     "check:haven-trails": "esbuild checks/haven-trails-map.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-trails.mjs --log-level=error && node node_modules/.cache/check-trails.mjs",
-    "check": "npm run check:lantern-leap && npm run check:moonberry-bowling && npm run check:moonberry-racing && npm run check:heartrush && npm run check:pool && npm run check:memory-match && npm run check:keeper-abilities && npm run check:garden-plots && npm run check:remote-interpolation && npm run check:haven-trails && npm run check:player-prefs",
+    "check": "npm run check:lantern-leap && npm run check:moonberry-bowling && npm run check:moonberry-racing && npm run check:heartrush && npm run check:pool && npm run check:memory-match && npm run check:keeper-abilities && npm run check:garden-plots && npm run check:remote-interpolation && npm run check:touch-controls && npm run check:haven-trails && npm run check:player-prefs",
     "check:moonberry-bowling": "esbuild checks/moonberry-bowling.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mb.mjs --log-level=error && node node_modules/.cache/check-mb.mjs",
     "check:moonberry-racing": "esbuild checks/moonberry-racing.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mr.mjs --log-level=error && node node_modules/.cache/check-mr.mjs",
     "check:player-prefs": "esbuild checks/player-prefs.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-pp.mjs --log-level=error && node node_modules/.cache/check-pp.mjs",
@@ -27,7 +27,8 @@
     "check:memory-match": "esbuild checks/memory-match.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mm.mjs --log-level=error && node node_modules/.cache/check-mm.mjs",
     "check:keeper-abilities": "esbuild checks/keeper-abilities.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-ka.mjs --log-level=error && node node_modules/.cache/check-ka.mjs",
     "check:garden-plots": "esbuild checks/garden-plots.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-gp.mjs --log-level=error && node node_modules/.cache/check-gp.mjs",
-    "check:remote-interpolation": "esbuild checks/remote-interpolation.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-ri.mjs --log-level=error && node node_modules/.cache/check-ri.mjs"
+    "check:remote-interpolation": "esbuild checks/remote-interpolation.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-ri.mjs --log-level=error && node node_modules/.cache/check-ri.mjs",
+    "check:touch-controls": "esbuild checks/touch-controls.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-tc.mjs --log-level=error && node node_modules/.cache/check-tc.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",

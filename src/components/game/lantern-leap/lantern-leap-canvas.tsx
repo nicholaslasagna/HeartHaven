@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import { LanternGame, type GameEvent } from "@/lib/game/lantern-leap/game";
 import { levelById } from "@/lib/game/lantern-leap/levels";
+import { TOUCH_BUTTON_BASE } from "@/lib/game/touch-controls";
 import { LanternRenderer, type RenderCompanion, type RenderSnapshot } from "@/lib/game/lantern-leap/renderer";
 import type { PlayerInput } from "@/lib/game/lantern-leap/physics";
 import {
@@ -405,9 +406,7 @@ function LanternTouchPad({
     onPointerUp: () => set(false),
   });
 
-  const buttonClass =
-    "pointer-events-auto select-none rounded-full border border-white/35 bg-black/45 " +
-    "px-4 py-3 text-[11px] font-black uppercase tracking-wide text-white active:bg-white/25";
+  const buttonClass = `${TOUCH_BUTTON_BASE} border border-white/35 bg-black/45 text-white active:bg-white/25`;
 
   return (
     <div className="pointer-events-none absolute inset-0 touch-none select-none">

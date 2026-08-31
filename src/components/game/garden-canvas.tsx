@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { DragEvent } from "react";
 import Image from "next/image";
 import type Phaser from "phaser";
@@ -55,6 +55,8 @@ import {
 } from "@/lib/game/garden-abilities";
 import { PLOT_STATUS_DAMP_PREFIX } from "@/lib/game/garden-plots";
 import { remoteGlideMs } from "@/lib/game/remote-interpolation";
+import { GardenAbilityOverlay } from "@/components/game/garden-ability-buttons";
+import { getPrefsSnapshot, subscribePrefs } from "@/lib/game/player-prefs";
 import { readAchievementState } from "@/lib/game/achievements";
 import {
   isAbilityUnlocked,
@@ -444,6 +446,14 @@ export function GardenCanvas({
   const navigationMapId = navigationMapIdFromVariant(variant);
   const navigationDebugActive = NAVIGATION_DEBUG_ENABLED;
   const mountRef = useRef<HTMLDivElement | null>(null);
+  /* Abilities are garden-only — the park has no dig spots, bushes or
+     caches — and the overlay only earns its screen space on touch,
+     where the panel below the canvas is out of reach mid-walk. */
+  const showAbilityOverlay = useSyncExternalStore(
+    subscribePrefs,
+    () => getPrefsSnapshot().touchControls && variant !== "park",
+    () => false,
+  );
   const remotePlayersRef = useRef(remotePlayers);
   const decorRef = useRef<GardenDecorPlacement[]>(decor ?? readGardenDecor(variant));
   const pendingDecorIdsRef = useRef(pendingDecorIds);
@@ -5186,6 +5196,7 @@ export function GardenCanvas({
           {variant === "park" ? <span className="rounded-md bg-blush-100 px-2.5 py-1">Game kiosks</span> : null}
         </div>
       </div>
+      <div className="relative mx-auto w-full" style={{ maxWidth: 960 }}>
       <div
         ref={mountRef}
         onDragOver={(event) => {
@@ -5213,6 +5224,11 @@ export function GardenCanvas({
         }}
         tabIndex={0}
       />
+      {/* On touch, the abilities ride on the world itself. In the panel below
+          they are a list with unlock progress; here they are what you reach
+          for without looking away from your companion. */}
+      {showAbilityOverlay && <GardenAbilityOverlay />}
+      </div>
       <div className="border-t border-garden-300/40 bg-white/78 px-4 py-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-extrabold uppercase tracking-normal text-garden-700">Garden decor drawer</span>

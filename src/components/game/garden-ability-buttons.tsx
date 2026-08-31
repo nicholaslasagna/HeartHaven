@@ -2,6 +2,7 @@
 
 import { Lamp, PawPrint, Shovel, Sprout, Wind } from "lucide-react";
 import { useAchievements } from "@/lib/game/use-achievements";
+import { TOUCH_BUTTON_BASE } from "@/lib/game/touch-controls";
 import {
   abilityProgress,
   isAbilityUnlocked,
@@ -78,6 +79,44 @@ function AbilityButton({
       <span className="flex items-center gap-2"><Icon className="size-4" /> {ability.label}</span>
       <kbd className="rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-black">{ability.key}</kbd>
     </button>
+  );
+}
+
+/**
+ * Compact icon-only abilities, overlaid on the world itself.
+ *
+ * On a phone the panel version sits below the canvas, so using an ability
+ * meant scrolling away from the companion standing on the spot — by the time
+ * the button was on screen the thing you wanted to dig was not. Only unlocked
+ * abilities appear here; the panel is where progress toward the rest is
+ * shown, and screen space over the garden is worth more than a locked button.
+ */
+export function GardenAbilityOverlay() {
+  const { progress } = useAchievements();
+  const unlocked = KEEPER_ABILITIES.filter((ability) => isAbilityUnlocked(ability, progress));
+  if (unlocked.length === 0) return null;
+
+  return (
+    <div className="pointer-events-none absolute bottom-3 right-3 flex flex-col items-end gap-2">
+      {unlocked.map((ability) => {
+        const Icon = ICONS[ability.icon];
+        return (
+          <button
+            aria-label={ability.label}
+            className={cn(
+              TOUCH_BUTTON_BASE,
+              "border border-garden-700/35 bg-white/85 px-0 text-ink-800 shadow-sm backdrop-blur active:bg-garden-100",
+            )}
+            key={ability.id}
+            onClick={() => fireAbility(ability.id)}
+            title={ability.description}
+            type="button"
+          >
+            <Icon className="size-5" />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

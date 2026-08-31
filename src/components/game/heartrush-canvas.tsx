@@ -9,6 +9,7 @@ import {
   type HeartRushState,
 } from "@/lib/game/heartrush-shared";
 import { companionArtAsset } from "@/lib/game/companion-art";
+import { TOUCH_BUTTON_BASE } from "@/lib/game/touch-controls";
 import {
   getPrefsSnapshot,
   loadPrefs,
@@ -1239,10 +1240,7 @@ function HeartRushTouchPad({
     setKnob({ x: 0, z: 0 });
   };
 
-  const buttonClass =
-    "pointer-events-auto select-none rounded-full border border-cream-50/40 bg-ink-900/60 " +
-    "px-4 py-3 text-[11px] font-black uppercase tracking-wide text-cream-50 " +
-    "min-w-[3.5rem] active:bg-cream-50/30";
+  const buttonClass = `${TOUCH_BUTTON_BASE} border border-cream-50/40 bg-ink-900/60 text-cream-50 active:bg-cream-50/30`;
 
   return (
     <div className="pointer-events-none absolute inset-0 touch-none select-none">

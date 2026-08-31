@@ -17,6 +17,7 @@ import {
   subscribePrefs,
   TOUCH_STEER_SPAN,
 } from "@/lib/game/player-prefs";
+import { TOUCH_BUTTON_BASE } from "@/lib/game/touch-controls";
 import { cn } from "@/lib/utils";
 
 /**
@@ -830,14 +831,14 @@ function TouchPad({
     onPointerLeave: () => onHold(key, false),
   });
 
-  /* Deliberately small. The canvas is 16:9 inside a portrait phone, so it is
-     only a couple of hundred pixels tall — full-size pills covered most of
-     the track. These stay above the ~44px touch-target minimum while
-     leaving the racing line visible. */
-  const buttonClass =
-    "pointer-events-auto select-none rounded-full border border-cream-50/40 bg-ink-900/60 " +
-    "px-3 py-2 text-[10px] font-black uppercase tracking-wide text-cream-50 " +
-    "min-w-[3.25rem] active:bg-cream-50/30";
+  /* Compact, but never below the shared touch minimum. These were 29px tall
+     while the comment here claimed they cleared 44px — small enough to miss
+     a boost with a thumb on a moving kart. The size now comes from
+     TOUCH_BUTTON_BASE so it cannot drift again; only the colours are local. */
+  const buttonClass = cn(
+    TOUCH_BUTTON_BASE,
+    "border border-cream-50/40 bg-ink-900/60 text-cream-50 active:bg-cream-50/30",
+  );
 
   return (
     <div className="pointer-events-none absolute inset-0 touch-none select-none">
