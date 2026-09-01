@@ -10,7 +10,7 @@ export type GardenPlotState = {
      hardenGardenPlots runs on every read AND every save — so a field it does
      not know about is stripped in both directions and the cadence would
      silently reset. Anything the server tracks per plot has to be listed
-     here too.*/
+     here too. */
   wateredAt: string | null;
   /** Waterings since the last harvest. Decides the harvest payout. */
   tended: number;
