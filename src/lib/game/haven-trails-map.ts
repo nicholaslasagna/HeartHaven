@@ -16,6 +16,7 @@ export type TrailBlockedZone = {
   radius: number;
   /** Extra keeper clearance around a prop body, in design-space pixels. */
   clearance?: number;
+  /** Labeling the trail */
   label: string;
 };
 export type TrailLandmark = { id: string; x: number; y: number; label: string; copy: string; artKey: string };
