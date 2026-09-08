@@ -5,6 +5,13 @@ import type Phaser from "phaser";
 import type { GameReward } from "@/lib/game/rewards";
 import { playCozyCue } from "@/lib/game/cozy-audio";
 import {
+  COZY_QUEST_CONFIG,
+  COZY_QUEST_MOVE_TYPE,
+  cozyQuestReward,
+  reduceCozyQuestState,
+} from "@/lib/game/cozy-quest-relay";
+import type { GameMoveRecord, GameSessionSeat } from "@/lib/game/use-game-session";
+import {
   COMPANION_ROSTER_EVENT,
   getActiveCompanion,
   type CompanionRecord,
@@ -16,11 +23,25 @@ export type CozyQuestVariant = "lantern-relay" | "heart-hunt";
 type CozyQuestCanvasProps = {
   variant: CozyQuestVariant;
   onReward?: (reward: GameReward) => void;
+  /* Shared-round wiring. All optional: with none of it the quest plays
+     exactly as it did, folding a log it keeps to itself. With it, the log is
+     the session's and several keepers work one board. */
+  moves?: GameMoveRecord[];
+  seats?: GameSessionSeat[];
+  startedAtMs?: number;
+  mySeatIndex?: number | null;
+  /** Called when this keeper claims a target, to submit it to the session. */
+  onFind?: (targetIndex: number) => void;
 };
 
 type QuestTarget = {
   node: Phaser.GameObjects.Container;
   found: boolean;
+  /* Lantern Relay only: kept so a lantern lit by anyone — including another
+     keeper, whose claim arrives through the log — can be brightened without
+     digging through the container's children by position. */
+  glow?: Phaser.GameObjects.Arc;
+  flame?: Phaser.GameObjects.Arc;
 };
 
 const GAME_WIDTH = 900;
@@ -39,15 +60,43 @@ const questCopy: Record<CozyQuestVariant, { title: string; label: string; second
   },
 };
 
-export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
+export function CozyQuestCanvas({
+  variant,
+  onReward,
+  moves,
+  seats,
+  startedAtMs,
+  mySeatIndex = null,
+  onFind,
+}: CozyQuestCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const onRewardRef = useRef(onReward);
+  /* Refs, not props, inside the scene: Phaser is built once and must not be
+     rebuilt when a move arrives. */
+  const seatsRef = useRef<GameSessionSeat[]>(seats ?? []);
+  const mySeatIndexRef = useRef<number | null>(mySeatIndex);
+  const onFindRef = useRef(onFind);
+  const startedAtRef = useRef(startedAtMs);
+  const sceneRef = useRef<{ adoptMoves: (moves: GameMoveRecord[], startedAtMs: number) => void } | null>(null);
   const [activeCompanion, setActiveCompanion] = useState<CompanionRecord | null>(() => getActiveCompanion() ?? null);
   const [status, setStatus] = useState(questCopy[variant].label);
 
   useEffect(() => {
     onRewardRef.current = onReward;
-  }, [onReward]);
+    onFindRef.current = onFind;
+    mySeatIndexRef.current = mySeatIndex;
+    startedAtRef.current = startedAtMs;
+    if (seats) seatsRef.current = seats;
+  }, [mySeatIndex, onFind, onReward, seats, startedAtMs]);
+
+  /* Hand the session's rows to the running scene. Nothing is rebuilt: the
+     scene refolds and shows any claims it had not seen, including other
+     keepers'. */
+  useEffect(() => {
+    if (!moves) return;
+    sceneRef.current?.adoptMoves(moves, startedAtMs ?? Date.now());
+  }, [moves, startedAtMs]);
+
 
   useEffect(() => {
     const syncCompanion = () => setActiveCompanion(getActiveCompanion() ?? null);
@@ -65,10 +114,14 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
 
       class CozyQuestScene extends PhaserModule.Scene {
         private targets: QuestTarget[] = [];
-        private currentIndex = 0;
-        private score = 0;
-        private timeLeft = questCopy[variant].seconds;
-        private elapsed = 0;
+        /* The round is folded from a move log rather than mutated in place,
+           so a shared board resolves identically on every device. In a solo
+           round the log is local; in a shared one it is the session's rows.
+           One code path either way — the reducer is the only thing that
+           decides what has been found and what it scored. */
+        private moves: GameMoveRecord[] = [];
+        private startedAtMs = Date.now();
+        private round = reduceCozyQuestState([], seatsRef.current, variant, Date.now(), Date.now());
         private gameOver = false;
         private scoreText!: Phaser.GameObjects.Text;
         private timerText!: Phaser.GameObjects.Text;
@@ -91,6 +144,9 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
         }
 
         create() {
+          sceneRef.current = this;
+          this.startedAtMs = startedAtRef.current ?? Date.now();
+          this.refold();
           this.drawBackdrop();
           this.createCompanionMascot();
           this.createHud();
@@ -101,15 +157,21 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           }
           this.updateHud();
           setStatus(questCopy[variant].label);
-          // TODO: Replace local clicks with Supabase game_moves rows before calling this a party co-op round.
+          /* The round folds from a move log rather than from clicks mutating
+             the scene, so it is the same code path whether one keeper is
+             playing or several: pass `moves`, `seats` and `startedAtMs` from
+             a session and the board is shared. Without them the log stays
+             local and the quest plays exactly as it always did. */
         }
 
-        update(_time: number, delta: number) {
+        update() {
           if (this.gameOver) return;
-          this.elapsed += delta;
-          this.timeLeft = Math.max(0, questCopy[variant].seconds - this.elapsed / 1000);
+          // The clock is derived from the round's start rather than summed
+          // from frame deltas, so a backgrounded tab cannot fall behind and
+          // every device agrees on how much time is left.
+          this.refold();
           this.updateHud();
-          if (this.timeLeft <= 0) this.endRound();
+          if (this.round.gameOver) this.endRound();
         }
 
         private drawBackdrop() {
@@ -197,8 +259,8 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
             lantern.add([glow, body, flame]);
             lantern.setSize(72, 82);
             lantern.setInteractive({ useHandCursor: true });
-            lantern.on("pointerdown", () => this.clickLantern(index, glow, flame));
-            this.targets.push({ node: lantern, found: false });
+            lantern.on("pointerdown", () => this.claim(index));
+            this.targets.push({ node: lantern, found: false, glow, flame });
             this.tweens.add({
               targets: glow,
               alpha: index === 0 ? 0.46 : 0.16,
@@ -209,33 +271,6 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
               ease: "Sine.inOut",
             });
           });
-        }
-
-        private clickLantern(index: number, glow: Phaser.GameObjects.Arc, flame: Phaser.GameObjects.Arc) {
-          if (this.gameOver || this.targets[index].found) return;
-          if (index !== this.currentIndex) {
-            this.score = Math.max(0, this.score - 10);
-            playCozyCue("miss");
-            setStatus("Wrong lantern. Follow the glowing path.");
-            this.pulse(0x84675f);
-            return;
-          }
-
-          this.targets[index].found = true;
-          this.currentIndex += 1;
-          this.score += 50 + Math.ceil(this.timeLeft);
-          playCozyCue("lantern");
-          glow.setFillStyle(0xfaebc2, 0.46);
-          flame.setFillStyle(0xd9a53e, 1);
-          this.spawnBurst(this.targets[index].node.x, this.targets[index].node.y);
-          setStatus("Lantern lit. Keep the path glowing.");
-
-          const next = this.targets[this.currentIndex]?.node;
-          if (next) {
-            this.spawnBurst(next.x, next.y);
-          } else {
-            this.endRound();
-          }
         }
 
         private createHeartHunt() {
@@ -264,25 +299,93 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
             target.add(this.add.circle(0, 0, 28, 0xffffff, 0.01));
             target.setSize(64, 64);
             target.setInteractive({ useHandCursor: true });
-            target.on("pointerdown", () => this.findHeart(index));
+            target.on("pointerdown", () => this.claim(index));
             this.targets.push({ node: target, found: false });
           });
         }
 
-        private findHeart(index: number) {
+        /**
+         * Record a claim on a target and refold.
+         *
+         * Optimistic: the move is added locally at once so the board responds
+         * to the tap, and replaced when the session's own rows arrive. If
+         * another keeper reached the same keepsake first, the reducer simply
+         * drops ours on the next fold — first claim wins, and being late is
+         * not an error.
+         */
+        private claim(targetIndex: number) {
+          if (this.gameOver) return;
+          if (this.round.claimedBy[targetIndex] !== undefined) return;
+
+          const move: GameMoveRecord = {
+            move_index: this.moves.length,
+            profile_id: "local",
+            seat_index: mySeatIndexRef.current ?? 0,
+            move_type: COZY_QUEST_MOVE_TYPE,
+            payload: { variant, targetIndex },
+            created_at: new Date().toISOString(),
+          };
+          this.moves = [...this.moves, move];
+          onFindRef.current?.(targetIndex);
+          this.refold();
+
+          const entry = this.round.lastEntry;
+          if (entry && !entry.correct) {
+            playCozyCue("miss");
+            setStatus("Wrong lantern. Follow the glowing path.");
+            this.pulse(0x84675f);
+            this.updateHud();
+            return;
+          }
+          this.applyClaimVisuals(targetIndex);
+        }
+
+        /** Recompute everything the round shows from the log. */
+        private refold() {
+          this.round = reduceCozyQuestState(
+            this.moves, seatsRef.current, variant, this.startedAtMs, Date.now(),
+          );
+        }
+
+        /** Replace the local log with the session's authoritative rows. */
+        adoptMoves(moves: GameMoveRecord[], startedAtMs: number) {
+          this.moves = moves;
+          this.startedAtMs = startedAtMs;
+          const previous = new Set(Object.keys(this.round.claimedBy));
+          this.refold();
+          for (const key of Object.keys(this.round.claimedBy)) {
+            if (!previous.has(key)) this.applyClaimVisuals(Number(key));
+          }
+          this.updateHud();
+          if (this.round.gameOver) this.endRound();
+        }
+
+        private applyClaimVisuals(index: number) {
           const target = this.targets[index];
-          if (this.gameOver || target.found) return;
+          if (!target || target.found) return;
           target.found = true;
-          this.currentIndex += 1;
-          this.score += 65 + Math.ceil(this.timeLeft * 1.5);
           playCozyCue("heart");
           target.node.each((child: Phaser.GameObjects.GameObject) => {
             const node = child as Phaser.GameObjects.GameObject & { setAlpha?: (alpha: number) => void };
             node.setAlpha?.(0.92);
           });
+          target.glow?.setFillStyle(0xfaebc2, 0.46);
+          target.flame?.setFillStyle(0xd9a53e, 1);
           this.spawnBurst(target.node.x, target.node.y);
-          setStatus("Keepsake found. The room feels warmer.");
-          if (this.currentIndex === this.targets.length) this.endRound();
+
+          // Point at the next lantern on the path, wherever the claim came from.
+          if (COZY_QUEST_CONFIG[variant].ordered) {
+            const next = this.targets[this.round.nextIndex]?.node;
+            if (next) this.spawnBurst(next.x, next.y);
+          }
+
+          setStatus(
+            this.round.lastEntry && this.round.lastEntry.seatIndex !== (mySeatIndexRef.current ?? 0)
+              ? `${this.round.lastEntry.playerName} found one.`
+              : "Keepsake found. The room feels warmer.",
+          );
+          this.updateHud();
+          if (this.round.allFound) this.endRound();
         }
 
         private spawnBurst(x: number, y: number) {
@@ -307,18 +410,16 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
         }
 
         private updateHud() {
-          this.scoreText?.setText(`Score ${this.score}`);
-          this.progressText?.setText(`${this.currentIndex}/${this.targets.length} complete`);
-          this.timerText?.setText(`${Math.ceil(this.timeLeft)}s`);
+          this.scoreText?.setText(`Score ${this.round.score}`);
+          this.progressText?.setText(`${this.round.foundCount}/${this.targets.length} complete`);
+          this.timerText?.setText(`${Math.ceil(this.round.secondsLeft)}s`);
         }
 
         private endRound() {
           if (this.gameOver) return;
           this.gameOver = true;
           this.updateHud();
-          const allFound = this.currentIndex === this.targets.length;
-          const coins = 80 + Math.floor(this.score / 5) + (allFound ? 60 : 0);
-          const hearts = allFound ? 4 : this.score > 350 ? 3 : 2;
+          const { coins, hearts } = cozyQuestReward(this.round);
           const layer = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(8000);
           const bg = this.add.graphics();
           bg.fillStyle(0xfffcf3, 0.96);
@@ -331,7 +432,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
             fontFamily: "Caprasimo, Georgia, serif",
             fontSize: "25px",
           }).setOrigin(0.5));
-          layer.add(this.add.text(0, -20, `Score ${this.score}\nProgress ${this.currentIndex}/${this.targets.length}\nReward ${coins} coins + ${hearts} hearts`, {
+          layer.add(this.add.text(0, -20, `Score ${this.round.score}\nProgress ${this.round.foundCount}/${this.targets.length}\nReward ${coins} coins + ${hearts} hearts`, {
             align: "center",
             color: "#5B3F3F",
             fontFamily: "Nunito, sans-serif",
@@ -354,7 +455,7 @@ export function CozyQuestCanvas({ variant, onReward }: CozyQuestCanvasProps) {
           onRewardRef.current?.({
             gameId: variant,
             label: questCopy[variant].title,
-            score: this.score,
+            score: this.round.score,
             coins,
             hearts,
           });
