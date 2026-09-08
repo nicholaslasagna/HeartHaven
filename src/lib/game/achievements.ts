@@ -8,8 +8,11 @@
  * Storage: `hearthaven:achievements` in localStorage. Mutations dispatch
  * `hearthaven:achievements-changed` so mounted `useAchievements()` views refresh.
  *
- * TODO: mirror into a Supabase `achievements` table keyed by user id so badges
- * follow the player across devices — this shape maps 1:1.
+ * Mirrored to `keeper_progress` by phase2-persistence-bridge, so badges and
+ * metric progress follow a keeper between devices and survive a cleared
+ * browser. That matters beyond the badges themselves: the keeper abilities
+ * unlock off these same metrics, so losing them used to take every earned
+ * ability with them. The merge is conflict-free — see keeper-progress.ts.
  */
 
 import { creditWallet } from "@/lib/game/wallet-store";
@@ -112,6 +115,23 @@ function writeAchievementState(state: AchievementState) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(state));
   window.dispatchEvent(new CustomEvent(ACHIEVEMENTS_EVENT, { detail: state }));
+}
+
+/**
+ * Replace the local badge state with one merged against the server.
+ *
+ * Used by the persistence bridge after sync_keeper_progress has combined this
+ * device with whatever the keeper earned elsewhere. It writes and notifies
+ * without paying any reward: the badges in a merged state were already paid
+ * for on the device that earned them, and paying again on every sync would
+ * mint coins for nothing.
+ */
+export function applyMergedAchievementState(state: AchievementState) {
+  writeAchievementState({
+    progress: { ...emptyProgress(), ...state.progress },
+    unlocked: [...new Set(state.unlocked)],
+    unlockedAt: { ...state.unlockedAt },
+  });
 }
 
 /**

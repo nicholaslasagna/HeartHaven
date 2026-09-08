@@ -13,8 +13,15 @@
  * Storage: `hearthaven:daily-loop` in localStorage. Every mutation dispatches
  * `hearthaven:daily-loop-changed` so mounted `useDailyLoop()` views refresh.
  *
- * TODO: move `giftClaimedDate` + `streak` to a Supabase `user_streaks` row with a
- * server-verified date so the streak can't be clock-spoofed; keep this shape.
+ * The streak and the gift claim date are mirrored to `keeper_progress` by
+ * phase2-persistence-bridge, so a streak survives a cleared browser and
+ * follows the keeper to another device — and claiming today's gift on one
+ * device is seen by the others. Today's TASKS stay local: they are generated
+ * from this device's calendar date and belong to it.
+ *
+ * The dates are still the client's own, so the streak is not proof against a
+ * changed system clock. Making it so needs a server-side date, which is a
+ * separate piece of work from getting the value to persist at all.
  */
 
 import { creditWallet } from "@/lib/game/wallet-store";
@@ -163,6 +170,22 @@ function rawWrite(state: DailyState) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(DAILY_LOOP_KEY, JSON.stringify(state));
   window.dispatchEvent(new CustomEvent(DAILY_LOOP_EVENT, { detail: state }));
+}
+
+/**
+ * Apply a streak and gift date merged against the server.
+ *
+ * Only those two fields: today's tasks are generated from the local calendar
+ * date and belong to this device, while the streak and the claim date are the
+ * parts that should follow a keeper between devices. Writing a merged claim
+ * date is also what stops the daily gift being claimed twice by visiting on
+ * a second device.
+ */
+export function applyMergedDailyProgress(merged: { streak: number; giftClaimedDate: string | null }) {
+  const state = getDailyState();
+  const streak = Number.isFinite(merged.streak) ? Math.max(0, Math.floor(merged.streak)) : 0;
+  if (state.streak === streak && state.giftClaimedDate === merged.giftClaimedDate) return;
+  rawWrite({ ...state, streak, giftClaimedDate: merged.giftClaimedDate });
 }
 
 /**

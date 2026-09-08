@@ -2,6 +2,18 @@
 
 import { useEffect, useRef, type MutableRefObject } from "react";
 import {
+  ACHIEVEMENTS_EVENT,
+  applyMergedAchievementState,
+  readAchievementState,
+  type AchievementState,
+} from "@/lib/game/achievements";
+import {
+  applyMergedDailyProgress,
+  DAILY_LOOP_EVENT,
+  getDailyState,
+} from "@/lib/game/daily-loop";
+import type { KeeperProgress } from "@/lib/game/keeper-progress";
+import {
   COMPANION_ROSTER_EVENT,
   getCompanionRoster,
   replaceCompanionRosterState,
@@ -20,12 +32,26 @@ import {
   loadServerInventoryState,
   loadServerPetState,
   syncServerInventoryState,
+  syncServerKeeperProgress,
   syncServerPetState,
 } from "@/lib/game/phase2-server";
 import { hydrateWalletStateFromServer } from "@/lib/game/wallet-store";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { ensureUserLocalScope } from "@/lib/game/user-local-scope";
+
+/** This device's progress, in the shape the merge expects. */
+function readLocalKeeperProgress(): KeeperProgress {
+  const badges = readAchievementState();
+  const daily = getDailyState();
+  return {
+    metrics: badges.progress,
+    unlocked: badges.unlocked,
+    unlockedAt: badges.unlockedAt,
+    streak: daily.streak,
+    giftClaimedDate: daily.giftClaimedDate,
+  };
+}
 
 function clearTimer(ref: MutableRefObject<number | null>) {
   if (ref.current !== null) {
@@ -47,6 +73,7 @@ export function Phase2PersistenceBridge() {
   const hydratingUntilRef = useRef(0);
   const inventoryTimerRef = useRef<number | null>(null);
   const petTimerRef = useRef<number | null>(null);
+  const progressTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +116,21 @@ export function Phase2PersistenceBridge() {
         }
       }
 
+      /* Achievement metrics, badges and the daily streak. One call: the
+         server merges this device with whatever was earned elsewhere and
+         hands back the combined result, so there is nothing to load first.
+         The badges it returns were already paid for on the device that
+         earned them, which is why this applies them without paying again. */
+      const mergedProgress = await syncServerKeeperProgress(readLocalKeeperProgress());
+      if (!cancelled && mergedProgress) {
+        applyMergedAchievementState({
+          progress: mergedProgress.metrics as AchievementState["progress"],
+          unlocked: mergedProgress.unlocked,
+          unlockedAt: mergedProgress.unlockedAt,
+        });
+        applyMergedDailyProgress(mergedProgress);
+      }
+
       hydratingUntilRef.current = Date.now() + 600;
     }
 
@@ -97,6 +139,7 @@ export function Phase2PersistenceBridge() {
     const scheduleInventorySync = () => {
       if (Date.now() < hydratingUntilRef.current) return;
       clearTimer(inventoryTimerRef);
+      clearTimer(progressTimerRef);
       inventoryTimerRef.current = window.setTimeout(() => {
         void syncServerInventoryState(readInventoryState()).then((serverState) => {
           if (serverState) {
@@ -115,7 +158,26 @@ export function Phase2PersistenceBridge() {
       }, 1000);
     };
 
+    const scheduleProgressSync = () => {
+      if (Date.now() < hydratingUntilRef.current) return;
+      clearTimer(progressTimerRef);
+      progressTimerRef.current = window.setTimeout(() => {
+        void syncServerKeeperProgress(readLocalKeeperProgress()).then((merged) => {
+          if (!merged) return;
+          hydratingUntilRef.current = Date.now() + 500;
+          applyMergedAchievementState({
+            progress: merged.metrics as AchievementState["progress"],
+            unlocked: merged.unlocked,
+            unlockedAt: merged.unlockedAt,
+          });
+          applyMergedDailyProgress(merged);
+        });
+      }, 1200);
+    };
+
     window.addEventListener(INVENTORY_EVENT, scheduleInventorySync);
+    window.addEventListener(ACHIEVEMENTS_EVENT, scheduleProgressSync);
+    window.addEventListener(DAILY_LOOP_EVENT, scheduleProgressSync);
     window.addEventListener(PET_VITALS_EVENT, schedulePetSync);
     window.addEventListener(COMPANION_ROSTER_EVENT, schedulePetSync);
 
@@ -146,6 +208,8 @@ export function Phase2PersistenceBridge() {
       clearTimer(inventoryTimerRef);
       clearTimer(petTimerRef);
       window.removeEventListener(INVENTORY_EVENT, scheduleInventorySync);
+      window.removeEventListener(ACHIEVEMENTS_EVENT, scheduleProgressSync);
+      window.removeEventListener(DAILY_LOOP_EVENT, scheduleProgressSync);
       window.removeEventListener(PET_VITALS_EVENT, schedulePetSync);
       window.removeEventListener(COMPANION_ROSTER_EVENT, schedulePetSync);
       authUnsubscribe?.();

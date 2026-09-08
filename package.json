@@ -18,7 +18,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "check:lantern-leap": "esbuild checks/lantern-leap.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-ll.mjs --log-level=error && node node_modules/.cache/check-ll.mjs",
     "check:haven-trails": "esbuild checks/haven-trails-map.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-trails.mjs --log-level=error && node node_modules/.cache/check-trails.mjs",
-    "check": "npm run check:lantern-leap && npm run check:moonberry-bowling && npm run check:moonberry-racing && npm run check:heartrush && npm run check:pool && npm run check:memory-match && npm run check:garden-four && npm run check:rock-paper-scissors && npm run check:petal-catch && npm run check:keeper-abilities && npm run check:garden-plots && npm run check:remote-interpolation && npm run check:touch-controls && npm run check:orientation && npm run check:mobile-inputs && npm run check:haven-trails && npm run check:player-prefs",
+    "check": "npm run check:lantern-leap && npm run check:moonberry-bowling && npm run check:moonberry-racing && npm run check:heartrush && npm run check:pool && npm run check:memory-match && npm run check:garden-four && npm run check:rock-paper-scissors && npm run check:petal-catch && npm run check:keeper-abilities && npm run check:keeper-progress && npm run check:garden-plots && npm run check:remote-interpolation && npm run check:touch-controls && npm run check:orientation && npm run check:mobile-inputs && npm run check:haven-trails && npm run check:player-prefs",
     "check:moonberry-bowling": "esbuild checks/moonberry-bowling.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mb.mjs --log-level=error && node node_modules/.cache/check-mb.mjs",
     "check:moonberry-racing": "esbuild checks/moonberry-racing.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mr.mjs --log-level=error && node node_modules/.cache/check-mr.mjs",
     "check:player-prefs": "esbuild checks/player-prefs.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-pp.mjs --log-level=error && node node_modules/.cache/check-pp.mjs",
@@ -33,7 +33,8 @@
     "check:mobile-inputs": "esbuild checks/mobile-inputs.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-mi.mjs --log-level=error && node node_modules/.cache/check-mi.mjs",
     "check:garden-four": "esbuild checks/garden-four.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-g4.mjs --log-level=error && node node_modules/.cache/check-g4.mjs",
     "check:rock-paper-scissors": "esbuild checks/rock-paper-scissors.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-rps.mjs --log-level=error && node node_modules/.cache/check-rps.mjs",
-    "check:petal-catch": "esbuild checks/petal-catch.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-pc.mjs --log-level=error && node node_modules/.cache/check-pc.mjs"
+    "check:petal-catch": "esbuild checks/petal-catch.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-pc.mjs --log-level=error && node node_modules/.cache/check-pc.mjs",
+    "check:keeper-progress": "esbuild checks/keeper-progress.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/check-kp.mjs --log-level=error && node node_modules/.cache/check-kp.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",

@@ -4,6 +4,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import type { CompanionRecord, CompanionRosterState } from "@/lib/game/companion-roster";
 import type { InventoryEntry, InventoryState } from "@/lib/game/inventory-store";
+import { normalizeKeeperProgress, type KeeperProgress } from "@/lib/game/keeper-progress";
 import { getPetVitalsForCompanion, type PetVitals } from "@/lib/game/pet-state";
 import type { GameReward, RewardLedgerEntry, StoredRewardState } from "@/lib/game/rewards";
 import type { Wallet } from "@/lib/game/types";
@@ -384,5 +385,56 @@ export async function syncServerPetState(roster: CompanionRosterState, vitals: P
     if (error) throw error;
   } catch (error) {
     maybeWarn("pet sync failed", error);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Keeper progress: achievement metrics, badges and the daily streak   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Merge this device's progress with the server's and apply the result.
+ *
+ * One round trip, because sync_keeper_progress merges server-side and returns
+ * the combined row: counters take the larger value, badges union, earn times
+ * keep the earliest, streak and gift date advance. That is what stops a
+ * device that has been offline from overwriting progress made elsewhere, and
+ * it is why there is no separate load and save here.
+ */
+export async function syncServerKeeperProgress(local: KeeperProgress): Promise<KeeperProgress | null> {
+  const context = await getPhase2Context();
+  if (!context) return null;
+
+  try {
+    const { data, error } = await context.supabase.rpc("sync_keeper_progress", {
+      p_metrics: local.metrics,
+      p_unlocked: local.unlocked,
+      p_unlocked_at: local.unlockedAt,
+      p_streak: local.streak,
+      p_gift_claimed_date: local.giftClaimedDate,
+    });
+    if (error) throw error;
+
+    const row = (Array.isArray(data) ? data[0] : data) as {
+      metrics?: unknown;
+      unlocked?: unknown;
+      unlocked_at?: unknown;
+      streak?: unknown;
+      gift_claimed_date?: unknown;
+    } | null;
+    if (!row) return null;
+
+    return normalizeKeeperProgress({
+      metrics: row.metrics,
+      unlocked: row.unlocked,
+      unlockedAt: row.unlocked_at,
+      streak: row.streak,
+      giftClaimedDate: row.gift_claimed_date,
+    });
+  } catch (error) {
+    // A failed sync must never cost the keeper their local progress; it is
+    // still on this device and the next sync will merge it.
+    maybeWarn("keeper progress sync failed", error);
+    return null;
   }
 }
