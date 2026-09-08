@@ -17,8 +17,11 @@
  * because in HeartHaven, tending to someone you love is how you earn love.
  *
  * Storage: `hearthaven:pet-vitals`. Mutations dispatch `hearthaven:pet-vitals-changed`.
- * TODO: the `pets` table already has happiness/hunger columns — map this state
- * onto it (fullness = 100 - hunger) once migrations are applied.
+ *
+ * These vitals are mirrored to the `pets` table by phase2-persistence-bridge,
+ * through loadServerPetState / syncServerPetState — so they survive a cleared
+ * browser and follow the keeper between devices. This module stays the source
+ * of truth while the tab is open; the bridge merges and writes.
  */
 
 import { creditWallet } from "@/lib/game/wallet-store";
