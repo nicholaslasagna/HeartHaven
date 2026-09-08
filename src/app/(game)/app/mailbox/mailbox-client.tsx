@@ -12,13 +12,8 @@ import { playCozyCue } from "@/lib/game/cozy-audio";
 import { usePartnerLink } from "@/lib/game/use-partner-link";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import type { loveNotes } from "@/lib/mock-data";
 
-type MailboxClientProps = {
-  notes: typeof loveNotes;
-};
-
-type LoveNoteView = {
+export type LoveNoteView = {
   id: string;
   from: string;
   to: string;
@@ -26,6 +21,15 @@ type LoveNoteView = {
   body: string;
   scheduledFor: string;
   read: boolean;
+};
+
+type MailboxClientProps = {
+  /* Server-rendered placeholder notes. The real ones are fetched on mount
+     through get_love_notes_with_partner; this is what shows until they
+     arrive. The TYPE is declared here rather than taken from the placeholder
+     array, so the shape real notes must satisfy is stated once, by the code
+     that renders them. */
+  notes: LoveNoteView[];
 };
 
 type LoveNoteRow = {

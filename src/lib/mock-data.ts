@@ -1,30 +1,33 @@
 import type { CatalogItem } from "@/lib/game/types";
 import { marketCatalog, seasonalCatalog, starterCatalog } from "@/lib/catalog";
 
-// TODO: Replace these mock arrays with Supabase reads once persistence is enabled.
+/*
+ * Seed content and placeholders.
+ *
+ * This file used to carry a blanket "replace with Supabase reads" note, which
+ * is no longer true of most of it and was never true of some. What is here
+ * now falls into three kinds:
+ *
+ *   CATALOGUE — miniGames, partyGames, parkGames. The list of games, their
+ *     names, blurbs and links. This is content, not state: it belongs in code
+ *     and should not become a database read.
+ *
+ *   SEED DEFAULTS — playerWallet, gardenPlots, partnerGardenPlots. The
+ *     starting shape a keeper gets before the server has anything for them.
+ *     Real values come from wallets and garden_plots_state and overwrite
+ *     these; they are the first frame, not the source of truth.
+ *
+ *   PLACEHOLDERS — loveNotes, memoryPages, friendInvite. Still standing in
+ *     for real data. loveNotes is server-rendered filler that the mailbox
+ *     replaces on mount via get_love_notes_with_partner. memoryPages and
+ *     friendInvite have no server read yet — memory_book_pages exists as a
+ *     table with nothing reading it, and the dashboard's invite card is
+ *     illustrative while the Friends page runs on real invites.
+ */
 export const playerWallet = {
   coins: 1240,
   hearts: 18,
 };
-
-export const activePet = {
-  id: "pet-casper",
-  name: "Casper",
-  species: "Cloud Fox",
-  tone: "cream",
-  happiness: 92,
-  hunger: 28,
-  trait: "Guardian of the moonberry beds",
-};
-
-const mockInventoryCatalog = [...starterCatalog, ...seasonalCatalog];
-
-export const inventoryItems = mockInventoryCatalog.map((item, index) => ({
-  id: `inventory-${item.id}`,
-  item,
-  quantity: item.tags.includes("seasonal") ? 1 : index < 4 ? 1 : 3,
-  equipped: index < 2,
-}));
 
 export const gardenPlots = [
   { id: "plot-moonberry", name: "Moonberry", stage: "Blooming", progress: 64, accent: "#F4B5BE", status: "Watered", wateredAt: null, tended: 0 },
@@ -339,17 +342,6 @@ export const parkGames = [
     href: "/app/heart-hunt",
     description: "A little trailhead for keepsake hunts and friend clues.",
   },
-];
-
-export const partySeats = [
-  { id: "seat-avery", name: "Avery", role: "Host", ready: true, team: "Blush" },
-  { id: "seat-riley", name: "Riley", role: "Partner", ready: true, team: "Blush" },
-  { id: "seat-alex", name: "Alex", role: "Guest", ready: false, team: "Lavender" },
-  { id: "seat-maya", name: "Maya", role: "Guest", ready: false, team: "Lavender" },
-  { id: "seat-open-1", name: "Open seat", role: "Invite", ready: false, team: "Garden" },
-  { id: "seat-open-2", name: "Open seat", role: "Invite", ready: false, team: "Garden" },
-  { id: "seat-open-3", name: "Open seat", role: "Invite", ready: false, team: "Honey" },
-  { id: "seat-open-4", name: "Open seat", role: "Invite", ready: false, team: "Sky" },
 ];
 
 export const friendInvite = {
