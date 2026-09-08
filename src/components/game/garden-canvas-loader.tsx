@@ -3,19 +3,11 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import type { GardenDecorPlacement } from "@/components/game/garden-canvas";
+import type { GardenPlotState } from "@/lib/game/garden-plots";
 import { loadKeeperCustomizationFromServer } from "@/lib/game/avatar-customization";
 import type { RealtimeRoomPlayer } from "@/lib/game/types";
 
 const KEEPER_LOAD_TIMEOUT_MS = 1800;
-
-type GardenPlotState = {
-  id: string;
-  name: string;
-  stage: string;
-  progress: number;
-  accent: string;
-  status: string;
-};
 
 const GardenCanvas = dynamic(() => import("@/components/game/garden-canvas").then((module) => module.GardenCanvas), {
   ssr: false,

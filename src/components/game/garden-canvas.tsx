@@ -53,7 +53,7 @@ import {
   markForageSpotGathered,
   type DigSpot,
 } from "@/lib/game/garden-abilities";
-import { PLOT_STATUS_DAMP_PREFIX } from "@/lib/game/garden-plots";
+import { PLOT_STATUS_DAMP_PREFIX, type GardenPlotState } from "@/lib/game/garden-plots";
 import { remoteGlideMs } from "@/lib/game/remote-interpolation";
 import { GardenAbilityOverlay } from "@/components/game/garden-ability-buttons";
 import { getPrefsSnapshot, subscribePrefs } from "@/lib/game/player-prefs";
@@ -101,15 +101,6 @@ import {
 import type { FacingDirection, RealtimeRoomPlayer } from "@/lib/game/types";
 import { useSeasonalEvent } from "@/lib/game/use-seasonal-event";
 import { creditWallet } from "@/lib/game/wallet-store";
-
-type GardenPlotState = {
-  id: string;
-  name: string;
-  stage: string;
-  progress: number;
-  accent: string;
-  status: string;
-};
 
 type GardenCanvasProps = {
   remotePlayers?: RealtimeRoomPlayer[];
@@ -578,6 +569,9 @@ export function GardenCanvas({
         private lastSentPosition = getAvatarStartPosition(variant);
         private plotObjects: Phaser.GameObjects.GameObject[] = [];
         private plotsUpdatedHandler?: (event: Event) => void;
+        /* Plot id to the moment our own care animation finishes. An update
+           echoing back our own watering must not pulse a second time. */
+        private localCareUntil = new Map<string, number>();
         private selectedDecor?: GardenDecorPlacement;
         private decorBubble?: Phaser.GameObjects.Container;
         private decorObjects = new Map<string, Phaser.GameObjects.Container>();
@@ -727,7 +721,6 @@ export function GardenCanvas({
           this.addTitle();
           this.sortDepths();
           this.createNavigationDebugOverlay();
-          // TODO: Subscribe partner garden scene to Supabase Realtime so both linked players see care pulses.
         }
 
         update(_time: number, delta: number) {
@@ -1138,10 +1131,84 @@ export function GardenCanvas({
         }
 
         private syncPlots(nextPlots: GardenPlotState[]) {
+          /* Work out what changed before redrawing, so a plot someone else
+             tended shows a pulse rather than silently having a different
+             number under it. This is what makes a shared garden feel shared:
+             watering it while your partner is standing there should be
+             something they SEE, not something they notice later. */
+          const previous = new Map(plotsRef.current.map((plot) => [plot.id, plot]));
+          const positions = getPlotPositions(variant);
+
+          nextPlots.forEach((plot, index) => {
+            const before = previous.get(plot.id);
+            if (!before) return;
+            // Our own care already played its animation as we clicked.
+            if (this.time.now < (this.localCareUntil.get(plot.id) ?? 0)) return;
+
+            const watered = plot.wateredAt !== before.wateredAt && plot.progress > before.progress;
+            const harvested = plot.progress < before.progress && before.progress >= 80;
+            if (!watered && !harvested) return;
+
+            const [x, y] = positions[index % positions.length];
+            this.playCarePulse(x, y, harvested ? "harvest" : "water");
+          });
+
           plotsRef.current = nextPlots;
           this.clearPlots();
           this.drawPlots(nextPlots);
           this.sortDepths();
+        }
+
+        /**
+         * Someone tended this plot. Shown for care that arrives from another
+         * keeper — a partner in a shared garden, or a trusted decorator.
+         */
+        private playCarePulse(x: number, y: number, kind: "water" | "harvest") {
+          const tint = kind === "harvest" ? 0xf6d98e : 0x5e94b0;
+          const ring = this.add.ellipse(x, y + 10, 40, 18, tint, 0.5).setDepth(y + 4);
+          this.tweens.add({
+            targets: ring,
+            scaleX: 3.4,
+            scaleY: 3.4,
+            alpha: 0,
+            duration: 620,
+            ease: "Cubic.out",
+            onComplete: () => ring.destroy(),
+          });
+
+          for (let index = 0; index < 8; index += 1) {
+            const angle = (index / 8) * Math.PI * 2;
+            const drop = this.add.circle(x, y - 6, 4, tint, 0.85).setDepth(y + 5);
+            this.tweens.add({
+              targets: drop,
+              x: x + Math.cos(angle) * 46,
+              y: y - 12 + Math.sin(angle) * 22,
+              alpha: 0,
+              scale: 0.3,
+              delay: index * 22,
+              duration: 560,
+              ease: "Cubic.out",
+              onComplete: () => drop.destroy(),
+            });
+          }
+
+          const label = this.add.text(x, y - 58, kind === "harvest" ? "Harvested" : "Watered", {
+            backgroundColor: kind === "harvest" ? "#FFF3D2" : "#E4F1F7",
+            color: "#3A2A2A",
+            fontFamily: "Nunito, sans-serif",
+            fontSize: "11px",
+            fontStyle: "900",
+            padding: { x: 7, y: 3 },
+          }).setOrigin(0.5).setDepth(y + 6);
+          this.tweens.add({
+            targets: label,
+            y: label.y - 22,
+            alpha: 0,
+            duration: 1100,
+            ease: "Sine.out",
+            onComplete: () => label.destroy(),
+          });
+          playCozyCue("water");
         }
 
         private createPlot(plot: GardenPlotState, x: number, y: number) {
@@ -1211,6 +1278,9 @@ export function GardenCanvas({
         }
 
         private waterPlot(plot: GardenPlotState, x: number, y: number) {
+          // Our own animation plays below; suppress the pulse when this same
+          // change comes back to us through realtime.
+          this.localCareUntil.set(plot.id, this.time.now + 4000);
           playCozyCue("water");
           const action = plot.progress >= 80 ? "harvest" : "water";
 
