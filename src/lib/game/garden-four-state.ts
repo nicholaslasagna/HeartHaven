@@ -11,16 +11,31 @@ export type GardenFourState = {
   currentSeat: number;
 };
 
+/**
+ * One grid coordinate, or null if it is not one.
+ *
+ * Deliberately not `Number(value)`: that turns null, undefined and "" into 0,
+ * so a half-formed cell like [null, 1] became the perfectly valid coordinate
+ * [0, 1] and drew a winning highlight on a square nobody had played. A cell
+ * we cannot read has to be dropped, not guessed at.
+ */
+function readCoordinate(value: unknown): number | null {
+  const raw =
+    typeof value === "number" ? value
+      : typeof value === "string" && value.trim() !== "" ? Number(value)
+        : Number.NaN;
+  if (!Number.isInteger(raw) || raw < 0) return null;
+  return raw;
+}
+
 function readWinningCells(value: unknown): GardenFourWinningCell[] {
   if (!Array.isArray(value)) return [];
   const cells: GardenFourWinningCell[] = [];
   for (const entry of value) {
     if (!Array.isArray(entry) || entry.length < 2) continue;
-    const row = Number(entry[0]);
-    const col = Number(entry[1]);
-    if (Number.isFinite(row) && Number.isFinite(col)) {
-      cells.push([row, col]);
-    }
+    const row = readCoordinate(entry[0]);
+    const col = readCoordinate(entry[1]);
+    if (row !== null && col !== null) cells.push([row, col]);
   }
   return cells;
 }
