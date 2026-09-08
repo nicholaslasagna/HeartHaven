@@ -11,13 +11,22 @@ import { WorldZoneDock } from "@/components/game/world-zone-dock";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { playCozyCue } from "@/lib/game/cozy-audio";
+import {
+  rpsChoiceFromPayload as choiceFromPayload,
+  rpsRoundFromPayload as roundFromPayload,
+  rpsSeatToPlayer as seatToPlayer,
+  rpsWinner as getWinner,
+  RPS_ROUNDS_TO_WIN,
+  type RpsChoice,
+  type RpsPlayerId,
+} from "@/lib/game/rock-paper-scissors";
 import { useMiniGameSession } from "@/lib/game/use-mini-game-session";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
 
-type Choice = "rock" | "paper" | "scissors";
-type PlayerId = "blush" | "lavender";
+type Choice = RpsChoice;
+type PlayerId = RpsPlayerId;
 
 type RoundResult = {
   round: number;
@@ -38,35 +47,6 @@ const choices: Array<{ id: Choice; label: string; description: string }> = [
   { id: "scissors", label: "Ribbon Shears", description: "Beats love letter" },
 ];
 
-const validChoices = new Set<Choice>(["rock", "paper", "scissors"]);
-
-function seatToPlayer(seatIndex: number | null | undefined): PlayerId | null {
-  if (seatIndex === 0) return "blush";
-  if (seatIndex === 1) return "lavender";
-  return null;
-}
-
-function choiceFromPayload(value: unknown): Choice | null {
-  if (typeof value !== "string") return null;
-  return validChoices.has(value as Choice) ? (value as Choice) : null;
-}
-
-function roundFromPayload(value: unknown) {
-  const round = Number(value);
-  return Number.isFinite(round) && round > 0 ? Math.floor(round) : 1;
-}
-
-function getWinner(blush: Choice, lavender: Choice): PlayerId | "tie" {
-  if (blush === lavender) return "tie";
-  if (
-    (blush === "rock" && lavender === "scissors") ||
-    (blush === "paper" && lavender === "rock") ||
-    (blush === "scissors" && lavender === "paper")
-  ) {
-    return "blush";
-  }
-  return "lavender";
-}
 
 function labelChoice(choice?: Choice) {
   if (!choice) return "Waiting";
@@ -125,7 +105,7 @@ export function RockPaperScissorsClient() {
         result.winner = getWinner(result.blush, result.lavender);
         if (result.winner !== "tie") {
           scores[result.winner] += 1;
-          if (scores[result.winner] >= 3) matchWinner = result.winner;
+          if (scores[result.winner] >= RPS_ROUNDS_TO_WIN) matchWinner = result.winner;
         }
       }
       rounds.push(result);
