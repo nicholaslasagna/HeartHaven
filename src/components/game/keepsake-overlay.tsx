@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { createKeepsakeListener } from "@/lib/game/keepsake";
+import { createKeepsakeListener, onKeepsakeArrival, openKeepsake, shareKeepsake } from "@/lib/game/keepsake";
 import { getPrefsSnapshot, getServerPrefsSnapshot, subscribePrefs } from "@/lib/game/player-prefs";
 
 /** Somebody typing in a field is writing, not asking. */
@@ -33,14 +33,31 @@ export function KeepsakeOverlay() {
   const calm = useSyncExternalStore(subscribePrefs, getPrefsSnapshot, getServerPrefsSnapshot).reducedMotion;
 
   useEffect(() => {
-    const offer = createKeepsakeListener((opened) => setText(opened));
+    const offer = createKeepsakeListener((opened, phrase) => {
+      setText(opened);
+      /* If this screen is standing somewhere with other people, it opens for
+         them too. Alone, this reaches nobody and costs nothing. */
+      shareKeepsake(phrase);
+    });
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTyping()) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       offer(event.key, Date.now());
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+
+    /* Someone here asked for it. Open our own copy of the seal — a phrase that
+       does not open it leaves the screen exactly as it was. */
+    const stopListening = onKeepsakeArrival((phrase) => {
+      void openKeepsake(phrase).then((opened) => {
+        if (opened) setText((current) => current ?? opened);
+      });
+    });
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      stopListening();
+    };
   }, []);
 
   const answer = useCallback(() => setAnswered(true), []);

@@ -25,6 +25,7 @@ import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/publi
 import { recordActivity } from "@/lib/game/activity";
 import { authorizePlaceChat } from "@/lib/game/place-chat";
 import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
+import { deliverKeepsake, KEEPSAKE_EVENT, registerKeepsakeRelay } from "@/lib/game/keepsake";
 
 type UseRoomRealtimeOptions = {
   roomId: string;
@@ -194,6 +195,7 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
 
     let cancelled = false;
     let customizationCleanup: (() => void) | null = null;
+    let keepsakeCleanup: (() => void) | null = null;
     let customizationPoll: number | null = null;
     let heartbeatTimer: number | null = null;
     let placementPollTimer: number | null = null;
@@ -250,6 +252,10 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         });
 
         channelRef.current = channel;
+        keepsakeCleanup?.();
+        keepsakeCleanup = registerKeepsakeRelay((phrase) => {
+          void channel.send({ type: "broadcast", event: KEEPSAKE_EVENT, payload: { phrase } });
+        });
         realtimeReadyRef.current = false;
 
         /* Nothing to fetch: chat is never stored. See use-garden-realtime. */
@@ -517,6 +523,9 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             });
             window.dispatchEvent(new CustomEvent("hearthaven:remote-emote", { detail: player }));
           })
+          .on("broadcast", { event: KEEPSAKE_EVENT }, ({ payload }) => {
+            deliverKeepsake(payload);
+          })
           .on("broadcast", { event: "room_chat" }, ({ payload }) => {
             const message = hardenIncomingChat(payload);
             if (!message || message.playerId === localId) return;
@@ -649,6 +658,8 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       cancelled = true;
       customizationCleanup?.();
       customizationCleanup = null;
+      keepsakeCleanup?.();
+      keepsakeCleanup = null;
       if (heartbeatTimer) window.clearInterval(heartbeatTimer);
       heartbeatTimer = null;
       if (placementPollTimer) window.clearInterval(placementPollTimer);

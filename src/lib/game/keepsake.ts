@@ -76,7 +76,7 @@ export async function openKeepsake(phrase: string): Promise<string | null> {
  * that could still be a beginning, so a fumbled start does not have to be
  * restarted from nothing.
  */
-export function createKeepsakeListener(onOpen: (text: string) => void) {
+export function createKeepsakeListener(onOpen: (text: string, phrase: string) => void) {
   let trail: string[] = [];
   let lastAt = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -102,8 +102,56 @@ export function createKeepsakeListener(onOpen: (text: string) => void) {
         if (!text || opened) return;
         opened = true;
         trail = [];
-        onOpen(text);
+        onOpen(text, attempt);
       });
     }, 140);
+  };
+}
+
+/* ── Sharing it ───────────────────────────────────────────────────────────
+   The keepsake opens on the screen that asks for it. When the asker is
+   standing somewhere with other people, the phrase is passed along the
+   channel that place already keeps, so it opens for them too.
+
+   Only the phrase travels. Every client already carries the sealed block and
+   opens its own copy, so the words themselves never cross the wire — and a
+   client that receives a phrase which does not open simply does nothing. */
+
+/** Broadcast event name for a passed-along phrase. */
+export const KEEPSAKE_EVENT = "place_keepsake";
+
+type Relay = (phrase: string) => void;
+
+let relay: Relay | null = null;
+const arrivals = new Set<Relay>();
+
+/** A connected place lends the keepsake its channel for as long as it is open. */
+export function registerKeepsakeRelay(send: Relay) {
+  relay = send;
+  return () => {
+    if (relay === send) relay = null;
+  };
+}
+
+/** Pass the phrase to whoever else is here. No place connected, no-one to tell. */
+export function shareKeepsake(phrase: string) {
+  try {
+    relay?.(phrase);
+  } catch {
+    /* The moment is not worth an exception. It has already opened locally. */
+  }
+}
+
+/** Hand a received broadcast payload to whoever is listening. */
+export function deliverKeepsake(payload: unknown) {
+  const phrase = (payload as { phrase?: unknown } | null | undefined)?.phrase;
+  if (typeof phrase !== "string" || phrase.length === 0 || phrase.length > 512) return;
+  for (const listener of arrivals) listener(phrase);
+}
+
+export function onKeepsakeArrival(listener: Relay) {
+  arrivals.add(listener);
+  return () => {
+    arrivals.delete(listener);
   };
 }

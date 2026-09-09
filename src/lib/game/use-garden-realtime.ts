@@ -30,6 +30,7 @@ import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/publi
 import { hardenGardenPlots, type GardenPlotState } from "@/lib/game/garden-plots";
 import { authorizePlaceChat, type PlaceChatType } from "@/lib/game/place-chat";
 import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
+import { deliverKeepsake, KEEPSAKE_EVENT, registerKeepsakeRelay } from "@/lib/game/keepsake";
 
 type UseGardenRealtimeOptions = {
   gardenId: string;
@@ -226,6 +227,7 @@ export function useGardenRealtime({
 
     let cancelled = false;
     let customizationCleanup: (() => void) | null = null;
+    let keepsakeCleanup: (() => void) | null = null;
     let heartbeatTimer: number | null = null;
     let chatPollTimer: number | null = null;
     let decorPollTimer: number | null = null;
@@ -269,6 +271,10 @@ export function useGardenRealtime({
         });
 
         channelRef.current = channel;
+        keepsakeCleanup?.();
+        keepsakeCleanup = registerKeepsakeRelay((phrase) => {
+          void channel.send({ type: "broadcast", event: KEEPSAKE_EVENT, payload: { phrase } });
+        });
         realtimeReadyRef.current = false;
 
         async function publishLocalPresence(options: { track?: boolean } = {}) {
@@ -426,6 +432,9 @@ export function useGardenRealtime({
             }
             setPlayers((current) => upsertPlayer(current, player));
           })
+          .on("broadcast", { event: KEEPSAKE_EVENT }, ({ payload }) => {
+            deliverKeepsake(payload);
+          })
           .on("broadcast", { event: "garden_chat" }, ({ payload }) => {
             const message = hardenIncomingChat(payload);
             if (!message || message.playerId === localId) return;
@@ -536,6 +545,8 @@ export function useGardenRealtime({
       cancelled = true;
       customizationCleanup?.();
       customizationCleanup = null;
+      keepsakeCleanup?.();
+      keepsakeCleanup = null;
       if (heartbeatTimer) window.clearInterval(heartbeatTimer);
       heartbeatTimer = null;
       if (chatPollTimer) window.clearInterval(chatPollTimer);
