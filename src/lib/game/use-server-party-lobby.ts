@@ -6,6 +6,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { recordMultiplayerRpc } from "@/lib/game/multiplayer-diagnostics";
+import { shouldFollowLobbyIntoGame } from "@/lib/game/lobby-follow";
 import { getCachedPublicUsername } from "@/lib/game/public-identity";
 import { getSocialState } from "@/lib/game/social";
 
@@ -53,6 +54,9 @@ export type LobbyState = {
   selected_game_key: string | null;
   selected_game_href: string | null;
   selected_game_label: string | null;
+  /** When the lobby row last changed. Used to tell a lobby that is starting
+      now from one that has been running since before this page opened. */
+  updated_at: string | null;
   seats: LobbySeat[];
 };
 
@@ -148,12 +152,18 @@ export function useServerPartyLobby(initialSize = 4) {
       sawWaitingSessionRef.current = lobby.session_id;
       return;
     }
-    if (lobby.status !== "active") return;
-    if (!lobby.selected_game_href) return;
-    if (sawWaitingSessionRef.current !== lobby.session_id) return;
     const seated =
       lobby.host_profile_id === userId || lobby.seats.some((seat) => seat.profile_id === userId);
-    if (!seated) return;
+    const follow = shouldFollowLobbyIntoGame({
+      status: lobby.status,
+      sessionId: lobby.session_id,
+      sawWaitingSessionId: sawWaitingSessionRef.current,
+      seated,
+      hasGameHref: Boolean(lobby.selected_game_href),
+      updatedAtMs: lobby.updated_at ? Date.parse(lobby.updated_at) : null,
+      nowMs: Date.now(),
+    });
+    if (!follow || !lobby.selected_game_href) return;
     const target = withSessionParam(lobby.selected_game_href, lobby.session_id);
     if (!target || navigatedToHrefRef.current === target) return;
     navigatedToHrefRef.current = target;
@@ -227,6 +237,7 @@ export function useServerPartyLobby(initialSize = 4) {
         selected_game_key: session.selected_game_key,
         selected_game_href: session.selected_game_href,
         selected_game_label: session.selected_game_label,
+        updated_at: session.updated_at ?? null,
         seats: Array.isArray(seats) ? (seats as LobbySeat[]) : [],
       };
       setLobby(lobbyState);
@@ -411,6 +422,7 @@ export function useServerPartyLobby(initialSize = 4) {
           selected_game_key: null,
           selected_game_href: null,
           selected_game_label: null,
+          updated_at: null,
           seats: [
             {
               profile_id: user.id,
