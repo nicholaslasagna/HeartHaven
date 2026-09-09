@@ -525,15 +525,29 @@ export function reduceCoopGameState(
     const evaluation = evaluateCoopMove(definition, step, actionId, move.payload, combo);
     const { correct, scoreDelta } = evaluation;
 
+    /* Credit and debit the acting seat, then take the team score as the sum
+       of the seats.
+
+       These used to move independently: a correct move added to both, but a
+       miss subtracted from the team total and from nobody, so after a single
+       miss the per-seat scores no longer added up to the team score shown
+       directly above them in the same panel. A player watching the team lose
+       fifty points while every name kept its number is right to think the
+       game has lost count.
+
+       Deriving the total from the seats is the only arrangement where the two
+       cannot disagree. It also means a miss costs the team only what the
+       acting seat has to give, rather than the full penalty regardless —
+       slightly gentler at the very bottom, which suits a co-op round. */
+    seatScores[currentSeat] = Math.max(0, (seatScores[currentSeat] ?? 0) + scoreDelta);
+    score = seatScores.reduce((total, value) => total + value, 0);
+
     if (correct) {
-      score += scoreDelta;
-      seatScores[currentSeat] = (seatScores[currentSeat] ?? 0) + scoreDelta;
       combo += 1;
       currentStepIndex += 1;
     } else {
       misses += 1;
       combo = 0;
-      score = Math.max(0, score + scoreDelta);
     }
     updateSpecialMeters(definition, specialMeters, step, evaluation);
 
