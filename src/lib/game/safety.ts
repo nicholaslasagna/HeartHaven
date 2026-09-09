@@ -321,6 +321,27 @@ export function quarantineSelf(opts: { reasonNote?: string; durationMs?: number 
   return next;
 }
 
+/**
+ * Record a severe chat flag on the server as well as locally.
+ *
+ * The local quarantine in `quarantineSelf` is what mutes this tab right now;
+ * this is what makes the mute survive a cleared browser and follow the keeper
+ * to another device, because authorize_place_chat reads it before letting
+ * anyone speak. Fire-and-forget: a hard-blocked message is already refused
+ * whatever happens here, and a failed call must not turn a moderation event
+ * into an error the sender sees.
+ */
+export function flagSevereChatOnServer(): void {
+  if (!isSupabaseConfigured()) return;
+  try {
+    void getSupabaseBrowserClient()
+      .rpc("flag_severe_chat")
+      .then(() => undefined, () => undefined);
+  } catch {
+    /* The local quarantine still applies. */
+  }
+}
+
 export function clearQuarantine() {
   const state = readSafetyState();
   writeState({ ...state, quarantinedUntil: null });

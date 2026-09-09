@@ -1,6 +1,6 @@
 "use client";
 
-import { quarantineSelf } from "@/lib/game/safety";
+import { flagSevereChatOnServer, quarantineSelf } from "@/lib/game/safety";
 
 export type GardenChatMessage = {
   id: string;
@@ -120,6 +120,10 @@ export function moderateChatMessage(input: string): ChatModerationResult {
   if (hard) {
     try {
       quarantineSelf({ reasonNote: hard.reason });
+      /* And on the server, where it cannot be cleared by wiping site data
+         and where it follows the keeper to any other device. The mute is
+         read by authorize_place_chat before anyone is allowed to speak. */
+      flagSevereChatOnServer();
     } catch {
       // Even if quarantine fails to persist, we still block the message.
     }

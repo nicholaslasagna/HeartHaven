@@ -60,3 +60,35 @@ select count(*) as counter_rows,
 --    a place topic to keepers who are not muted — which is a Realtime
 --    configuration change rather than a schema one. The check here is only
 --    that the server-side decision exists and is correct.
+
+-- ── After 0098: the auto-quarantine reaches the server ──────────────────
+--
+-- A hard-blocked message quarantines the sender. That used to live only in
+-- local storage, so clearing site data lifted it and it never followed the
+-- keeper to another device. flag_severe_chat records it on the profile,
+-- which is the column authorize_place_chat reads.
+
+-- 8) The pieces exist. Expected: function present, and the protective
+--    trigger still on profiles.
+select
+  to_regprocedure('public.flag_severe_chat()') is not null as flagger_exists,
+  (select count(*) > 0 from pg_trigger
+    where tgrelid = 'public.profiles'::regclass and not tgisinternal) as column_still_protected;
+
+-- 9) Keepers carrying severe flags, and whether they are currently muted.
+select
+  id,
+  friend_code,
+  chat_severe_flag_count,
+  chat_quarantined_until,
+  chat_quarantined_until > now() as muted_now
+  from public.profiles
+ where coalesce(chat_severe_flag_count, 0) > 0
+ order by chat_severe_flag_count desc, chat_quarantined_until desc nulls last
+ limit 20;
+
+-- 10) Verified on a scratch cluster before shipping: the escalation matches
+--     the client (30 minutes, then 24 hours from a third flag), a keeper
+--     still cannot clear their own mute by hand — the 0019 trigger refuses —
+--     and tripping the filter cannot shorten a moderator's longer ban,
+--     because the update only ever takes the later of the two.
