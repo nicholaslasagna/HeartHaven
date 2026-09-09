@@ -28,7 +28,7 @@ import {
 } from "@/lib/game/safety";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 import { hardenGardenPlots, type GardenPlotState } from "@/lib/game/garden-plots";
-import { getPlaceChatMessages, sendPlaceChatMessage, type PlaceChatType } from "@/lib/game/place-chat";
+import { clearPlaceChat, sendPlaceChatMessage, type PlaceChatType } from "@/lib/game/place-chat";
 import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 
 type UseGardenRealtimeOptions = {
@@ -289,18 +289,17 @@ export function useGardenRealtime({
           void channel.send({ type: "broadcast", event: "garden_move", payload: next });
         }
 
+        /* Joining clears the place's chat rather than backfilling it.
+           Reading back a conversation you were not part of is the privacy
+           problem; keeping every conversation forever is the other one. Live
+           chat is unaffected — it arrives over the broadcast channel, so
+           everyone already here keeps what is on their screen. */
         async function refreshGardenChat() {
-          try {
-            const recent = await getPlaceChatMessages({
-              placeType: placeChatType,
-              hostFriendCode: normalizedHostCode,
-              placeId: normalizedGardenId,
-              limit: 30,
-            });
-            if (!cancelled && recent.length > 0) mergeMessages(recent);
-          } catch {
-            /* Chat history falls back to live broadcast until the migration is applied. */
-          }
+          await clearPlaceChat({
+            placeType: placeChatType,
+            hostFriendCode: normalizedHostCode,
+            placeId: normalizedGardenId,
+          });
         }
 
         async function refreshGardenDecor(source: "hydrate" | "poll") {

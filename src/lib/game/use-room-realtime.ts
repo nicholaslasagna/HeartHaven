@@ -23,7 +23,7 @@ import { getSocialState, recordPlayedWith, SOCIAL_EVENT } from "@/lib/game/socia
 import { isBlocked, isLocallyQuarantined, readSafetyState, submitReport } from "@/lib/game/safety";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 import { recordActivity } from "@/lib/game/activity";
-import { getPlaceChatMessages, sendPlaceChatMessage } from "@/lib/game/place-chat";
+import { clearPlaceChat, sendPlaceChatMessage } from "@/lib/game/place-chat";
 import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 
 type UseRoomRealtimeOptions = {
@@ -252,18 +252,15 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         channelRef.current = channel;
         realtimeReadyRef.current = false;
 
+        /* Joining clears the room's chat rather than backfilling it. See the
+           note in use-garden-realtime: history is the privacy problem, and
+           live chat comes over broadcast, so nobody present loses anything. */
         async function refreshRoomChat() {
-          try {
-            const recent = await getPlaceChatMessages({
-              placeType: "room",
-              hostFriendCode: channelKey,
-              placeId: normalizedRoomId,
-              limit: 30,
-            });
-            if (!cancelled && recent.length > 0) mergeMessages(recent);
-          } catch {
-            /* Chat history falls back to live broadcast until the migration is applied. */
-          }
+          await clearPlaceChat({
+            placeType: "room",
+            hostFriendCode: channelKey,
+            placeId: normalizedRoomId,
+          });
         }
 
         async function publishLocalPresence(options: { track?: boolean } = {}) {

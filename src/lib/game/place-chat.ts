@@ -49,22 +49,33 @@ export async function sendPlaceChatMessage(input: {
   return row ? mapRow(row as PlaceChatRow) : null;
 }
 
-export async function getPlaceChatMessages(input: {
+/**
+ * Clear a place's stored chat.
+ *
+ * Called as a keeper joins, so nobody reads back a conversation they were not
+ * part of and the table cannot grow without bound. Chat is delivered live
+ * over a broadcast channel and the stored rows are only ever used to backfill
+ * a joiner, so this takes nothing away from anyone already in the room —
+ * their conversation is already on their screen.
+ *
+ * Never throws: failing to clear must not stop somebody entering a place.
+ * Privacy does not rest on this call succeeding, because the client no longer
+ * asks for history at all.
+ */
+export async function clearPlaceChat(input: {
   placeType: PlaceChatType;
   hostFriendCode: string;
   placeId: string;
-  limit?: number;
-}): Promise<GardenChatMessage[]> {
-  if (!isSupabaseConfigured()) return [];
-  const supabase = getSupabaseBrowserClient();
-  const { data, error } = await supabase.rpc("get_place_chat_messages", {
-    p_place_type: input.placeType,
-    p_host_friend_code: input.hostFriendCode,
-    p_place_id: input.placeId,
-    p_limit: input.limit ?? 30,
-  });
-  if (error) throw error;
-  return Array.isArray(data)
-    ? data.map((row) => mapRow(row as PlaceChatRow)).filter((row): row is GardenChatMessage => Boolean(row))
-    : [];
+}): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const supabase = getSupabaseBrowserClient();
+    await supabase.rpc("clear_place_chat", {
+      p_host_friend_code: input.hostFriendCode,
+      p_place_type: input.placeType,
+      p_place_id: input.placeId,
+    });
+  } catch {
+    /* A place that could not be cleared simply keeps rows nobody reads. */
+  }
 }
