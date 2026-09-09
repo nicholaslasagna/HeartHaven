@@ -290,6 +290,24 @@ assert.equal(finishBowlingPlaybackMove(playback, "6"), true);
   assert.equal(readSwipe({ x: 0, y: 0, t: 0 }, [{ x: 0, y: -10, t: 10 }], 0, 0), null, "a zero-sized surface yields no throw");
 }
 
+/* -- the tenth frame's bonus ball faces the rack the second ball left --
+   public.bowling_player_state mirrors this, and submit_bowling_roll feeds the
+   number straight into the pin resolver as the rack to roll against, so a
+   drift here is scored pins that were never standing (fixed server-side by
+   migration 0102). Only a spare resets the rack for its bonus ball. */
+{
+  const tenth = (rolls: number[]) =>
+    computeBowlingState(rolls.map((pins) => ({ seat: 0, pins })), 1).standingPins;
+  const nine = Array.from({ length: 9 }, () => 10); // nine strikes to reach the tenth
+
+  assert.equal(tenth([...nine, 10, 2]), 8, "strike then 2: the third ball faces the eight left standing");
+  assert.equal(tenth([...nine, 10, 0]), 10, "strike then a gutter: all ten still stand");
+  assert.equal(tenth([...nine, 10, 10]), 10, "strike then strike: the rack is reset again");
+  assert.equal(tenth([...nine, 7, 3]), 10, "a spare resets the rack for its bonus ball");
+  assert.equal(tenth([...nine, 10]), 10, "after the opening strike the rack is reset for ball two");
+  assert.equal(tenth([...nine, 4]), 6, "no strike: ball two faces what ball one left");
+}
+
 console.log("moonberry bowling OK", {
   match: seats.join(" "),
   strikesFound: strikes,
