@@ -28,7 +28,7 @@ import {
 } from "@/lib/game/safety";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 import { hardenGardenPlots, type GardenPlotState } from "@/lib/game/garden-plots";
-import { clearPlaceChat, sendPlaceChatMessage, type PlaceChatType } from "@/lib/game/place-chat";
+import { authorizePlaceChat, type PlaceChatType } from "@/lib/game/place-chat";
 import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 
 type UseGardenRealtimeOptions = {
@@ -289,17 +289,11 @@ export function useGardenRealtime({
           void channel.send({ type: "broadcast", event: "garden_move", payload: next });
         }
 
-        /* Joining clears the place's chat rather than backfilling it.
-           Reading back a conversation you were not part of is the privacy
-           problem; keeping every conversation forever is the other one. Live
-           chat is unaffected — it arrives over the broadcast channel, so
-           everyone already here keeps what is on their screen. */
+        /* Nothing to fetch: chat is never stored. It lives only in the
+           clients that were present to hear it, so an arrival starts with an
+           empty window and there is no history to read back. */
         async function refreshGardenChat() {
-          await clearPlaceChat({
-            placeType: placeChatType,
-            hostFriendCode: normalizedHostCode,
-            placeId: normalizedGardenId,
-          });
+          /* intentionally empty */
         }
 
         async function refreshGardenDecor(source: "hydrate" | "poll") {
@@ -633,20 +627,30 @@ export function useGardenRealtime({
       createdAt: Date.now(),
     };
 
+    /* Ask before speaking. The message itself is never sent to the server —
+       only the question of whether this keeper may speak here right now,
+       which is where the mute and the flood guard are enforced. The identity
+       that comes back is used for the name shown beside the message, so it
+       comes from the profile rather than from this client. */
     if (isSupabaseConfigured()) {
       try {
-        const savedMessage = await sendPlaceChatMessage({
+        const allowed = await authorizePlaceChat({
           placeType: placeChatType,
           hostFriendCode: normalizedHostCode,
           placeId: normalizedGardenId,
-          body: moderation.text,
         });
-        if (savedMessage) message = savedMessage;
+        if (allowed) {
+          message = {
+            ...message,
+            displayName: allowed.senderDisplayName,
+            friendCode: allowed.senderFriendCode,
+          };
+        }
       } catch (error) {
         return {
           ok: false,
           severity: "soft-block",
-          reason: error instanceof Error ? error.message : "Garden chat could not sync.",
+          reason: error instanceof Error ? error.message : "Garden chat could not send.",
         };
       }
     }

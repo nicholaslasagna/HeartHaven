@@ -23,7 +23,7 @@ import { getSocialState, recordPlayedWith, SOCIAL_EVENT } from "@/lib/game/socia
 import { isBlocked, isLocallyQuarantined, readSafetyState, submitReport } from "@/lib/game/safety";
 import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/public-identity";
 import { recordActivity } from "@/lib/game/activity";
-import { clearPlaceChat, sendPlaceChatMessage } from "@/lib/game/place-chat";
+import { authorizePlaceChat } from "@/lib/game/place-chat";
 import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
 
 type UseRoomRealtimeOptions = {
@@ -252,15 +252,9 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         channelRef.current = channel;
         realtimeReadyRef.current = false;
 
-        /* Joining clears the room's chat rather than backfilling it. See the
-           note in use-garden-realtime: history is the privacy problem, and
-           live chat comes over broadcast, so nobody present loses anything. */
+        /* Nothing to fetch: chat is never stored. See use-garden-realtime. */
         async function refreshRoomChat() {
-          await clearPlaceChat({
-            placeType: "room",
-            hostFriendCode: channelKey,
-            placeId: normalizedRoomId,
-          });
+          /* intentionally empty */
         }
 
         async function publishLocalPresence(options: { track?: boolean } = {}) {
@@ -948,22 +942,29 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
       createdAt: Date.now(),
     };
 
+    /* Ask before speaking. The message never goes to the server — only the
+       question of whether this keeper may speak here right now, which is
+       where the mute and the flood guard live. The identity that comes back
+       names the message from the profile rather than from this client. */
     if (isSupabaseConfigured()) {
       try {
-        const savedMessage = await sendPlaceChatMessage({
+        const allowed = await authorizePlaceChat({
           placeType: "room",
           hostFriendCode: channelKey,
           placeId: normalizedRoomIdRef.current,
-          body: moderation.text,
         });
-        if (savedMessage) {
-          message = savedMessage;
+        if (allowed) {
+          message = {
+            ...message,
+            displayName: allowed.senderDisplayName,
+            friendCode: allowed.senderFriendCode,
+          };
         }
       } catch (error) {
         return {
           ok: false,
           severity: "soft-block",
-          reason: error instanceof Error ? error.message : "Room chat could not sync.",
+          reason: error instanceof Error ? error.message : "Room chat could not send.",
         };
       }
     }
