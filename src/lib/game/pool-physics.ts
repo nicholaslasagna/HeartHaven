@@ -32,6 +32,7 @@ export type PoolShotScore = {
   scoreDelta: number;
   comboBonus: number;
   scratchPenalty: number;
+  blackPenalty: number;
   pottedObjectCount: number;
   finalBonus: number;
 };
@@ -68,6 +69,10 @@ export const POOL_CANVAS_HEIGHT = 580;
 export const POOL_MAX_SHOTS = 12;
 export const POOL_BALL_RADIUS = 12;
 export const POOL_OBJECT_BALL_COUNT = 15;
+/** The black. Potting it ends the frame, whenever it happens. */
+export const POOL_BLACK_BALL_ID = "ball-8";
+/** Potting the black while other balls are still up ends the frame early. */
+export const POOL_BLACK_EARLY_PENALTY = 200;
 export const POOL_CUE_START = { x: 270, y: 290 };
 export const POOL_TABLE = {
   outer: { x: 30, y: 42, width: 900, height: 484, radius: 38 },
@@ -438,21 +443,27 @@ export function scorePoolShot({
   pottedObjectCount,
   scratched,
   allCleared,
+  blackPottedEarly = false,
   shotsLeftAfterShot,
 }: {
   pottedObjectCount: number;
   scratched: boolean;
   allCleared: boolean;
+  /** The black went down with balls still on the table. */
+  blackPottedEarly?: boolean;
   shotsLeftAfterShot: number;
 }): PoolShotScore {
   const comboBonus = pottedObjectCount > 1 ? 250 : 0;
   const scratchPenalty = scratched ? 100 : 0;
   const finalBonus = allCleared ? 500 + Math.max(0, shotsLeftAfterShot) * 50 : 0;
-  const scoreDelta = pottedObjectCount * 100 + comboBonus + finalBonus - scratchPenalty;
+  const blackPenalty = blackPottedEarly ? POOL_BLACK_EARLY_PENALTY : 0;
+  const scoreDelta =
+    pottedObjectCount * 100 + comboBonus + finalBonus - scratchPenalty - blackPenalty;
   return {
     scoreDelta,
     comboBonus,
     scratchPenalty,
+    blackPenalty,
     pottedObjectCount,
     finalBonus,
   };

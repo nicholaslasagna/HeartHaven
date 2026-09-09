@@ -22,7 +22,10 @@ import {
   stepPoolPhysics,
   launchCueBall,
   POOL_OBJECT_BALL_COUNT,
+  POOL_BLACK_BALL_ID,
+  POOL_BLACK_EARLY_PENALTY,
   POOL_BALL_RADIUS,
+  scorePoolShot,
   POOL_TABLE,
   type PoolBall,
 } from "../src/lib/game/pool-physics";
@@ -136,6 +139,43 @@ const EXPECTED = POOL_OBJECT_BALL_COUNT + 1; // the cue rides along
   assert.equal(meta.scores.length, 4, "one score per player");
   assert.equal(meta.currentSeat, 0, "play starts at seat 0");
   results.push("metadata  fresh session carries the full rack · one score per seat");
+}
+
+/* -- the black ends the frame, and the two halves must agree to the point --
+   submit_pool_shot recomputes this delta and rejects anything that differs,
+   so a drift here freezes multiplayer: the shot is refused, the seat never
+   advances, and the other player waits on a turn that cannot arrive. */
+{
+  const black = createInitialPoolBalls().find((ball) => ball.id === POOL_BLACK_BALL_ID);
+  assert.ok(black, `${POOL_BLACK_BALL_ID} must be on the table`);
+  assert.equal(black?.number, 8, "the black is the 8");
+
+  const early = scorePoolShot({
+    pottedObjectCount: 1,
+    scratched: false,
+    allCleared: false,
+    blackPottedEarly: true,
+    shotsLeftAfterShot: 11,
+  });
+  assert.equal(early.blackPenalty, POOL_BLACK_EARLY_PENALTY, "an early black costs the penalty");
+  assert.equal(early.finalBonus, 0, "an early black pays no clear bonus");
+  assert.equal(early.scoreDelta, 100 - POOL_BLACK_EARLY_PENALTY, "100 for the pot, less the penalty");
+
+  const last = scorePoolShot({
+    pottedObjectCount: 1,
+    scratched: false,
+    allCleared: true,
+    blackPottedEarly: false,
+    shotsLeftAfterShot: 11,
+  });
+  assert.equal(last.blackPenalty, 0, "the black sunk last is the proper finish, not a foul");
+  assert.equal(last.finalBonus, 500 + 11 * 50, "clearing the table pays the clear bonus");
+  assert.equal(last.scoreDelta, 100 + 500 + 11 * 50, "100 for the pot plus the clear bonus");
+
+  // Left as a plain pot, the fastest finish would be to sink the black on the
+  // break. The penalty has to outweigh the pot for that to stay a bad idea.
+  assert.ok(POOL_BLACK_EARLY_PENALTY > 100, "an early black must cost more than it pays");
+  results.push(`black     ${POOL_BLACK_BALL_ID} ends the frame · early costs ${POOL_BLACK_EARLY_PENALTY} (net ${early.scoreDelta}) · last pays the clear bonus (${last.scoreDelta})`);
 }
 
 console.log(`\nPool: all checks passed\n${results.map((line) => `  ${line}`).join("\n")}\n`);

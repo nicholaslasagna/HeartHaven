@@ -8,6 +8,7 @@ import {
   POOL_CANVAS_HEIGHT,
   POOL_CANVAS_WIDTH,
   POOL_MAX_SHOTS,
+  POOL_BLACK_BALL_ID,
   POOL_OBJECT_BALL_COUNT,
   POOL_POCKETS,
   POOL_TABLE,
@@ -621,6 +622,10 @@ export function PoolCanvas({
     const nextShotsTaken = current.shotsTaken + 1;
     const remainingAfterShot = countRemainingObjectBalls(ballsRef.current);
     const allCleared = remainingAfterShot === 0;
+    /* The black ends the frame whenever it drops. On the last ball that is the
+       proper finish; with balls still up it is an early end, and costs. */
+    const blackPotted = pottedIds.includes(POOL_BLACK_BALL_ID);
+    const blackPottedEarly = blackPotted && !allCleared;
     const shotsLeftAfterShot = isMultiplayer && sessionState
       ? Math.max(0, sessionState.shotsRemaining - 1)
       : POOL_MAX_SHOTS - nextShotsTaken;
@@ -628,6 +633,7 @@ export function PoolCanvas({
       pottedObjectCount,
       scratched,
       allCleared,
+      blackPottedEarly,
       shotsLeftAfterShot,
     });
     const nextScore = Math.max(0, current.score + scoreDetails.scoreDelta);
@@ -637,11 +643,13 @@ export function PoolCanvas({
       addSparkle(POOL_TABLE.felt.x + 74, POOL_TABLE.felt.y + 60, "#df8094", "Scratch");
     }
 
-    const gameOver = allCleared || shotsLeftAfterShot <= 0;
+    const gameOver = allCleared || blackPotted || shotsLeftAfterShot <= 0;
     const message = gameOver
       ? allCleared
-        ? "Table cleared. Claim your cozy reward."
-        : "Round complete. Claim your cozy reward."
+        ? "Black sunk last. Table cleared — claim your cozy reward."
+        : blackPotted
+          ? "The black went down early. Frame over — claim your cozy reward."
+          : "Round complete. Claim your cozy reward."
       : pottedObjectCount > 1
         ? "Combo pocket! Line up the next shot."
         : pottedObjectCount === 1
@@ -655,6 +663,7 @@ export function PoolCanvas({
       scoreDetails.comboBonus > 0 ? `+${scoreDetails.comboBonus} combo` : null,
       scoreDetails.finalBonus > 0 ? `+${scoreDetails.finalBonus} clear bonus` : null,
       scoreDetails.scratchPenalty > 0 ? `-${scoreDetails.scratchPenalty} scratch` : null,
+      scoreDetails.blackPenalty > 0 ? `-${scoreDetails.blackPenalty} early black` : null,
     ]
       .filter(Boolean)
       .join(" · ");
