@@ -25,7 +25,7 @@ import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/publi
 import { recordActivity } from "@/lib/game/activity";
 import { authorizePlaceChat } from "@/lib/game/place-chat";
 import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
-import { deliverKeepsake, KEEPSAKE_EVENT, registerKeepsakeRelay } from "@/lib/game/keepsake";
+import { deliverKeepsake, KEEPSAKE_EVENT, keepsakeIsPrivate, registerKeepsakeRelay } from "@/lib/game/keepsake";
 
 type UseRoomRealtimeOptions = {
   roomId: string;
@@ -254,6 +254,9 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
         channelRef.current = channel;
         keepsakeCleanup?.();
         keepsakeCleanup = registerKeepsakeRelay((phrase) => {
+          /* Only ever between two people. A place with anyone else in it
+             keeps the moment on the screen that asked for it. */
+          if (!keepsakeIsPrivate(channel.presenceState())) return;
           void channel.send({ type: "broadcast", event: KEEPSAKE_EVENT, payload: { phrase } });
         });
         realtimeReadyRef.current = false;
@@ -524,6 +527,9 @@ export function useRoomRealtime({ roomId, roomName, hostFriendCode }: UseRoomRea
             window.dispatchEvent(new CustomEvent("hearthaven:remote-emote", { detail: player }));
           })
           .on("broadcast", { event: KEEPSAKE_EVENT }, ({ payload }) => {
+            /* Checked here too, so a modified client cannot push it into
+               a room full of people however it chose to send it. */
+            if (!keepsakeIsPrivate(channel.presenceState())) return;
             deliverKeepsake(payload);
           })
           .on("broadcast", { event: "room_chat" }, ({ payload }) => {

@@ -120,6 +120,45 @@ export function createKeepsakeListener(onOpen: (text: string, phrase: string) =>
 /** Broadcast event name for a passed-along phrase. */
 export const KEEPSAKE_EVENT = "place_keepsake";
 
+/**
+ * It is for two people. Not a lobby, not an audience.
+ *
+ * Both ends check this. The sending end so it never leaves a crowded place,
+ * and the receiving end so it does not matter what the sending end claims —
+ * a screen with a third person in the room will not open it however the
+ * phrase arrived.
+ */
+export const KEEPSAKE_PARTY_SIZE = 2;
+
+/**
+ * How many PEOPLE are here, rather than how many browser tabs.
+ *
+ * Presence is keyed per client, so one person with the place open twice would
+ * otherwise count as two and the moment would silently refuse to travel.
+ * A keeper code is the identity where the entry carries one; a guest has only
+ * its client id to go by.
+ */
+export function keepsakePresentCount(state: unknown): number {
+  if (!state || typeof state !== "object") return 0;
+  const people = new Set<string>();
+  for (const entries of Object.values(state as Record<string, unknown>)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      const row = entry as { friendCode?: unknown; id?: unknown } | null;
+      const code = typeof row?.friendCode === "string" ? row.friendCode.trim().toUpperCase() : "";
+      const id = typeof row?.id === "string" ? row.id.trim() : "";
+      const who = code || id;
+      if (who) people.add(who);
+    }
+  }
+  return people.size;
+}
+
+/** Just the two of you, or it stays on the screen that asked for it. */
+export function keepsakeIsPrivate(state: unknown): boolean {
+  return keepsakePresentCount(state) === KEEPSAKE_PARTY_SIZE;
+}
+
 type Relay = (phrase: string) => void;
 
 let relay: Relay | null = null;

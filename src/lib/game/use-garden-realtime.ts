@@ -30,7 +30,7 @@ import { getCachedPublicUsername, resolvePublicUsername } from "@/lib/game/publi
 import { hardenGardenPlots, type GardenPlotState } from "@/lib/game/garden-plots";
 import { authorizePlaceChat, type PlaceChatType } from "@/lib/game/place-chat";
 import { USER_LOCAL_SCOPE_EVENT } from "@/lib/game/user-local-scope";
-import { deliverKeepsake, KEEPSAKE_EVENT, registerKeepsakeRelay } from "@/lib/game/keepsake";
+import { deliverKeepsake, KEEPSAKE_EVENT, keepsakeIsPrivate, registerKeepsakeRelay } from "@/lib/game/keepsake";
 
 type UseGardenRealtimeOptions = {
   gardenId: string;
@@ -273,6 +273,9 @@ export function useGardenRealtime({
         channelRef.current = channel;
         keepsakeCleanup?.();
         keepsakeCleanup = registerKeepsakeRelay((phrase) => {
+          /* Only ever between two people. A place with anyone else in it
+             keeps the moment on the screen that asked for it. */
+          if (!keepsakeIsPrivate(channel.presenceState())) return;
           void channel.send({ type: "broadcast", event: KEEPSAKE_EVENT, payload: { phrase } });
         });
         realtimeReadyRef.current = false;
@@ -433,6 +436,9 @@ export function useGardenRealtime({
             setPlayers((current) => upsertPlayer(current, player));
           })
           .on("broadcast", { event: KEEPSAKE_EVENT }, ({ payload }) => {
+            /* Checked here too, so a modified client cannot push it into
+               a room full of people however it chose to send it. */
+            if (!keepsakeIsPrivate(channel.presenceState())) return;
             deliverKeepsake(payload);
           })
           .on("broadcast", { event: "garden_chat" }, ({ payload }) => {
